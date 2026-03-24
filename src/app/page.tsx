@@ -243,7 +243,7 @@ function CoachTab() {
 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
-      <Hero eyebrow="SPEAKING COACH" description="Record, get direct technical feedback, and open older speeches from the history list only when you need them." />
+      <Hero eyebrow="SPEAKING COACH" description="Record and get direct technical feedback. You can also open older speeches from the history list only when you need them. WARNING: Do not fully rely on its feedback blindly as ai can make mistakes and if you think something is not adding up or have a confusion ask me(Aawaz)." />
       <TemplateSelector selectedTemplateId={selectedTemplateId} onChange={setSelectedTemplateId} />
       <GlassCard accent="#7c3aed"><SectionLabel text="Live Evaluation" color="#a78bfa" />{isRecording && <div style={{ marginBottom: 20, padding: '16px 0', borderRadius: 18, background: 'rgba(124,58,237,.07)', border: '1px solid rgba(124,58,237,.14)' }}><div style={{ display: 'flex', justifyContent: 'center', gap: 4, height: 48 }}>{Array.from({ length: 30 }).map((_, index) => <div key={index} style={{ width: 4, height: '100%', borderRadius: 99, background: `hsl(${265 + index * 2}, 86%, 74%)`, transformOrigin: 'center', transform: `scaleY(${0.25 + ((index % 7) + 1) / 8})` }} />)}</div></div>}<div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 6px' }}><MicButton isRecording={isRecording} isAnalyzing={isAnalyzing} onClick={isRecording ? stopRecording : startRecording} seconds={seconds} /></div></GlassCard>
       {transcript && <TranscriptDisplay text={transcript} />}
@@ -275,7 +275,7 @@ function SpeechTab() {
 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
-      <Hero eyebrow="SPEECH PRACTICE" description="Generate sample speeches only. This tab is now focused on writing, without the speech-evaluation controls mixed into it." />
+      <Hero eyebrow="SPEECH PRACTICE" description="Generate sample speeches." />
       <GlassCard accent="#7c3aed">
         <SectionLabel text="Generate Topic Speech" color="#a78bfa" />
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
