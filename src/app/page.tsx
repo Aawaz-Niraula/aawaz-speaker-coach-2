@@ -7,6 +7,7 @@ import { ChevronRight, Menu, Mic, MicOff, RefreshCw, Sparkles, X, Zap } from 'lu
 import { SPEECH_TEMPLATES, type SpeechTemplateId } from '@/lib/speech-config';
 
 type Tab = 'coach' | 'speech';
+
 type SpeechHistoryItem = {
   id: string;
   created_at: string;
@@ -22,7 +23,7 @@ const GLOBAL_CSS = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { scroll-behavior: smooth; }
   body { background: #05050e; color: #edf2ff; overflow-x: hidden; }
-  button, input { font-family: inherit; }
+  button, input, select { font-family: inherit; }
   @keyframes pulse-glow { 0%,100% { box-shadow: 0 0 24px rgba(124,58,237,.22); } 50% { box-shadow: 0 0 44px rgba(124,58,237,.38); } }
   @keyframes record-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,.35); } 50% { box-shadow: 0 0 0 20px rgba(239,68,68,0); } }
   @keyframes dot-bounce { 0%,100% { transform: translateY(0); opacity: .35; } 50% { transform: translateY(-6px); opacity: 1; } }
@@ -59,12 +60,6 @@ function SectionLabel({ text, color }: { text: string; color: string }) {
   return <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}><div style={{ width: 6, height: 6, borderRadius: '50%', background: color }} /><span style={{ color, fontSize: 11, letterSpacing: 3, fontFamily: "'DM Mono', monospace", textTransform: 'uppercase' }}>{text}</span><div style={{ flex: 1, height: 1, background: `linear-gradient(90deg, ${color}55, transparent)` }} /></div>;
 }
 
-function formatHistoryDate(value: string) {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-}
-
 function FeedbackDisplay({ text }: { text: string }) {
   const scoreMatch = text.match(/overall score[:\s-]*(\d+)\/100/i);
   return <GlassCard accent="#f87171"><SectionLabel text="Coach Verdict" color="#f87171" />{scoreMatch && <p style={{ color: '#fbbf24', fontSize: 14, fontFamily: "'DM Mono', monospace", marginBottom: 12 }}>Overall score: {scoreMatch[1]}/100</p>}<p style={{ color: '#edf2ff', lineHeight: 1.85, whiteSpace: 'pre-wrap', fontSize: 14, fontFamily: "'DM Mono', monospace" }}>{text}</p></GlassCard>;
@@ -74,18 +69,52 @@ function TranscriptDisplay({ text }: { text: string }) {
   return <GlassCard accent="#fbbf24"><SectionLabel text="Transcript" color="#fbbf24" /><p style={{ color: '#edf2ff', lineHeight: 1.85, whiteSpace: 'pre-wrap', fontSize: 14, fontFamily: "'DM Mono', monospace" }}>{text}</p></GlassCard>;
 }
 
+function formatHistoryDate(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
 function TemplateSelector({ selectedTemplateId, onChange }: { selectedTemplateId: SpeechTemplateId | null; onChange: (id: SpeechTemplateId | null) => void }) {
   const selectedTemplate = SPEECH_TEMPLATES.find((template) => template.id === selectedTemplateId) ?? null;
+
   return (
     <>
       <GlassCard accent="#7c3aed">
         <SectionLabel text="Speech Format" color="#a78bfa" />
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-          {SPEECH_TEMPLATES.map((template) => <button key={template.id} onClick={() => onChange(selectedTemplateId === template.id ? null : template.id)} style={{ padding: '10px 14px', borderRadius: 999, border: `1px solid ${selectedTemplateId === template.id ? '#8b5cf6' : 'rgba(124,58,237,.2)'}`, background: selectedTemplateId === template.id ? 'linear-gradient(135deg, #4c1d95, #7c3aed)' : 'rgba(124,58,237,.08)', color: selectedTemplateId === template.id ? '#ede9fe' : '#aab2d5', cursor: 'pointer', fontSize: 12, fontFamily: "'DM Mono', monospace" }}>{template.label}</button>)}
-        </div>
-        <p style={{ color: '#94a3b8', lineHeight: 1.8, fontSize: 13, fontFamily: "'DM Mono', monospace" }}>{selectedTemplate ? `Active rubric: ${selectedTemplate.label}.` : 'No template selected. General evaluation uses ELP and the 20% intro / 60% body / 20% conclusion rule.'}</p>
+        <select
+          value={selectedTemplateId ?? ''}
+          onChange={(event) => onChange((event.target.value || null) as SpeechTemplateId | null)}
+          style={{
+            width: '100%',
+            borderRadius: 14,
+            border: '1px solid rgba(124,58,237,.2)',
+            background: 'rgba(124,58,237,.08)',
+            color: '#edf2ff',
+            padding: '14px 16px',
+            fontSize: 13,
+            fontFamily: "'DM Mono', monospace",
+            marginBottom: 12,
+          }}
+        >
+          <option value="">General evaluation</option>
+          {SPEECH_TEMPLATES.map((template) => (
+            <option key={template.id} value={template.id}>
+              {template.label}
+            </option>
+          ))}
+        </select>
+        <p style={{ color: '#94a3b8', lineHeight: 1.8, fontSize: 13, fontFamily: "'DM Mono', monospace" }}>
+          {selectedTemplate ? `Active rubric: ${selectedTemplate.label}.` : 'No template selected. General evaluation uses ELP and the 20% intro / 60% body / 20% conclusion rule.'}
+        </p>
       </GlassCard>
-      {selectedTemplate && <div style={{ position: 'relative', marginTop: 14, borderRadius: 22, overflow: 'hidden', border: '1px solid rgba(124,58,237,.22)' }}><button onClick={() => onChange(null)} style={{ position: 'absolute', top: 12, right: 12, zIndex: 2, width: 34, height: 34, borderRadius: '50%', border: '1px solid rgba(255,255,255,.12)', background: 'rgba(5,5,14,.78)', color: '#d1d5db', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X style={{ width: 16, height: 16 }} /></button><Image src={selectedTemplate.src} alt={selectedTemplate.label} width={900} height={600} style={{ width: '100%', height: 'auto', display: 'block' }} /></div>}
+
+      {selectedTemplate && (
+        <div style={{ position: 'relative', marginTop: 14, borderRadius: 22, overflow: 'hidden', border: '1px solid rgba(124,58,237,.22)' }}>
+          <button onClick={() => onChange(null)} style={{ position: 'absolute', top: 12, right: 12, zIndex: 2, width: 34, height: 34, borderRadius: '50%', border: '1px solid rgba(255,255,255,.12)', background: 'rgba(5,5,14,.78)', color: '#d1d5db', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X style={{ width: 16, height: 16 }} /></button>
+          <Image src={selectedTemplate.src} alt={selectedTemplate.label} width={900} height={600} style={{ width: '100%', height: 'auto', display: 'block' }} />
+        </div>
+      )}
     </>
   );
 }
@@ -109,7 +138,7 @@ function Hero({ eyebrow, description }: { eyebrow: string; description: string }
 }
 
 function Sidebar({ activeTab, setActiveTab, open, onClose }: { activeTab: Tab; setActiveTab: (tab: Tab) => void; open: boolean; onClose: () => void }) {
-  const tabs = [{ id: 'coach' as const, label: 'Speaking Coach', sub: 'Record and review' }, { id: 'speech' as const, label: 'Speech Practice', sub: 'Generate and rehearse' }];
+  const tabs = [{ id: 'coach' as const, label: 'Speaking Coach', sub: 'Record and review' }, { id: 'speech' as const, label: 'Speech Practice', sub: 'Generate only' }];
   return (
     <>
       {open && <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'rgba(0,0,0,.65)' }} className="md:hidden" />}
@@ -131,15 +160,13 @@ function useSpeechHistory(userId: string) {
       try {
         const res = await fetch(`/api/evaluations/history?userId=${encodeURIComponent(userId)}`);
         const data = await res.json();
-        const nextHistory = data.history || [];
-        setHistory(nextHistory);
-        if (nextHistory.length && !selectedSessionId) setSelectedSessionId(nextHistory[0].id);
+        setHistory(data.history || []);
       } catch {
         setHistory([]);
       }
     };
     void load();
-  }, [userId, selectedSessionId]);
+  }, [userId]);
   return { history, setHistory, selectedSessionId, setSelectedSessionId };
 }
 
@@ -172,11 +199,10 @@ function CoachTab() {
         if (selectedTemplateId) form.append('templateId', selectedTemplateId);
         const res = await fetch('/api/transcribe-analyze', { method: 'POST', body: form });
         const data = await res.json();
-        const nextHistory = data.history || [];
         setTranscript(data.transcript || '');
         setFeedback(data.feedback || '');
-        setHistory(nextHistory);
-        if (nextHistory.length) setSelectedSessionId(nextHistory[0].id);
+        setHistory(data.history || []);
+        setSelectedSessionId(null);
         setIsAnalyzing(false);
       };
       recorder.start();
@@ -193,7 +219,7 @@ function CoachTab() {
 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
-      <Hero eyebrow="SPEAKING COACH" description="Record, get direct technical feedback, and reopen older speeches from a simple history panel." />
+      <Hero eyebrow="SPEAKING COACH" description="Record, get direct technical feedback, and open older speeches from the history list only when you need them." />
       <TemplateSelector selectedTemplateId={selectedTemplateId} onChange={setSelectedTemplateId} />
       <GlassCard accent="#7c3aed"><SectionLabel text="Live Evaluation" color="#a78bfa" />{isRecording && <div style={{ marginBottom: 20, padding: '16px 0', borderRadius: 18, background: 'rgba(124,58,237,.07)', border: '1px solid rgba(124,58,237,.14)' }}><div style={{ display: 'flex', justifyContent: 'center', gap: 4, height: 48 }}>{Array.from({ length: 30 }).map((_, index) => <div key={index} style={{ width: 4, height: '100%', borderRadius: 99, background: `hsl(${265 + index * 2}, 86%, 74%)`, transformOrigin: 'center', transform: `scaleY(${0.25 + ((index % 7) + 1) / 8})` }} />)}</div></div>}<div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 6px' }}><MicButton isRecording={isRecording} isAnalyzing={isAnalyzing} onClick={isRecording ? stopRecording : startRecording} seconds={seconds} /></div></GlassCard>
       {transcript && <TranscriptDisplay text={transcript} />}
@@ -205,26 +231,16 @@ function CoachTab() {
 }
 
 function SpeechTab() {
-  const userId = usePersistentUserId();
-  const { history, setHistory, selectedSessionId, setSelectedSessionId } = useSpeechHistory(userId);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<SpeechTemplateId | null>(null);
   const [topic, setTopic] = useState('');
   const [speech, setSpeech] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [transcript, setTranscript] = useState('');
-  const [feedback, setFeedback] = useState('');
   const [error, setError] = useState('');
-  const [seconds, setSeconds] = useState(0);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const selectedSession = history.find((item) => item.id === selectedSessionId) ?? null;
 
   const generateSpeech = async () => {
     if (!topic.trim()) return;
-    setIsGenerating(true); setSpeech(''); setError(''); setTranscript(''); setFeedback('');
+    setIsGenerating(true);
+    setSpeech('');
+    setError('');
     try {
       const res = await fetch('/api/generate-speech', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic }) });
       const data = await res.json();
@@ -233,51 +249,19 @@ function SpeechTab() {
     setIsGenerating(false);
   };
 
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      chunksRef.current = [];
-      recorder.ondataavailable = (event) => { if (event.data.size > 0) chunksRef.current.push(event.data); };
-      recorder.onstop = async () => {
-        if (timerRef.current) clearInterval(timerRef.current);
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm;codecs=opus' });
-        const form = new FormData();
-        form.append('file', blob, 'speech.webm');
-        form.append('userId', userId);
-        if (selectedTemplateId) form.append('templateId', selectedTemplateId);
-        const res = await fetch('/api/transcribe-analyze', { method: 'POST', body: form });
-        const data = await res.json();
-        const nextHistory = data.history || [];
-        setTranscript(data.transcript || '');
-        setFeedback(data.feedback || '');
-        setHistory(nextHistory);
-        if (nextHistory.length) setSelectedSessionId(nextHistory[0].id);
-        setIsAnalyzing(false);
-      };
-      recorder.start();
-      mediaRecorderRef.current = recorder;
-      setTranscript('');
-      setFeedback('');
-      setSeconds(0);
-      setIsRecording(true);
-      timerRef.current = setInterval(() => setSeconds((current) => current + 1), 1000);
-    } catch { alert('Microphone access required'); }
-  };
-
-  const stopRecording = () => { mediaRecorderRef.current?.stop(); if (timerRef.current) clearInterval(timerRef.current); setIsRecording(false); setIsAnalyzing(true); };
-
   return (
     <div style={{ display: 'grid', gap: 18 }}>
-      <Hero eyebrow="SPEECH PRACTICE" description="Generate a sample, rehearse your version, and keep previous attempts accessible without crowding the screen." />
-      <GlassCard accent="#7c3aed"><SectionLabel text="Generate Topic Speech" color="#a78bfa" /><div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}><input value={topic} onChange={(event) => setTopic(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && generateSpeech()} placeholder="e.g. Leadership, climate change, my role model..." style={{ flex: 1, minWidth: 240, borderRadius: 16, border: '1px solid rgba(124,58,237,.20)', background: 'rgba(124,58,237,.06)', color: '#edf2ff', padding: '15px 18px', fontSize: 14, fontFamily: "'DM Mono', monospace" }} /><button onClick={generateSpeech} disabled={isGenerating || !topic.trim()} style={{ padding: '15px 18px', borderRadius: 16, border: 'none', background: isGenerating || !topic.trim() ? 'rgba(124,58,237,.14)' : 'linear-gradient(135deg, #4c1d95, #7c3aed)', color: isGenerating || !topic.trim() ? '#6b7280' : '#ede9fe', cursor: isGenerating || !topic.trim() ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: "'DM Mono', monospace", fontSize: 12, letterSpacing: 2 }}><Sparkles style={{ width: 15, height: 15, animation: isGenerating ? 'spin-icon 1.2s linear infinite' : 'none' }} />{isGenerating ? 'WRITING...' : 'GENERATE'}</button></div>{error && <p style={{ color: '#f87171', fontSize: 12, fontFamily: "'DM Mono', monospace", marginTop: 12 }}>{error}</p>}</GlassCard>
-      <TemplateSelector selectedTemplateId={selectedTemplateId} onChange={setSelectedTemplateId} />
+      <Hero eyebrow="SPEECH PRACTICE" description="Generate sample speeches only. This tab is now focused on writing, without the speech-evaluation controls mixed into it." />
+      <GlassCard accent="#7c3aed">
+        <SectionLabel text="Generate Topic Speech" color="#a78bfa" />
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <input value={topic} onChange={(event) => setTopic(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && generateSpeech()} placeholder="e.g. Leadership, climate change, my role model..." style={{ flex: 1, minWidth: 240, borderRadius: 16, border: '1px solid rgba(124,58,237,.20)', background: 'rgba(124,58,237,.06)', color: '#edf2ff', padding: '15px 18px', fontSize: 14, fontFamily: "'DM Mono', monospace" }} />
+          <button onClick={generateSpeech} disabled={isGenerating || !topic.trim()} style={{ padding: '15px 18px', borderRadius: 16, border: 'none', background: isGenerating || !topic.trim() ? 'rgba(124,58,237,.14)' : 'linear-gradient(135deg, #4c1d95, #7c3aed)', color: isGenerating || !topic.trim() ? '#6b7280' : '#ede9fe', cursor: isGenerating || !topic.trim() ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: "'DM Mono', monospace", fontSize: 12, letterSpacing: 2 }}><Sparkles style={{ width: 15, height: 15, animation: isGenerating ? 'spin-icon 1.2s linear infinite' : 'none' }} />{isGenerating ? 'WRITING...' : 'GENERATE'}</button>
+        </div>
+        {error && <p style={{ color: '#f87171', fontSize: 12, fontFamily: "'DM Mono', monospace", marginTop: 12 }}>{error}</p>}
+      </GlassCard>
+
       {(speech || isGenerating) && <GlassCard accent="#7c3aed"><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}><SectionLabel text={`Sample Speech${topic ? ` | ${topic}` : ''}`} color="#a78bfa" />{!isGenerating && <button onClick={generateSpeech} style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer' }}><RefreshCw style={{ width: 15, height: 15 }} /></button>}</div>{isGenerating ? <div style={{ display: 'flex', gap: 6 }}>{[0, 1, 2].map((i) => <div key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: '#c4b5fd', animation: `dot-bounce 0.8s ${i * 0.2}s ease-in-out infinite` }} />)}</div> : <p style={{ color: '#d8def7', lineHeight: 1.9, whiteSpace: 'pre-wrap', fontSize: 14, fontFamily: "'DM Mono', monospace" }}>{speech}</p>}</GlassCard>}
-      {speech && !isGenerating && <GlassCard accent="#7c3aed"><SectionLabel text="Live Evaluation" color="#a78bfa" />{isRecording && <div style={{ marginBottom: 20, padding: '16px 0', borderRadius: 18, background: 'rgba(124,58,237,.07)', border: '1px solid rgba(124,58,237,.14)' }}><div style={{ display: 'flex', justifyContent: 'center', gap: 4, height: 48 }}>{Array.from({ length: 30 }).map((_, index) => <div key={index} style={{ width: 4, height: '100%', borderRadius: 99, background: `hsl(${265 + index * 2}, 86%, 74%)`, transformOrigin: 'center', transform: `scaleY(${0.25 + ((index % 7) + 1) / 8})` }} />)}</div></div>}<div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 6px' }}><MicButton isRecording={isRecording} isAnalyzing={isAnalyzing} onClick={isRecording ? stopRecording : startRecording} seconds={seconds} /></div></GlassCard>}
-      {transcript && <TranscriptDisplay text={transcript} />}
-      {feedback && <FeedbackDisplay text={feedback} />}
-      <SessionBrowser history={history} selectedSessionId={selectedSessionId} onSelect={setSelectedSessionId} />
-      <SessionPreview session={selectedSession} />
     </div>
   );
 }
