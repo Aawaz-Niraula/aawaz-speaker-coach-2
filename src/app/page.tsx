@@ -82,28 +82,52 @@ function TemplateSelector({ selectedTemplateId, onChange }: { selectedTemplateId
     <>
       <GlassCard accent="#7c3aed">
         <SectionLabel text="Speech Format" color="#a78bfa" />
-        <select
-          value={selectedTemplateId ?? ''}
-          onChange={(event) => onChange((event.target.value || null) as SpeechTemplateId | null)}
+        <div
           style={{
-            width: '100%',
-            borderRadius: 14,
-            border: '1px solid rgba(124,58,237,.2)',
-            background: 'rgba(124,58,237,.08)',
-            color: '#edf2ff',
-            padding: '14px 16px',
-            fontSize: 13,
-            fontFamily: "'DM Mono', monospace",
+            position: 'relative',
             marginBottom: 12,
           }}
         >
-          <option value="">General evaluation</option>
-          {SPEECH_TEMPLATES.map((template) => (
-            <option key={template.id} value={template.id}>
-              {template.label}
-            </option>
-          ))}
-        </select>
+          <select
+            value={selectedTemplateId ?? ''}
+            onChange={(event) => onChange((event.target.value || null) as SpeechTemplateId | null)}
+            style={{
+              width: '100%',
+              borderRadius: 14,
+              border: '1px solid rgba(124,58,237,.25)',
+              background: 'linear-gradient(135deg, rgba(76,29,149,.55), rgba(17,24,39,.88))',
+              color: '#edf2ff',
+              padding: '14px 44px 14px 16px',
+              fontSize: 13,
+              fontFamily: "'DM Mono', monospace",
+              appearance: 'none',
+              WebkitAppearance: 'none',
+              MozAppearance: 'none',
+              outline: 'none',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,.04)',
+            }}
+          >
+            <option value="" style={{ background: '#120f24', color: '#edf2ff' }}>General evaluation</option>
+            {SPEECH_TEMPLATES.map((template) => (
+              <option key={template.id} value={template.id} style={{ background: '#120f24', color: '#edf2ff' }}>
+                {template.label}
+              </option>
+            ))}
+          </select>
+          <div
+            style={{
+              position: 'absolute',
+              right: 14,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              color: '#c4b5fd',
+              pointerEvents: 'none',
+              fontSize: 14,
+            }}
+          >
+            ▾
+          </div>
+        </div>
         <p style={{ color: '#94a3b8', lineHeight: 1.8, fontSize: 13, fontFamily: "'DM Mono', monospace" }}>
           {selectedTemplate ? `Active rubric: ${selectedTemplate.label}.` : 'No template selected. General evaluation uses ELP and the 20% intro / 60% body / 20% conclusion rule.'}
         </p>
