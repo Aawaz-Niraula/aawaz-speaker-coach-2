@@ -5,6 +5,18 @@ import { NextRequest } from 'next/server';
 import { insertSpeechSession, listRecentSpeechSessions } from '@/lib/db';
 import { GENERAL_RUBRIC, getSpeechTemplate } from '@/lib/speech-config';
 
+function formatGroqError(prefix: string, status: number, message?: string) {
+  if (status === 429) {
+    return `${prefix} is temporarily unavailable because today's free AI limit has been reached. Please try again later.`;
+  }
+
+  if (status >= 500) {
+    return `${prefix} is temporarily unavailable right now. Please try again in a little while.`;
+  }
+
+  return `${prefix} failed${message ? `: ${message}` : '.'}`;
+}
+
 function buildHistoryContext(history: Awaited<ReturnType<typeof listRecentSpeechSessions>>) {
   if (!history.length) {
     return 'No previous evaluations are available for this user.';
@@ -78,10 +90,14 @@ export async function POST(req: NextRequest) {
 
   const whisperData = await whisperRes.json();
 
-  if (whisperData.error) {
+  if (!whisperRes.ok || whisperData.error) {
     return Response.json({
       transcript: '',
-      feedback: `Groq Whisper error: ${whisperData.error.message}`,
+      feedback: formatGroqError(
+        'Speech transcription',
+        whisperRes.status,
+        whisperData?.error?.message,
+      ),
       history: previousHistory,
     });
   }
@@ -149,10 +165,14 @@ ${transcript}`,
 
   const analysisData = await analysisRes.json();
 
-  if (analysisData.error) {
+  if (!analysisRes.ok || analysisData.error) {
     return Response.json({
       transcript,
-      feedback: `Groq analysis error: ${analysisData.error.message}`,
+      feedback: formatGroqError(
+        'Speech analysis',
+        analysisRes.status,
+        analysisData?.error?.message,
+      ),
       history: previousHistory,
     });
   }
