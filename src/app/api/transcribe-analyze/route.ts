@@ -44,6 +44,24 @@ function extractOverallScore(feedback: string) {
   return match ? Number(match[1]) : null;
 }
 
+function buildModeInstructions(templateLabel: string | null) {
+  if (templateLabel) {
+    return `Template mode is active: ${templateLabel}.
+You must judge the speech primarily against the selected template, not against generic speaking advice.
+If the transcript violates the template's expectations, say that explicitly and lower the score hard.
+Your feedback and fixes must stay tied to the template's demands: protocol, structure, sequencing, tone, formality, rebuttal quality, or ceremonial control, depending on the selected template.
+Do not drift into generic filler advice like "be more confident" unless you tie it to a template-specific failure.`;
+  }
+
+  return `No template mode is active.
+Use the general rubric, but make the coaching even harsher, more technical, and more reality-based.
+Assume the speaker wants the truth, not comfort.
+If the speech is sloppy, disorganized, weak, vague, flat, soft, repetitive, or structurally amateur, say so directly.
+Do not protect the speaker's feelings.
+Do not give friendly encouragement unless it is earned by actual execution quality.
+Prioritize ruthless technical honesty about structure, pace, wording, control, and delivery mechanics.`;
+}
+
 export async function POST(req: NextRequest) {
   const formData = await req.formData();
   const file = formData.get('file') as File | null;
@@ -72,6 +90,7 @@ export async function POST(req: NextRequest) {
   const template = getSpeechTemplate(selectedTemplateId);
   const rubricMode = template ? `template:${template.id}` : 'general';
   const rubricInstructions = template ? template.rubric : GENERAL_RUBRIC;
+  const modeInstructions = buildModeInstructions(template?.label ?? null);
   const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
   const previousHistory = await listRecentSpeechSessions(userId, 4);
@@ -124,7 +143,10 @@ Be direct, sharp, unsentimental, and specific.
 Do not use motivational fluff.
 Do not soften criticism.
 Every fix must include an actual speaking technique, drill, or rehearsal method.
-When previous evaluations are provided, compare today's performance against recurring weaknesses and call out repeated mistakes.`,
+When previous evaluations are provided, compare today's performance against recurring weaknesses and call out repeated mistakes.
+If a template is selected, obey that template strictly and punish mismatch.
+If no template is selected, be harsher, more technical, and more unforgiving than a normal coach.
+Reality matters more than kindness.`,
         },
         {
           role: 'user',
@@ -138,18 +160,28 @@ ANALYSIS:
 - Overall score: X/100
 
 BRUTALLY HONEST FEEDBACK:
-[2-4 short, direct sentences. Start with the biggest technical weakness. If the speaker repeated an old mistake, say so plainly.]
+[2-5 short, direct sentences. Start with the biggest technical weakness. If the speaker repeated an old mistake, say so plainly. If the structure or tone is bad, say it bluntly.]
 
 3 SPECIFIC FIXES:
-1. [one exact behavior change with a technical speaking instruction]
-2. [one drill they can practice, with reps, timing, or structure]
-3. [one daily repetition line or rehearsal command written in imperative form]
+1. [one exact behavior change with a technical speaking instruction tied to the rubric failure]
+2. [one drill they can practice, with reps, timing, or structure, tied to the rubric failure]
+3. [one daily repetition line or rehearsal command written in imperative form and tied to the rubric failure]
+
+Scoring rules:
+- Be strict. Do not hand out high scores for average speaking.
+- If structure is weak, score must drop hard.
+- If the selected template is violated, score must drop hard.
+- If the transcript is vague, repetitive, casual when it should be formal, or unsupported when it should be argumentative, say so explicitly.
+- Do not reward intent, effort, or courage. Score execution only.
 
 You must evaluate against this rubric:
 ${rubricInstructions}
 
 Selected template:
 ${template ? `${template.label} (${template.rubricTitle})` : 'No template selected. Use the general rubric only.'}
+
+Mode instructions:
+${modeInstructions}
 
 Previous evaluations for this same user:
 ${historyContext}
