@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
-import { ChevronRight, Menu, Mic, MicOff, RefreshCw, Sparkles, X, Zap } from 'lucide-react';
+import { ChevronRight, Menu, Mic, MicOff, RefreshCw, Sparkles, Trash2, X, Zap } from 'lucide-react';
 
 import { SPEECH_TEMPLATES, type SpeechTemplateId } from '@/lib/speech-config';
 
@@ -266,7 +266,17 @@ function TemplateSelector({ selectedTemplateId, onChange }: { selectedTemplateId
   );
 }
 
-function SessionBrowser({ history, selectedSessionId, onSelect }: { history: SpeechHistoryItem[]; selectedSessionId: string | null; onSelect: (id: string | null) => void }) {
+function SessionBrowser({
+  history,
+  selectedSessionId,
+  onSelect,
+  onDelete,
+}: {
+  history: SpeechHistoryItem[];
+  selectedSessionId: string | null;
+  onSelect: (id: string | null) => void;
+  onDelete: (id: string) => void;
+}) {
   return (
     <Surface>
       <SectionLabel text="Speech History" />
@@ -288,13 +298,39 @@ function SessionBrowser({ history, selectedSessionId, onSelect }: { history: Spe
                 color: palette.text,
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
-                <span style={{ color: active ? palette.accent : palette.soft, fontSize: 11, letterSpacing: 2, fontFamily: "'JetBrains Mono', monospace", textTransform: 'uppercase' }}>
-                  Session {history.length - index}
-                </span>
-                <span style={{ color: palette.soft, fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
-                  {formatHistoryDate(item.created_at)}
-                </span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span style={{ color: active ? palette.accent : palette.soft, fontSize: 11, letterSpacing: 2, fontFamily: "'JetBrains Mono', monospace", textTransform: 'uppercase' }}>
+                    Session {history.length - index}
+                  </span>
+                  <span style={{ color: palette.soft, fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
+                    {formatHistoryDate(item.created_at)}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDelete(item.id);
+                  }}
+                  style={{
+                    border: `1px solid ${palette.line}`,
+                    background: 'rgba(248, 113, 113, 0.08)',
+                    color: palette.danger,
+                    width: 30,
+                    height: 30,
+                    borderRadius: 999,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                  }}
+                  aria-label="Delete speech session"
+                  title="Delete speech session"
+                >
+                  <Trash2 style={{ width: 14, height: 14 }} />
+                </button>
               </div>
               <p style={{ color: palette.text, fontSize: 14, marginBottom: 6, fontWeight: 600 }}>{item.template_label ?? 'General Evaluation'}</p>
               <p style={{ color: palette.muted, fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>
@@ -538,6 +574,29 @@ function CoachTab() {
     setIsAnalyzing(true);
   };
 
+  const deleteSession = async (sessionId: string) => {
+    const confirmed = window.confirm('Delete this saved speech session?');
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch('/api/evaluations/history', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, sessionId }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        alert(data.error || 'Failed to delete session.');
+        return;
+      }
+
+      setHistory(data.history || []);
+      setSelectedSessionId((current) => (current === sessionId ? null : current));
+    } catch {
+      alert('Failed to delete session.');
+    }
+  };
+
   return (
     <div style={{ display: 'grid', gap: 18 }}>
       <Hero
@@ -579,7 +638,12 @@ function CoachTab() {
       </Surface>
       {transcript ? <TranscriptDisplay text={transcript} /> : null}
       {feedback ? <FeedbackDisplay text={feedback} /> : null}
-      <SessionBrowser history={history} selectedSessionId={selectedSessionId} onSelect={setSelectedSessionId} />
+      <SessionBrowser
+        history={history}
+        selectedSessionId={selectedSessionId}
+        onSelect={setSelectedSessionId}
+        onDelete={deleteSession}
+      />
       <SessionPreview session={selectedSession} />
     </div>
   );
