@@ -44,66 +44,14 @@ function extractOverallScore(feedback: string) {
   return match ? Number(match[1]) : null;
 }
 
-type ResponseContentPart =
-  | string
-  | {
-      text?: string;
-      content?: string;
-    };
-
-function extractAssistantText(analysisData: unknown) {
-  const parsed = analysisData as {
-    choices?: Array<{
-      message?: {
-        content?: string | ResponseContentPart[];
-        reasoning?: string;
-      };
-      text?: string;
-    }>;
-    output_text?: string;
-  };
-  const message = parsed?.choices?.[0]?.message;
-
-  if (typeof message?.content === 'string' && message.content.trim()) {
-    return message.content.trim();
-  }
-
-  if (Array.isArray(message?.content)) {
-    const text = message.content
-      .map((part) => {
-        if (typeof part === 'string') return part;
-        if (typeof part?.text === 'string') return part.text;
-        if (typeof part?.content === 'string') return part.content;
-        return '';
-      })
-      .join('\n')
-      .trim();
-
-    if (text) return text;
-  }
-
-  if (typeof parsed?.choices?.[0]?.text === 'string' && parsed.choices[0].text.trim()) {
-    return parsed.choices[0].text.trim();
-  }
-
-  if (typeof parsed?.output_text === 'string' && parsed.output_text.trim()) {
-    return parsed.output_text.trim();
-  }
-
-  if (typeof message?.reasoning === 'string' && message.reasoning.trim()) {
-    return message.reasoning.trim();
-  }
-
-  return '';
-}
-
 function buildModeInstructions(templateLabel: string | null) {
   if (templateLabel) {
     return `Template mode is active: ${templateLabel}.
 You must judge the speech primarily against the selected template, not against generic speaking advice.
 If the transcript violates the template's expectations, say that explicitly and lower the score hard.
 Your feedback and fixes must stay tied to the template's demands: protocol, structure, sequencing, tone, formality, rebuttal quality, or ceremonial control, depending on the selected template.
-Do not drift into generic filler advice like "be more confident" unless you tie it to a template-specific failure.`;
+Do not drift into generic filler advice like "be more confident" unless you tie it to a template-specific failure.
+If the tone, structure, or sequencing breaks the template, call it a template failure directly.`;
   }
 
   return `No template mode is active.
@@ -186,26 +134,26 @@ export async function POST(req: NextRequest) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'openai/gpt-oss-120b',
-      include_reasoning: false,
-      reasoning_effort: 'low',
-      max_completion_tokens: 1400,
+      model: 'llama-3.3-70b-versatile',
       messages: [
         {
-          role: 'user',
+          role: 'system',
           content: `You are Aawaz, a ruthless but technically precise public-speaking coach.
 Your job is to diagnose performance, not comfort the speaker.
 Be direct, sharp, unsentimental, and specific.
 Do not use motivational fluff.
 Do not soften criticism.
+Do not flatter weak speaking.
 Every fix must include an actual speaking technique, drill, or rehearsal method.
 When previous evaluations are provided, compare today's performance against recurring weaknesses and call out repeated mistakes.
 If a template is selected, obey that template strictly and punish mismatch.
 If no template is selected, be harsher, more technical, and more unforgiving than a normal coach.
 Reality matters more than kindness.
-Give the final answer directly and do not spend many tokens on internal reasoning.
-
-Analyse this speech transcript and reply in EXACTLY this format only:
+Score execution only, never effort.`,
+        },
+        {
+          role: 'user',
+          content: `Analyse this speech transcript and reply in EXACTLY this format only:
 
 ANALYSIS:
 - Total filler words (um/uh/like/you know/so): X
@@ -215,7 +163,7 @@ ANALYSIS:
 - Overall score: X/100
 
 BRUTALLY HONEST FEEDBACK:
-[2-5 short, direct sentences. Start with the biggest technical weakness. If the speaker repeated an old mistake, say so plainly. If the structure or tone is bad, say it bluntly.]
+[3-5 short, direct sentences. Start with the biggest technical weakness. Be blunt. If the speaker repeated an old mistake, say so plainly. If the structure, tone, protocol, or logic is weak, say it without softening it.]
 
 3 SPECIFIC FIXES:
 1. [one exact behavior change with a technical speaking instruction tied to the rubric failure]
@@ -223,11 +171,12 @@ BRUTALLY HONEST FEEDBACK:
 3. [one daily repetition line or rehearsal command written in imperative form and tied to the rubric failure]
 
 Scoring rules:
-- Be strict. Do not hand out high scores for average speaking.
+- Be strict. Average speaking should not get a high score.
 - If structure is weak, score must drop hard.
 - If the selected template is violated, score must drop hard.
-- If the transcript is vague, repetitive, casual when it should be formal, or unsupported when it should be argumentative, say so explicitly.
-- Do not reward intent, effort, or courage. Score execution only.
+- If the transcript is vague, repetitive, casual when it should be formal, unsupported when it should be argumentative, or messy when it should be structured, say so explicitly.
+- Do not reward effort, bravery, or sincerity. Score execution only.
+- A speech that sounds unprepared, loose, amateur, or poorly controlled must be called that directly.
 
 You must evaluate against this rubric:
 ${rubricInstructions}
@@ -245,7 +194,8 @@ Transcript:
 ${transcript}`,
         },
       ],
-      temperature: 0.45,
+      max_tokens: 900,
+      temperature: 0.3,
     }),
   });
 
@@ -263,9 +213,7 @@ ${transcript}`,
     });
   }
 
-  const feedback =
-    extractAssistantText(analysisData) ||
-    `Speech analysis returned no readable content. Raw response: ${JSON.stringify(analysisData).slice(0, 1200)}`;
+  const feedback = analysisData.choices?.[0]?.message?.content || 'No feedback from coach.';
   const overallScore = extractOverallScore(feedback);
 
   await insertSpeechSession({
