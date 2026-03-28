@@ -44,6 +44,54 @@ function extractOverallScore(feedback: string) {
   return match ? Number(match[1]) : null;
 }
 
+type ResponseContentPart =
+  | string
+  | {
+      text?: string;
+      content?: string;
+    };
+
+function extractAssistantText(analysisData: unknown) {
+  const parsed = analysisData as {
+    choices?: Array<{
+      message?: {
+        content?: string | ResponseContentPart[];
+      };
+      text?: string;
+    }>;
+    output_text?: string;
+  };
+  const message = parsed?.choices?.[0]?.message;
+
+  if (typeof message?.content === 'string' && message.content.trim()) {
+    return message.content.trim();
+  }
+
+  if (Array.isArray(message?.content)) {
+    const text = message.content
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (typeof part?.text === 'string') return part.text;
+        if (typeof part?.content === 'string') return part.content;
+        return '';
+      })
+      .join('\n')
+      .trim();
+
+    if (text) return text;
+  }
+
+  if (typeof parsed?.choices?.[0]?.text === 'string' && parsed.choices[0].text.trim()) {
+    return parsed.choices[0].text.trim();
+  }
+
+  if (typeof parsed?.output_text === 'string' && parsed.output_text.trim()) {
+    return parsed.output_text.trim();
+  }
+
+  return '';
+}
+
 function buildModeInstructions(templateLabel: string | null) {
   if (templateLabel) {
     return `Template mode is active: ${templateLabel}.
@@ -134,9 +182,12 @@ export async function POST(req: NextRequest) {
     },
     body: JSON.stringify({
       model: 'openai/gpt-oss-120b',
+      include_reasoning: false,
+      reasoning_effort: 'medium',
+      max_completion_tokens: 750,
       messages: [
         {
-          role: 'system',
+          role: 'user',
           content: `You are Aawaz, a ruthless but technically precise public-speaking coach.
 Your job is to diagnose performance, not comfort the speaker.
 Be direct, sharp, unsentimental, and specific.
@@ -146,11 +197,9 @@ Every fix must include an actual speaking technique, drill, or rehearsal method.
 When previous evaluations are provided, compare today's performance against recurring weaknesses and call out repeated mistakes.
 If a template is selected, obey that template strictly and punish mismatch.
 If no template is selected, be harsher, more technical, and more unforgiving than a normal coach.
-Reality matters more than kindness.`,
-        },
-        {
-          role: 'user',
-          content: `Analyse this speech transcript and reply in EXACTLY this format only:
+Reality matters more than kindness.
+
+Analyse this speech transcript and reply in EXACTLY this format only:
 
 ANALYSIS:
 - Total filler words (um/uh/like/you know/so): X
@@ -209,7 +258,7 @@ ${transcript}`,
     });
   }
 
-  const feedback = analysisData.choices?.[0]?.message?.content || 'No feedback from coach.';
+  const feedback = extractAssistantText(analysisData) || 'No feedback from coach.';
   const overallScore = extractOverallScore(feedback);
 
   await insertSpeechSession({
