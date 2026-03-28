@@ -188,8 +188,8 @@ export async function POST(req: NextRequest) {
     body: JSON.stringify({
       model: 'openai/gpt-oss-120b',
       include_reasoning: false,
-      reasoning_effort: 'medium',
-      max_completion_tokens: 750,
+      reasoning_effort: 'low',
+      max_completion_tokens: 1400,
       messages: [
         {
           role: 'user',
@@ -203,6 +203,7 @@ When previous evaluations are provided, compare today's performance against recu
 If a template is selected, obey that template strictly and punish mismatch.
 If no template is selected, be harsher, more technical, and more unforgiving than a normal coach.
 Reality matters more than kindness.
+Give the final answer directly and do not spend many tokens on internal reasoning.
 
 Analyse this speech transcript and reply in EXACTLY this format only:
 
