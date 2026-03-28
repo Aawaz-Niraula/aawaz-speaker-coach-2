@@ -56,6 +56,7 @@ function extractAssistantText(analysisData: unknown) {
     choices?: Array<{
       message?: {
         content?: string | ResponseContentPart[];
+        reasoning?: string;
       };
       text?: string;
     }>;
@@ -87,6 +88,10 @@ function extractAssistantText(analysisData: unknown) {
 
   if (typeof parsed?.output_text === 'string' && parsed.output_text.trim()) {
     return parsed.output_text.trim();
+  }
+
+  if (typeof message?.reasoning === 'string' && message.reasoning.trim()) {
+    return message.reasoning.trim();
   }
 
   return '';
@@ -239,7 +244,6 @@ Transcript:
 ${transcript}`,
         },
       ],
-      max_tokens: 750,
       temperature: 0.45,
     }),
   });
@@ -258,7 +262,9 @@ ${transcript}`,
     });
   }
 
-  const feedback = extractAssistantText(analysisData) || 'No feedback from coach.';
+  const feedback =
+    extractAssistantText(analysisData) ||
+    `Speech analysis returned no readable content. Raw response: ${JSON.stringify(analysisData).slice(0, 1200)}`;
   const overallScore = extractOverallScore(feedback);
 
   await insertSpeechSession({
