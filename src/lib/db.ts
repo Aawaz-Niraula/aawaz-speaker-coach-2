@@ -126,3 +126,21 @@ export async function insertSpeechSession(session: Omit<SpeechSessionRecord, 'cr
 
   return true;
 }
+
+export async function deleteSpeechSession(userId: string, sessionId: string) {
+  const db = await ensureSpeechSchema();
+
+  if (!db) {
+    return false;
+  }
+
+  await db.execute({
+    sql: `
+      DELETE FROM speech_sessions
+      WHERE id = ? AND user_id = ?
+    `,
+    args: [sessionId, userId],
+  });
+
+  return true;
+}
