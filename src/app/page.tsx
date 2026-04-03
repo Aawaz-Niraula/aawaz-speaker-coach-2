@@ -6,7 +6,7 @@ import { ChevronRight, Menu, Mic, MicOff, RefreshCw, Sparkles, Trash2, X, Zap } 
 
 import { SPEECH_TEMPLATES, type SpeechTemplateId } from '@/lib/speech-config';
 
-type Tab = 'coach' | 'speech';
+type Tab = 'coach' | 'speech' | 'history';
 
 type SpeechHistoryItem = {
   id: string;
@@ -417,6 +417,7 @@ function Sidebar({ activeTab, setActiveTab, open, onClose }: { activeTab: Tab; s
   const tabs = [
     { id: 'coach' as const, label: 'Speaking Coach', sub: 'Record and review' },
     { id: 'speech' as const, label: 'Speech Practice', sub: 'Generate only' },
+    { id: 'history' as const, label: 'Speech History', sub: 'Previous sessions' },
   ];
 
   return (
@@ -518,9 +519,15 @@ function useSpeechHistory(userId: string) {
   return { history, setHistory, selectedSessionId, setSelectedSessionId };
 }
 
-function CoachTab() {
-  const userId = usePersistentUserId();
-  const { history, setHistory, selectedSessionId, setSelectedSessionId } = useSpeechHistory(userId);
+function CoachTab({
+  userId,
+  setHistory,
+  setSelectedSessionId,
+}: {
+  userId: string;
+  setHistory: React.Dispatch<React.SetStateAction<SpeechHistoryItem[]>>;
+  setSelectedSessionId: (id: string | null) => void;
+}) {
   const [selectedTemplateId, setSelectedTemplateId] = useState<SpeechTemplateId | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -530,7 +537,6 @@ function CoachTab() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const selectedSession = history.find((item) => item.id === selectedSessionId) ?? null;
 
   const startRecording = async () => {
     try {
@@ -574,29 +580,6 @@ function CoachTab() {
     setIsAnalyzing(true);
   };
 
-  const deleteSession = async (sessionId: string) => {
-    const confirmed = window.confirm('Delete this saved speech session?');
-    if (!confirmed) return;
-
-    try {
-      const res = await fetch('/api/evaluations/history', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, sessionId }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        alert(data.error || 'Failed to delete session.');
-        return;
-      }
-
-      setHistory(data.history || []);
-      setSelectedSessionId((current) => (current === sessionId ? null : current));
-    } catch {
-      alert('Failed to delete session.');
-    }
-  };
-
   return (
     <div style={{ display: 'grid', gap: 18 }}>
       <Hero
@@ -638,11 +621,40 @@ function CoachTab() {
       </Surface>
       {transcript ? <TranscriptDisplay text={transcript} /> : null}
       {feedback ? <FeedbackDisplay text={feedback} /> : null}
+    </div>
+  );
+}
+
+function HistoryTab({
+  history,
+  selectedSessionId,
+  setSelectedSessionId,
+  onDelete,
+}: {
+  history: SpeechHistoryItem[];
+  selectedSessionId: string | null;
+  setSelectedSessionId: (id: string | null) => void;
+  onDelete: (id: string) => void;
+}) {
+  const selectedSession = history.find((item) => item.id === selectedSessionId) ?? null;
+
+  return (
+    <div style={{ display: 'grid', gap: 18 }}>
+      <Hero
+        eyebrow="Speech History"
+        title="Speech History"
+        description="Open any saved session to review the transcript and coaching feedback."
+        stats={[
+          { label: 'Saved', value: String(history.length) },
+          { label: 'Access', value: 'Sidebar tab' },
+          { label: 'Review', value: 'Transcript + feedback' },
+        ]}
+      />
       <SessionBrowser
         history={history}
         selectedSessionId={selectedSessionId}
         onSelect={setSelectedSessionId}
-        onDelete={deleteSession}
+        onDelete={onDelete}
       />
       <SessionPreview session={selectedSession} />
     </div>
@@ -757,8 +769,33 @@ function SpeechTab() {
 }
 
 export default function Home() {
+  const userId = usePersistentUserId();
+  const { history, setHistory, selectedSessionId, setSelectedSessionId } = useSpeechHistory(userId);
   const [activeTab, setActiveTab] = useState<Tab>('coach');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const deleteSession = async (sessionId: string) => {
+    const confirmed = window.confirm('Delete this saved speech session?');
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch('/api/evaluations/history', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, sessionId }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        alert(data.error || 'Failed to delete session.');
+        return;
+      }
+
+      setHistory(data.history || []);
+      setSelectedSessionId((current) => (current === sessionId ? null : current));
+    } catch {
+      alert('Failed to delete session.');
+    }
+  };
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', position: 'relative', fontFamily: "'Manrope', sans-serif" }}>
@@ -792,7 +829,22 @@ export default function Home() {
       </div>
       <main style={{ flex: 1, position: 'relative', zIndex: 1 }}>
         <div style={{ maxWidth: 860, margin: '0 auto', padding: '88px 20px 72px' }}>
-          {activeTab === 'coach' ? <CoachTab /> : <SpeechTab />}
+          {activeTab === 'coach' ? (
+            <CoachTab
+              userId={userId}
+              setHistory={setHistory}
+              setSelectedSessionId={setSelectedSessionId}
+            />
+          ) : activeTab === 'speech' ? (
+            <SpeechTab />
+          ) : (
+            <HistoryTab
+              history={history}
+              selectedSessionId={selectedSessionId}
+              setSelectedSessionId={setSelectedSessionId}
+              onDelete={deleteSession}
+            />
+          )}
         </div>
       </main>
     </div>
