@@ -43,6 +43,10 @@ const GLOBAL_CSS = `
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
   }
+  @keyframes popover-in {
+    from { opacity: 0; transform: scale(0.92) translateY(-6px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
 `;
 
 const palette = {
@@ -152,6 +156,210 @@ function StatPill({ label, value }: { label: string; value: string }) {
         {label}
       </div>
       <div style={{ fontSize: 16, color: palette.text, fontWeight: 600 }}>{value}</div>
+    </div>
+  );
+}
+
+const HOW_TO_TIPS = [
+  'Tap the mic in this tab to record your speech and receive specialised AI coaching feedback.',
+  'Browse the Speech Format dropdown and select a template (e.g. Debate, MUN, Impromptu) for rubric-aware evaluations.',
+  'Head to the Speech Practice tab on the left to generate a short sample speech on any topic to practise with.',
+  'Visit the Speech History tab to replay your transcripts and feedback, and track your improvement over time.',
+  'Happy speaking — use the coach as guidance, not gospel!',
+];
+
+function InfoPopover() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+      {/* Trigger */}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-label="How to use Aawaz"
+        style={{
+          width: 26,
+          height: 26,
+          borderRadius: '50%',
+          border: `1.5px solid ${palette.lineStrong}`,
+          background: 'rgba(167, 139, 250, 0.12)',
+          color: palette.accent,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 13,
+          fontFamily: "'JetBrains Mono', monospace",
+          fontWeight: 700,
+          flexShrink: 0,
+          transition: 'background 0.2s, border-color 0.2s',
+        }}
+      >
+        ?
+      </button>
+
+      {/* Popover */}
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 12px)',
+            left: 0,
+            zIndex: 200,
+            width: 'min(380px, 90vw)',
+            borderRadius: 22,
+            border: `1px solid ${palette.lineStrong}`,
+            background: 'rgba(12, 10, 22, 0.97)',
+            backdropFilter: 'blur(24px)',
+            boxShadow: '0 24px 64px rgba(0,0,0,0.55), 0 0 0 1px rgba(167,139,250,0.08)',
+            animation: 'popover-in 0.22s cubic-bezier(0.22,1,0.36,1) both',
+            overflow: 'hidden',
+          }}
+        >
+          {/* Header */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '16px 18px 12px',
+              borderBottom: `1px solid ${palette.line}`,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ width: 7, height: 7, borderRadius: '50%', background: palette.accent }} />
+              <span
+                style={{
+                  fontSize: 10,
+                  letterSpacing: 3,
+                  color: palette.soft,
+                  fontFamily: "'JetBrains Mono', monospace",
+                  textTransform: 'uppercase',
+                }}
+              >
+                How to use
+              </span>
+            </div>
+            <button
+              onClick={() => setOpen(false)}
+              aria-label="Close"
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: '50%',
+                border: `1px solid rgba(248,113,113,0.30)`,
+                background: 'rgba(248,113,113,0.10)',
+                color: palette.danger,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <X style={{ width: 13, height: 13 }} />
+            </button>
+          </div>
+
+          {/* Tips list */}
+          <ol style={{ padding: '14px 18px 18px', display: 'grid', gap: 10, listStyle: 'none' }}>
+            {HOW_TO_TIPS.map((tip, i) => (
+              <li
+                key={i}
+                style={{
+                  display: 'flex',
+                  gap: 12,
+                  alignItems: 'flex-start',
+                }}
+              >
+                <span
+                  style={{
+                    flexShrink: 0,
+                    width: 22,
+                    height: 22,
+                    borderRadius: '50%',
+                    background: i === HOW_TO_TIPS.length - 1
+                      ? 'linear-gradient(135deg, rgba(249,168,212,0.22), rgba(167,139,250,0.14))'
+                      : 'linear-gradient(135deg, rgba(124,58,237,0.28), rgba(167,139,250,0.16))',
+                    border: `1px solid ${i === HOW_TO_TIPS.length - 1 ? 'rgba(249,168,212,0.22)' : palette.line}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 9,
+                    fontFamily: "'JetBrains Mono', monospace",
+                    color: i === HOW_TO_TIPS.length - 1 ? palette.accentSoft : palette.accent,
+                    fontWeight: 700,
+                    marginTop: 1,
+                  }}
+                >
+                  {i === HOW_TO_TIPS.length - 1 ? '★' : i + 1}
+                </span>
+                <span
+                  style={{
+                    fontSize: 13,
+                    color: i === HOW_TO_TIPS.length - 1 ? palette.accentSoft : palette.text,
+                    lineHeight: 1.7,
+                    fontStyle: i === HOW_TO_TIPS.length - 1 ? 'italic' : 'normal',
+                  }}
+                >
+                  {tip}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MadeByBadge() {
+  return (
+    <div
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 8,
+        padding: '5px 12px 5px 8px',
+        borderRadius: 999,
+        border: `1px solid rgba(167, 139, 250, 0.28)`,
+        background: 'linear-gradient(90deg, rgba(124,58,237,0.18), rgba(244,114,182,0.10))',
+        backdropFilter: 'blur(8px)',
+      }}
+    >
+      <span
+        style={{
+          width: 16,
+          height: 16,
+          borderRadius: '50%',
+          background: 'linear-gradient(135deg, #312e81, #7c3aed)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 8,
+          color: '#f5f3ff',
+          fontFamily: "'JetBrains Mono', monospace",
+          fontWeight: 700,
+          flexShrink: 0,
+        }}
+      >
+        A
+      </span>
+      <span
+        style={{
+          fontSize: 11,
+          fontFamily: "'JetBrains Mono', monospace",
+          letterSpacing: 2,
+          textTransform: 'uppercase',
+          background: 'linear-gradient(90deg, #a78bfa, #f9a8d4)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          fontWeight: 700,
+        }}
+      >
+        made by aawaz
+      </span>
     </div>
   );
 }
@@ -404,8 +612,21 @@ function Hero({ eyebrow, title, description, stats }: { eyebrow: string; title: 
         <div style={{ width: 34, height: 1, background: palette.lineStrong }} />
         <span style={{ fontSize: 11, color: palette.soft, letterSpacing: 3, fontFamily: "'JetBrains Mono', monospace" }}>{eyebrow}</span>
       </div>
-      <h1 style={{ fontSize: 'clamp(40px, 5vw, 68px)', lineHeight: 0.95, fontWeight: 400, marginBottom: 14, fontFamily: "'Instrument Serif', serif", letterSpacing: '-0.03em' }}>{title}</h1>
-      <p style={{ maxWidth: 720, color: palette.muted, fontSize: 15, lineHeight: 1.85, marginBottom: 22 }}>{description}</p>
+
+      {/* Title row with info button */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 8, flexWrap: 'wrap' }}>
+        <h1 style={{ fontSize: 'clamp(40px, 5vw, 68px)', lineHeight: 0.95, fontWeight: 400, fontFamily: "'Instrument Serif', serif", letterSpacing: '-0.03em' }}>
+          {title}
+        </h1>
+        <div style={{ paddingTop: 10 }}>
+          <InfoPopover />
+        </div>
+      </div>
+
+      {/* Made by badge */}
+      <MadeByBadge />
+
+      <p style={{ maxWidth: 720, color: palette.muted, fontSize: 15, lineHeight: 1.85, marginBottom: 22, marginTop: 16 }}>{description}</p>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         {stats.map((stat) => <StatPill key={stat.label} label={stat.label} value={stat.value} />)}
       </div>
