@@ -126,10 +126,23 @@ function TemplatePicker({ value, onChange }: { value: SpeechTemplateId | null; o
   );
 }
 
+function SignatureBadge() {
+  return (
+    <div className="pointer-events-none fixed bottom-3 left-1/2 z-20 -translate-x-1/2 px-3 sm:bottom-4">
+      <div className="rounded-full border border-amber-300/30 bg-slate-950/65 px-4 py-2 shadow-[0_0_24px_rgba(251,191,36,0.28)] backdrop-blur-xl">
+        <span className="font-mono text-[10px] uppercase tracking-[0.28em] text-amber-200 sm:text-[11px]">
+          made by aawaz
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const userId = usePersistentUserId();
   const [activeTab, setActiveTab] = useState<Tab>('coach');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(true);
   const [history, setHistory] = useState<SpeechHistoryItem[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<SpeechTemplateId | null>(null);
@@ -267,6 +280,7 @@ export default function Home() {
   return (
     <div className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.15),transparent_22%),radial-gradient(circle_at_top_right,rgba(124,58,237,0.24),transparent_30%),linear-gradient(180deg,#060816_0%,#0b1020_45%,#131a2d_100%)] text-white">
       <Toaster position="top-right" richColors theme="dark" />
+      <SignatureBadge />
       <div className="mx-auto flex min-h-screen max-w-[1440px]">
         {sidebarOpen ? <button aria-label="Close menu overlay" className="fixed inset-0 z-30 bg-slate-950/55 md:hidden" onClick={() => setSidebarOpen(false)} /> : null}
         <aside className={cn('fixed inset-y-0 left-0 z-40 w-[84vw] max-w-72 border-r border-white/10 bg-slate-950/90 p-4 backdrop-blur-xl transition md:static md:w-72 md:max-w-none md:translate-x-0 md:p-5 lg:w-80', sidebarOpen ? 'translate-x-0' : '-translate-x-full')}>
@@ -287,18 +301,92 @@ export default function Home() {
         <main className="min-w-0 flex-1 px-3 pb-14 pt-24 sm:px-4 md:px-6 md:pt-10 lg:px-8">
           <div className="mb-5 flex items-center gap-3 sm:gap-4 md:hidden">
             <Button variant="secondary" size="icon" onClick={() => setSidebarOpen(true)}><Menu className="h-5 w-5" /></Button>
-            <span className="min-w-0 truncate font-serif text-[1.7rem] tracking-[-0.04em] sm:text-3xl">Aawaz Speaker Coach</span>
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="min-w-0 truncate font-serif text-[1.7rem] tracking-[-0.04em] sm:text-3xl">Aawaz Speaker Coach</span>
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setHelpOpen((current) => !current)}
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-amber-300/30 bg-amber-300/10 text-sm font-bold text-amber-200 shadow-[0_0_18px_rgba(251,191,36,0.22)] transition hover:bg-amber-300/20"
+                  aria-label="Open app help"
+                >
+                  ?
+                </button>
+                <AnimatePresence>
+                  {helpOpen ? (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 6, scale: 0.97 }}
+                      className="absolute left-0 top-11 z-30 w-[280px] rounded-[22px] border border-white/10 bg-slate-950/95 p-4 shadow-[0_18px_50px_rgba(2,6,23,0.6)] backdrop-blur-xl"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setHelpOpen(false)}
+                        className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full border border-rose-400/30 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20"
+                        aria-label="Close app help"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                      <p className="pr-8 font-mono text-[10px] uppercase tracking-[0.28em] text-amber-200">Quick Help</p>
+                      <div className="mt-3 space-y-2 text-sm leading-6 text-slate-200">
+                        <p>Use <span className="text-amber-200">Speaking Coach</span> to record and get feedback.</p>
+                        <p>Use <span className="text-amber-200">Speech Practice</span> to generate a sample speech.</p>
+                        <p>Use <span className="text-amber-200">Speech History</span> to review saved sessions.</p>
+                      </div>
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
+              </div>
+            </div>
           </div>
 
           <AnimatePresence mode="wait">
             <motion.div key={activeTab} initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} className="grid gap-5">
               <Shell>
                 <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-slate-400">{activeTab}</p>
-                <h1 className="mt-3 max-w-4xl font-serif text-[clamp(2.1rem,6vw,5rem)] leading-[0.95] tracking-[-0.04em] sm:text-[clamp(2.4rem,6vw,5rem)]">
-                  {activeTab === 'coach' && 'Train your delivery with more dynamic visual feedback.'}
-                  {activeTab === 'speech' && 'Generate sharper practice drafts before you record.'}
-                  {activeTab === 'history' && 'Review saved sessions like a performance archive.'}
-                </h1>
+                <div className="mt-3 flex flex-wrap items-start gap-3">
+                  <h1 className="max-w-4xl font-serif text-[clamp(2.1rem,6vw,5rem)] leading-[0.95] tracking-[-0.04em] sm:text-[clamp(2.4rem,6vw,5rem)]">
+                    {activeTab === 'coach' && 'Speaking Coach'}
+                    {activeTab === 'speech' && 'Speech Practice'}
+                    {activeTab === 'history' && 'Speech History'}
+                  </h1>
+                  <div className="relative shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setHelpOpen((current) => !current)}
+                      className="mt-1 flex h-9 w-9 items-center justify-center rounded-full border border-amber-300/30 bg-amber-300/10 text-sm font-bold text-amber-200 shadow-[0_0_18px_rgba(251,191,36,0.22)] transition hover:bg-amber-300/20"
+                      aria-label="Open app help"
+                    >
+                      ?
+                    </button>
+                    <AnimatePresence>
+                      {helpOpen ? (
+                        <motion.div
+                          initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 6, scale: 0.97 }}
+                          className="absolute right-0 top-12 z-30 w-[290px] rounded-[22px] border border-white/10 bg-slate-950/95 p-4 shadow-[0_18px_50px_rgba(2,6,23,0.6)] backdrop-blur-xl sm:w-[320px]"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setHelpOpen(false)}
+                            className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full border border-rose-400/30 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20"
+                            aria-label="Close app help"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                          <p className="pr-8 font-mono text-[10px] uppercase tracking-[0.28em] text-amber-200">Quick Help</p>
+                          <div className="mt-3 space-y-2 text-sm leading-6 text-slate-200">
+                            <p>Use <span className="text-amber-200">Speaking Coach</span> to record and get feedback.</p>
+                            <p>Use <span className="text-amber-200">Speech Practice</span> to generate a sample speech.</p>
+                            <p>Use <span className="text-amber-200">Speech History</span> to review saved sessions.</p>
+                          </div>
+                        </motion.div>
+                      ) : null}
+                    </AnimatePresence>
+                  </div>
+                </div>
                 <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                   <div className="rounded-3xl border border-white/10 bg-white/6 px-4 py-3"><div className="font-mono text-[10px] uppercase tracking-[0.28em] text-slate-400">Templates</div><div className="mt-1 text-sm sm:text-base">4 modes</div></div>
                   <div className="rounded-3xl border border-white/10 bg-white/6 px-4 py-3"><div className="font-mono text-[10px] uppercase tracking-[0.28em] text-slate-400">History</div><div className="mt-1 text-sm sm:text-base">{history.length} sessions</div></div>
