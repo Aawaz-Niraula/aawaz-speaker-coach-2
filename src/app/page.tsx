@@ -385,6 +385,7 @@ export default function Home() {
 
           <AnimatePresence mode="wait">
             <motion.div key={activeTab} initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} className="grid gap-5">
+              <div className="relative z-20">
               <Shell>
                 <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-slate-400">{activeTab}</p>
                 <div className="mt-3 flex flex-wrap items-start gap-3">
@@ -435,6 +436,7 @@ export default function Home() {
                   <div className="rounded-3xl border border-white/10 bg-white/6 px-4 py-3 sm:col-span-2 xl:col-span-1"><div className="font-mono text-[10px] uppercase tracking-[0.28em] text-slate-400">Average</div><div className="mt-1 text-sm sm:text-base">{averageScore}</div></div>
                 </div>
               </Shell>
+              </div>
 
               {activeTab === 'coach' && (
                 <>
