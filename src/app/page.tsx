@@ -8,6 +8,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   Check,
   ChevronDown,
+  Copy,
+  Volume2,
   Menu,
   Mic,
   MicOff,
@@ -126,23 +128,11 @@ function TemplatePicker({ value, onChange }: { value: SpeechTemplateId | null; o
   );
 }
 
-function SignatureBadge() {
-  return (
-    <div className="pointer-events-none fixed bottom-3 left-1/2 z-20 -translate-x-1/2 px-3 sm:bottom-4">
-      <div className="rounded-full border border-amber-300/30 bg-slate-950/65 px-4 py-2 shadow-[0_0_24px_rgba(251,191,36,0.28)] backdrop-blur-xl">
-        <span className="font-mono text-[10px] uppercase tracking-[0.28em] text-amber-200 sm:text-[11px]">
-          made by aawaz
-        </span>
-      </div>
-    </div>
-  );
-}
-
 export default function Home() {
   const userId = usePersistentUserId();
   const [activeTab, setActiveTab] = useState<Tab>('coach');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(true);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [history, setHistory] = useState<SpeechHistoryItem[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<SpeechTemplateId | null>(null);
@@ -277,10 +267,55 @@ export default function Home() {
 
   const selectedSession = history.find((item) => item.id === selectedSessionId) ?? null;
 
+  const copyText = async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success(`${label} copied.`);
+    } catch {
+      toast.error(`Could not copy ${label.toLowerCase()}.`);
+    }
+  };
+
+  const speakText = (value: string, label: string) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      toast.error('Text-to-speech is not supported in this browser.');
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(value);
+    utterance.rate = 0.96;
+    utterance.pitch = 1;
+    window.speechSynthesis.speak(utterance);
+    toast.success(`Reading ${label.toLowerCase()}.`);
+  };
+
+  const ActionBar = ({
+    text,
+    label,
+    onRegenerate,
+  }: {
+    text: string;
+    label: string;
+    onRegenerate?: () => void;
+  }) => (
+    <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
+      <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => copyText(text, label)} title={`Copy ${label}`}>
+        <Copy className="h-4 w-4" />
+      </Button>
+      <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => speakText(text, label)} title={`Read ${label}`}>
+        <Volume2 className="h-4 w-4" />
+      </Button>
+      {onRegenerate ? (
+        <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={onRegenerate} title={`Regenerate ${label}`}>
+          <RefreshCw className="h-4 w-4" />
+        </Button>
+      ) : null}
+    </div>
+  );
+
   return (
     <div className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.15),transparent_22%),radial-gradient(circle_at_top_right,rgba(124,58,237,0.24),transparent_30%),linear-gradient(180deg,#060816_0%,#0b1020_45%,#131a2d_100%)] text-white">
       <Toaster position="top-right" richColors theme="dark" />
-      <SignatureBadge />
       <div className="mx-auto flex min-h-screen max-w-[1440px]">
         {sidebarOpen ? <button aria-label="Close menu overlay" className="fixed inset-0 z-30 bg-slate-950/55 md:hidden" onClick={() => setSidebarOpen(false)} /> : null}
         <aside className={cn('fixed inset-y-0 left-0 z-40 w-[84vw] max-w-72 border-r border-white/10 bg-slate-950/90 p-4 backdrop-blur-xl transition md:static md:w-72 md:max-w-none md:translate-x-0 md:p-5 lg:w-80', sidebarOpen ? 'translate-x-0' : '-translate-x-full')}>
@@ -299,6 +334,13 @@ export default function Home() {
         </aside>
 
         <main className="min-w-0 flex-1 px-3 pb-14 pt-24 sm:px-4 md:px-6 md:pt-10 lg:px-8">
+          <div className="mb-4 flex justify-center md:justify-start">
+            <div className="rounded-full border border-amber-300/30 bg-slate-950/65 px-4 py-2 shadow-[0_0_24px_rgba(251,191,36,0.28)] backdrop-blur-xl">
+              <span className="font-mono text-[10px] uppercase tracking-[0.28em] text-amber-200 sm:text-[11px]">
+                made by aawaz
+              </span>
+            </div>
+          </div>
           <div className="mb-5 flex items-center gap-3 sm:gap-4 md:hidden">
             <Button variant="secondary" size="icon" onClick={() => setSidebarOpen(true)}><Menu className="h-5 w-5" /></Button>
             <div className="flex min-w-0 items-center gap-2">
@@ -318,7 +360,7 @@ export default function Home() {
                       initial={{ opacity: 0, y: 8, scale: 0.96 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 6, scale: 0.97 }}
-                      className="absolute left-0 top-11 z-30 w-[280px] rounded-[22px] border border-white/10 bg-slate-950/95 p-4 shadow-[0_18px_50px_rgba(2,6,23,0.6)] backdrop-blur-xl"
+                      className="absolute left-0 top-11 z-30 max-h-[60vh] w-[280px] overflow-y-auto rounded-[22px] border border-white/10 bg-slate-950/95 p-4 shadow-[0_18px_50px_rgba(2,6,23,0.6)] backdrop-blur-xl"
                     >
                       <button
                         type="button"
@@ -351,7 +393,7 @@ export default function Home() {
                     {activeTab === 'speech' && 'Speech Practice'}
                     {activeTab === 'history' && 'Speech History'}
                   </h1>
-                  <div className="relative shrink-0">
+                  <div className="relative hidden shrink-0 md:block">
                     <button
                       type="button"
                       onClick={() => setHelpOpen((current) => !current)}
@@ -366,7 +408,7 @@ export default function Home() {
                           initial={{ opacity: 0, y: 8, scale: 0.96 }}
                           animate={{ opacity: 1, y: 0, scale: 1 }}
                           exit={{ opacity: 0, y: 6, scale: 0.97 }}
-                          className="absolute right-0 top-12 z-30 w-[290px] rounded-[22px] border border-white/10 bg-slate-950/95 p-4 shadow-[0_18px_50px_rgba(2,6,23,0.6)] backdrop-blur-xl sm:w-[320px]"
+                          className="absolute right-0 top-12 z-30 max-h-[60vh] w-[290px] overflow-y-auto rounded-[22px] border border-white/10 bg-slate-950/95 p-4 shadow-[0_18px_50px_rgba(2,6,23,0.6)] backdrop-blur-xl sm:w-[320px]"
                         >
                           <button
                             type="button"
@@ -422,8 +464,8 @@ export default function Home() {
                       </div>
                     </div>
                   </Shell>
-                  {transcript && <Shell><p className="mb-3 font-mono text-[11px] uppercase tracking-[0.3em] text-slate-400">Transcript</p><p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-slate-100">{transcript}</p></Shell>}
-                  {feedback && <Shell><div className="grid gap-5 md:grid-cols-[auto,1fr]"><div className="mx-auto md:mx-0"><Score text={feedback} /></div><div><p className="mb-3 font-mono text-[11px] uppercase tracking-[0.3em] text-slate-400">Coach Verdict</p><p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-slate-100">{feedback}</p></div></div></Shell>}
+                  {transcript && <Shell><p className="mb-3 font-mono text-[11px] uppercase tracking-[0.3em] text-slate-400">Transcript</p><p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-slate-100">{transcript}</p><ActionBar text={transcript} label="Transcript" /></Shell>}
+                  {feedback && <Shell><div className="grid gap-5 md:grid-cols-[auto,1fr]"><div className="mx-auto md:mx-0"><Score text={feedback} /></div><div><p className="mb-3 font-mono text-[11px] uppercase tracking-[0.3em] text-slate-400">Coach Verdict</p><p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-slate-100">{feedback}</p><ActionBar text={feedback} label="Feedback" /></div></div></Shell>}
                 </>
               )}
 
@@ -446,7 +488,7 @@ export default function Home() {
                         <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-slate-400">Sample Speech</p>
                         {!isGenerating && <Button variant="ghost" size="icon" onClick={generateSpeech}><RefreshCw className="h-4 w-4" /></Button>}
                       </div>
-                      {isGenerating ? <div className="flex gap-2">{[0, 1, 2].map((i) => <motion.div key={i} animate={{ y: [0, -6, 0], opacity: [0.4, 1, 0.4] }} transition={{ duration: 0.7, repeat: Infinity, delay: i * 0.14 }} className="h-2 w-2 rounded-full bg-amber-300" />)}</div> : <p className="whitespace-pre-wrap break-words text-[15px] leading-7 sm:leading-8 text-slate-100">{speech}</p>}
+                      {isGenerating ? <div className="flex gap-2">{[0, 1, 2].map((i) => <motion.div key={i} animate={{ y: [0, -6, 0], opacity: [0.4, 1, 0.4] }} transition={{ duration: 0.7, repeat: Infinity, delay: i * 0.14 }} className="h-2 w-2 rounded-full bg-amber-300" />)}</div> : <><p className="whitespace-pre-wrap break-words text-[15px] leading-7 sm:leading-8 text-slate-100">{speech}</p><ActionBar text={speech} label="Speech" onRegenerate={generateSpeech} /></>}
                     </Shell>
                   )}
                 </>
@@ -470,8 +512,8 @@ export default function Home() {
                   </Shell>
                   {selectedSession && (
                     <>
-                      <Shell><p className="mb-3 font-mono text-[11px] uppercase tracking-[0.3em] text-slate-400">Transcript</p><p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-slate-100">{selectedSession.transcript}</p></Shell>
-                      <Shell><div className="grid gap-5 md:grid-cols-[auto,1fr]"><div className="mx-auto md:mx-0"><Score text={selectedSession.feedback} /></div><div><p className="mb-3 font-mono text-[11px] uppercase tracking-[0.3em] text-slate-400">Coach Verdict</p><p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-slate-100">{selectedSession.feedback}</p></div></div></Shell>
+                      <Shell><p className="mb-3 font-mono text-[11px] uppercase tracking-[0.3em] text-slate-400">Transcript</p><p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-slate-100">{selectedSession.transcript}</p><ActionBar text={selectedSession.transcript} label="Transcript" /></Shell>
+                      <Shell><div className="grid gap-5 md:grid-cols-[auto,1fr]"><div className="mx-auto md:mx-0"><Score text={selectedSession.feedback} /></div><div><p className="mb-3 font-mono text-[11px] uppercase tracking-[0.3em] text-slate-400">Coach Verdict</p><p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-slate-100">{selectedSession.feedback}</p><ActionBar text={selectedSession.feedback} label="Feedback" /></div></div></Shell>
                     </>
                   )}
                 </>
