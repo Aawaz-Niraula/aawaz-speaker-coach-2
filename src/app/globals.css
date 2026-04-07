@@ -2,8 +2,8 @@
 @import "tw-animate-css";
 
 :root {
-  --background: #060816;
-  --foreground: #f8fafc;
+  --background: #06060b;
+  --foreground: #f2efff;
 }
 
 @theme inline {
@@ -24,6 +24,17 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: "Manrope", "Segoe UI", sans-serif;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at top left, rgba(167, 139, 250, 0.14), transparent 22%),
+    radial-gradient(circle at top right, rgba(249, 168, 212, 0.12), transparent 24%);
+  z-index: -1;
 }
 
 * {
