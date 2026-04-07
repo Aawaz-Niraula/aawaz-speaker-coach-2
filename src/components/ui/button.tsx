@@ -10,13 +10,13 @@ const buttonVariants = cva(
     variants: {
       variant: {
         primary:
-          'bg-[linear-gradient(135deg,#fff1a8_0%,#f6aa5c_30%,#7c3aed_100%)] text-slate-950 shadow-[0_18px_40px_rgba(124,58,237,0.25)] hover:scale-[1.02]',
+          'bg-[linear-gradient(135deg,#a78bfa_0%,#f9a8d4_100%)] text-[#06060b] shadow-[0_18px_40px_rgba(167,139,250,0.28)] hover:scale-[1.02]',
         secondary:
-          'border border-white/15 bg-white/5 text-white hover:bg-white/10',
+          'border border-white/10 bg-white/5 text-[#f2efff] backdrop-blur-sm hover:bg-white/10',
         ghost:
-          'text-slate-200 hover:bg-white/10',
+          'text-[#ddd6fe] hover:bg-white/10',
         danger:
-          'border border-rose-400/30 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20',
+          'border border-[#f87171]/30 bg-[#dc2626]/15 text-[#f87171] hover:bg-[#dc2626]/25',
       },
       size: {
         sm: 'h-9 px-4 text-xs uppercase tracking-[0.24em]',
