@@ -17,7 +17,7 @@ This setup is prepared for **Turso** because it has a generous free tier and doe
 Create a `.env.local` file with:
 
 ```bash
-GROQ_API_KEY=your_groq_api_key
+DEEPINFRA_API_KEY=your_deepinfra_api_key
 TURSO_DATABASE_URL=your_turso_database_url
 TURSO_AUTH_TOKEN=your_turso_auth_token
 ```
