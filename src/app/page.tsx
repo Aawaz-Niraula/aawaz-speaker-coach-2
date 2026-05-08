@@ -139,6 +139,7 @@ export default function Home() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<SpeechTemplateId | null>(null);
   const [topic, setTopic] = useState('');
+  const [wordCount, setWordCount] = useState(180);
   const [speech, setSpeech] = useState('');
   const [error, setError] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -148,6 +149,7 @@ export default function Home() {
   const [feedback, setFeedback] = useState('');
   const [seconds, setSeconds] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -165,6 +167,7 @@ export default function Home() {
     void load();
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, [userId]);
 
@@ -177,11 +180,14 @@ export default function Home() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
+      mediaStreamRef.current = stream;
       chunksRef.current = [];
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) chunksRef.current.push(event.data);
       };
       recorder.onstop = async () => {
+        mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+        mediaStreamRef.current = null;
         const blob = new Blob(chunksRef.current, { type: 'audio/webm;codecs=opus' });
         const form = new FormData();
         form.append('file', blob, 'speech.webm');
@@ -224,6 +230,8 @@ export default function Home() {
   };
 
   const generateSpeech = async () => {
+    if (isGenerating) return;
+
     if (!topic.trim()) {
       toast.error('Enter a topic first.');
       return;
@@ -235,7 +243,7 @@ export default function Home() {
       const res = await fetch('/api/generate-speech', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic }),
+        body: JSON.stringify({ topic, wordCount }),
       });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || 'Failed to generate.');
@@ -512,8 +520,26 @@ export default function Home() {
                 <>
                   <Shell>
                     <Label.Root htmlFor="speech-topic" className="mb-2 block text-sm text-[#ddd6fe]">Speech topic</Label.Root>
-                    <div className="grid gap-4 md:grid-cols-[1fr,auto]">
+                    <div className="grid gap-4 lg:grid-cols-[1fr,auto,auto]">
                       <input id="speech-topic" value={topic} onChange={(event) => setTopic(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && generateSpeech()} placeholder="e.g. Leadership, climate change, discipline" className="h-14 min-w-0 rounded-[18px] border border-white/12 bg-[#0b0b12]/60 px-4 text-sm text-[#f2efff] outline-none placeholder:text-[#857ca2] sm:rounded-[22px] sm:px-5" />
+                      <div className="flex h-14 items-center justify-between gap-3 rounded-[18px] border border-white/12 bg-[#0b0b12]/60 px-3 text-[#f2efff] sm:rounded-[22px] lg:w-[260px]">
+                        <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#ddd6fe]">Words</span>
+                        <div className="flex items-center gap-2">
+                          <button type="button" onClick={() => setWordCount((current) => Math.max(80, current - 25))} className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/6 text-[#ddd6fe] transition hover:bg-white/10" aria-label="Decrease word count">-</button>
+                          <input
+                            aria-label="Speech word count"
+                            value={wordCount}
+                            onChange={(event) => {
+                              const next = Number(event.target.value);
+                              if (Number.isNaN(next)) return;
+                              setWordCount(Math.min(500, Math.max(80, next)));
+                            }}
+                            className="h-8 w-14 rounded-full border border-[#a78bfa]/30 bg-white/5 text-center font-mono text-sm text-[#f2efff] outline-none focus:border-[#a78bfa]/70"
+                            inputMode="numeric"
+                          />
+                          <button type="button" onClick={() => setWordCount((current) => Math.min(500, current + 25))} className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/6 text-[#ddd6fe] transition hover:bg-white/10" aria-label="Increase word count">+</button>
+                        </div>
+                      </div>
                       <Button onClick={generateSpeech} disabled={isGenerating || !topic.trim()} className="h-14 w-full rounded-[18px] px-6 font-mono text-xs uppercase tracking-[0.22em] sm:rounded-[22px] md:w-auto md:tracking-[0.28em]">
                         <Sparkles className={cn('h-4 w-4', isGenerating && 'animate-spin')} />
                         {isGenerating ? 'Writing...' : 'Generate'}
