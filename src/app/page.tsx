@@ -6,6 +6,7 @@ import * as Label from '@radix-ui/react-label';
 import * as Select from '@radix-ui/react-select';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
+  BarChart3,
   Check,
   ChevronDown,
   Copy,
@@ -17,6 +18,7 @@ import {
   RefreshCw,
   Sparkles,
   Trash2,
+  TrendingUp,
   Trophy,
   WandSparkles,
   X,
@@ -29,7 +31,7 @@ import { Button } from '@/components/ui/button';
 import { SPEECH_TEMPLATES, type SpeechTemplateId } from '@/lib/speech-config';
 import { cn } from '@/lib/utils';
 
-type Tab = 'coach' | 'speech' | 'history';
+type Tab = 'coach' | 'speech' | 'history' | 'progress';
 type NavItem = { id: Tab; label: string; icon: typeof Mic };
 type SpeechHistoryItem = {
   id: string;
@@ -45,7 +47,81 @@ const navItems: NavItem[] = [
   { id: 'coach', label: 'Speaking Coach', icon: Mic },
   { id: 'speech', label: 'Speech Practice', icon: WandSparkles },
   { id: 'history', label: 'Speech History', icon: Trophy },
+  { id: 'progress', label: 'Progress', icon: TrendingUp },
 ];
+
+function ProgressChart({ history }: { history: SpeechHistoryItem[] }) {
+  const scored = history
+    .filter((h) => h.overall_score !== null)
+    .slice()
+    .reverse();
+  if (scored.length < 1) {
+    return (
+      <div className="flex h-48 items-center justify-center rounded-[24px] border border-dashed border-white/20 bg-white/4 font-mono text-sm text-[#857ca2]">
+        Record at least one speech to see your progress chart.
+      </div>
+    );
+  }
+
+  const scores = scored.map((h) => h.overall_score as number);
+  const minScore = Math.max(0, Math.min(...scores) - 10);
+  const maxScore = Math.min(100, Math.max(...scores) + 10);
+  const range = maxScore - minScore || 1;
+
+  const W = 600;
+  const H = 200;
+  const padX = 42;
+  const padY = 20;
+  const chartW = W - padX * 2;
+  const chartH = H - padY * 2;
+
+  const points = scores.map((s, i) => {
+    const x = padX + (scores.length === 1 ? chartW / 2 : (i / (scores.length - 1)) * chartW);
+    const y = padY + chartH - ((s - minScore) / range) * chartH;
+    return { x, y, score: s, label: scored[i].template_label || 'General' };
+  });
+
+  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
+  const areaPath = `${linePath} L${points[points.length - 1].x},${padY + chartH} L${points[0].x},${padY + chartH} Z`;
+
+  const gridLines = 4;
+  const gridValues = Array.from({ length: gridLines + 1 }, (_, i) =>
+    Math.round(minScore + (range / gridLines) * i),
+  );
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#a78bfa" stopOpacity="0.28" />
+          <stop offset="100%" stopColor="#a78bfa" stopOpacity="0.02" />
+        </linearGradient>
+        <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="#a78bfa" />
+          <stop offset="100%" stopColor="#f9a8d4" />
+        </linearGradient>
+      </defs>
+      {gridValues.map((v) => {
+        const gy = padY + chartH - ((v - minScore) / range) * chartH;
+        return (
+          <g key={v}>
+            <line x1={padX} y1={gy} x2={W - padX} y2={gy} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+            <text x={padX - 6} y={gy + 4} textAnchor="end" fill="#857ca2" fontSize="10" fontFamily="monospace">{v}</text>
+          </g>
+        );
+      })}
+      <path d={areaPath} fill="url(#areaGrad)" />
+      <path d={linePath} fill="none" stroke="url(#lineGrad)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      {points.map((p, i) => (
+        <g key={i}>
+          <circle cx={p.x} cy={p.y} r="5" fill="#0b0b12" stroke="#a78bfa" strokeWidth="2" />
+          <circle cx={p.x} cy={p.y} r="2.5" fill="#a78bfa" />
+          <text x={p.x} y={p.y - 10} textAnchor="middle" fill="#ddd6fe" fontSize="10" fontFamily="monospace">{p.score}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
 
 function usePersistentUserId() {
   const [userId] = useState(() => {
@@ -148,6 +224,9 @@ export default function Home() {
   const [transcript, setTranscript] = useState('');
   const [feedback, setFeedback] = useState('');
   const [seconds, setSeconds] = useState(0);
+  const [insights, setInsights] = useState<string[]>([]);
+  const [weaknesses, setWeaknesses] = useState<string[]>([]);
+  const [isLoadingInsights, setIsLoadingInsights] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -173,7 +252,7 @@ export default function Home() {
 
   const averageScore = useMemo(() => {
     const scores = history.map((item) => item.overall_score).filter((score): score is number => typeof score === 'number');
-    return scores.length ? `${Math.round(scores.reduce((sum, value) => sum + value, 0) / scores.length)}/100` : 'N/A';
+    return scores.length ? Math.round(scores.reduce((sum, value) => sum + value, 0) / scores.length) : null;
   }, [history]);
 
   const startRecording = async () => {
@@ -276,6 +355,29 @@ export default function Home() {
   };
 
   const selectedSession = history.find((item) => item.id === selectedSessionId) ?? null;
+
+  const fetchInsights = async () => {
+    if (isLoadingInsights) return;
+    setIsLoadingInsights(true);
+    setInsights([]);
+    setWeaknesses([]);
+    try {
+      const res = await fetch('/api/generate-insights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || 'Failed to generate insights.');
+      setInsights(data.insights || []);
+      setWeaknesses(data.weaknesses || []);
+      toast.success('Insights generated.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to generate insights.');
+    } finally {
+      setIsLoadingInsights(false);
+    }
+  };
 
   const copyText = async (value: string, label: string) => {
     try {
@@ -401,13 +503,6 @@ export default function Home() {
         </aside>
 
         <main className="min-w-0 flex-1 px-3 pb-14 pt-24 sm:px-4 md:px-6 md:pt-10 lg:px-8">
-          <div className="mb-4 flex justify-center md:justify-start">
-            <div className="rounded-full border border-[#a78bfa]/30 bg-white/5 px-4 py-2 shadow-[0_0_24px_rgba(167,139,250,0.25)] backdrop-blur-sm">
-              <span className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#ddd6fe] sm:text-[11px]">
-                made by aawaz
-              </span>
-            </div>
-          </div>
           <div className="mb-5 flex items-center gap-3 sm:gap-4 md:hidden">
             <Button variant="secondary" size="icon" onClick={() => setSidebarOpen(true)}><Menu className="h-5 w-5" /></Button>
             <div className="flex min-w-0 items-center gap-2">
@@ -431,6 +526,7 @@ export default function Home() {
                         <p>Use <span className="text-[#ddd6fe]">Speaking Coach</span> to record and get feedback.</p>
                         <p>Use <span className="text-[#ddd6fe]">Speech Practice</span> to generate a sample speech.</p>
                         <p>Use <span className="text-[#ddd6fe]">Speech History</span> to review saved sessions.</p>
+                        <p>Use <span className="text-[#ddd6fe]">Progress</span> to track your improvement over time.</p>
                       </div>
                     </PopupPanel>
                   ) : null}
@@ -459,6 +555,7 @@ export default function Home() {
                     {activeTab === 'coach' && 'Speaking Coach'}
                     {activeTab === 'speech' && 'Speech Practice'}
                     {activeTab === 'history' && 'Speech History'}
+                    {activeTab === 'progress' && 'Progress'}
                   </h1>
                   <div className="relative hidden shrink-0 md:block">
                     <PopupIconButton onClick={() => { setHelpOpen((current) => !current); setCreatorOpen(false); }} icon={<span className="text-sm font-bold">?</span>} label="Open app help" className="mt-1" />
@@ -469,17 +566,88 @@ export default function Home() {
                             <p>Use <span className="text-[#ddd6fe]">Speaking Coach</span> to record and get feedback.</p>
                             <p>Use <span className="text-[#ddd6fe]">Speech Practice</span> to generate a sample speech.</p>
                             <p>Use <span className="text-[#ddd6fe]">Speech History</span> to review saved sessions.</p>
+                            <p>Use <span className="text-[#ddd6fe]">Progress</span> to track your improvement over time.</p>
                           </div>
                         </PopupPanel>
                       ) : null}
                     </AnimatePresence>
                   </div>
                 </div>
-                <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3"><div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">Templates</div><div className="mt-1 text-sm sm:text-base text-[#f2efff]">4 modes</div></div>
-                  <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3"><div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">History</div><div className="mt-1 text-sm sm:text-base text-[#f2efff]">{history.length} sessions</div></div>
-                  <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3 sm:col-span-2 xl:col-span-1"><div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">Average</div><div className="mt-1 text-sm sm:text-base text-[#f2efff]">{averageScore}</div></div>
-                </div>
+                {activeTab === 'coach' && (
+                  <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3"><div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">Templates</div><div className="mt-1 text-sm sm:text-base text-[#f2efff]">4 modes</div></div>
+                    <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3"><div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">History</div><div className="mt-1 text-sm sm:text-base text-[#f2efff]">{history.length} sessions</div></div>
+                    <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3 sm:col-span-2 xl:col-span-1">
+                      <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">Average</div>
+                      <div className="mt-2 flex items-center gap-3">
+                        {averageScore !== null ? (
+                          <>
+                            <div className="h-10 w-10">
+                              <CircularProgressbar value={averageScore} text={`${averageScore}`} styles={buildStyles({ textSize: '28px', textColor: '#f2efff', pathColor: '#a78bfa', trailColor: 'rgba(255,255,255,0.08)' })} />
+                            </div>
+                            <span className="font-mono text-xs text-[#857ca2]">/100</span>
+                          </>
+                        ) : (
+                          <span className="text-sm text-[#f2efff]">N/A</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {activeTab === 'speech' && (
+                  <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3">
+                      <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">Generate</div>
+                      <ul className="mt-2 space-y-1 text-sm text-[#f2efff]">
+                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#a78bfa]"></span>Enter any speech topic</li>
+                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#a78bfa]"></span>Set your target word count</li>
+                      </ul>
+                    </div>
+                    <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3">
+                      <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">Practice</div>
+                      <ul className="mt-2 space-y-1 text-sm text-[#f2efff]">
+                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#f9a8d4]"></span>AI-crafted script instantly</li>
+                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#f9a8d4]"></span>Rehearse before recording</li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
+                {activeTab === 'history' && (
+                  <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3">
+                      <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">Review</div>
+                      <ul className="mt-2 space-y-1 text-sm text-[#f2efff]">
+                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#a78bfa]"></span>Browse all past sessions</li>
+                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#a78bfa]"></span>View transcript &amp; score</li>
+                      </ul>
+                    </div>
+                    <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3">
+                      <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">Insights</div>
+                      <ul className="mt-2 space-y-1 text-sm text-[#f2efff]">
+                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#f9a8d4]"></span>Full coach feedback</li>
+                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#f9a8d4]"></span>Track your improvement</li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
+                {activeTab === 'progress' && (
+                  <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3">
+                      <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">Track</div>
+                      <ul className="mt-2 space-y-1 text-sm text-[#f2efff]">
+                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#a78bfa]"></span>Visualize score trends</li>
+                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#a78bfa]"></span>AI-powered analysis</li>
+                      </ul>
+                    </div>
+                    <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3">
+                      <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">Improve</div>
+                      <ul className="mt-2 space-y-1 text-sm text-[#f2efff]">
+                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#f9a8d4]"></span>Pinpoint weaknesses</li>
+                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#f9a8d4]"></span>Data-driven feedback</li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
               </Shell>
               </div>
 
@@ -580,6 +748,58 @@ export default function Home() {
                       <Shell><p className="mb-3 font-mono text-[11px] uppercase tracking-[0.3em] text-[#857ca2]">Transcript</p><p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-[#f2efff]">{selectedSession.transcript}</p><ActionBar text={selectedSession.transcript} label="Transcript" /></Shell>
                       <Shell><div className="grid gap-5 md:grid-cols-[auto,1fr]"><div className="mx-auto md:mx-0"><Score text={selectedSession.feedback} /></div><div><p className="mb-3 font-mono text-[11px] uppercase tracking-[0.3em] text-[#857ca2]">Coach Verdict</p><p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-[#f2efff]">{selectedSession.feedback}</p><ActionBar text={selectedSession.feedback} label="Feedback" /></div></div></Shell>
                     </>
+                  )}
+                </>
+              )}
+
+              {activeTab === 'progress' && (
+                <>
+                  <Shell>
+                    <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.3em] text-[#857ca2]">Score Trend</p>
+                    <ProgressChart history={history} />
+                  </Shell>
+                  <Shell>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-[#857ca2]">AI Insights</p>
+                      <Button onClick={fetchInsights} disabled={isLoadingInsights || history.length === 0} className="h-11 rounded-[18px] px-5 font-mono text-xs uppercase tracking-[0.22em] sm:rounded-[22px]">
+                        <BarChart3 className={cn('h-4 w-4', isLoadingInsights && 'animate-spin')} />
+                        {isLoadingInsights ? 'Analyzing...' : 'View Insights'}
+                      </Button>
+                    </div>
+                    {isLoadingInsights && (
+                      <div className="mt-5 flex gap-2">
+                        {[0, 1, 2].map((i) => <motion.div key={i} animate={{ y: [0, -6, 0], opacity: [0.4, 1, 0.4] }} transition={{ duration: 0.7, repeat: Infinity, delay: i * 0.14 }} className="h-2 w-2 rounded-full bg-[#a78bfa]" />)}
+                      </div>
+                    )}
+                    {insights.length > 0 && !isLoadingInsights && (
+                      <div className="mt-5 space-y-3">
+                        {insights.map((insight, i) => (
+                          <div key={i} className="rounded-[20px] border border-white/10 bg-[#0b0b12]/55 p-4 sm:rounded-[24px] sm:p-5">
+                            <p className="break-words text-sm leading-6 text-[#f2efff]">{insight}</p>
+                            <div className="mt-3 flex gap-2 border-t border-white/10 pt-3">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => copyText(insight, 'Insight')} title="Copy insight"><Copy className="h-3.5 w-3.5" /></Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => speakText(insight, 'Insight')} title="Read insight"><Volume2 className="h-3.5 w-3.5" /></Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Shell>
+                  {weaknesses.length > 0 && !isLoadingInsights && (
+                    <Shell>
+                      <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.3em] text-[#857ca2]">Weaknesses</p>
+                      <div className="space-y-3">
+                        {weaknesses.map((weakness, i) => (
+                          <div key={i} className="rounded-[20px] border border-[#f87171]/15 bg-[#dc2626]/5 p-4 sm:rounded-[24px] sm:p-5">
+                            <p className="break-words text-sm leading-6 text-[#f2efff]">{weakness}</p>
+                            <div className="mt-3 flex gap-2 border-t border-white/10 pt-3">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => copyText(weakness, 'Weakness')} title="Copy weakness"><Copy className="h-3.5 w-3.5" /></Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => speakText(weakness, 'Weakness')} title="Read weakness"><Volume2 className="h-3.5 w-3.5" /></Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </Shell>
                   )}
                 </>
               )}
