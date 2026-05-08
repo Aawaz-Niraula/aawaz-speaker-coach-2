@@ -5,7 +5,7 @@ import { NextRequest } from 'next/server';
 import { insertSpeechSession, listRecentSpeechSessions } from '@/lib/db';
 import { GENERAL_RUBRIC, getSpeechTemplate } from '@/lib/speech-config';
 
-function formatGroqError(prefix: string, status: number, message?: string) {
+function formatApiError(prefix: string, status: number, message?: string) {
   if (status === 429) {
     return `${prefix} is temporarily unavailable because today's free AI limit has been reached. Please try again later.`;
   }
@@ -40,18 +40,19 @@ function buildHistoryContext(history: Awaited<ReturnType<typeof listRecentSpeech
 }
 
 function extractOverallScore(feedback: string) {
-  const match = feedback.match(/overall score[:\s]*(\d+)\/100/i);
+  const match = feedback.match(/score[:\s]*(\d+)\s*\/\s*100/i);
   return match ? Number(match[1]) : null;
 }
 
 function buildModeInstructions(templateLabel: string | null) {
   if (templateLabel) {
-    return `Template mode is active: ${templateLabel}.
-You must judge the speech primarily against the selected template, not against generic speaking advice.
-If the transcript violates the template's expectations, say that explicitly and lower the score hard.
-Your feedback and fixes must stay tied to the template's demands: protocol, structure, sequencing, tone, formality, rebuttal quality, or ceremonial control, depending on the selected template.
-Do not drift into generic filler advice like "be more confident" unless you tie it to a template-specific failure.
-If the tone, structure, or sequencing breaks the template, call it a template failure directly.`;
+    return `CRITICAL TEMPLATE ENFORCEMENT: Template mode is active for "${templateLabel}".
+You MUST judge the speech EXCLUSIVELY against the selected template and its specific rubric.
+Any deviation from the template's expected structure, vocabulary, tone, or protocol MUST result in a severe score deduction.
+If the transcript ignores the template's expectations, explicitly call out the template failure and immediately fail the score (< 50/100).
+Your feedback, analysis, and fixes MUST strictly reference the template's demands (protocol, structure, sequencing, tone, formality, rebuttal quality, ceremonial control, etc.).
+ABSOLUTELY NO drift into generic filler advice. Generic advice is forbidden. Every critique must anchor back to the chosen template.
+If the tone, structure, or sequencing breaks the template, declare it a total template failure directly.`;
   }
 
   return `No template mode is active.
@@ -92,28 +93,35 @@ export async function POST(req: NextRequest) {
   const rubricMode = template ? `template:${template.id}` : 'general';
   const rubricInstructions = template ? template.rubric : GENERAL_RUBRIC;
   const modeInstructions = buildModeInstructions(template?.label ?? null);
-  const GROQ_API_KEY = process.env.GROQ_API_KEY;
+  const DEEPINFRA_API_KEY = process.env.DEEPINFRA_API_KEY;
+
+  if (!DEEPINFRA_API_KEY) {
+    return Response.json(
+      { transcript: '', feedback: 'Server configuration error: missing API key.', history: [] },
+      { status: 500 },
+    );
+  }
 
   const previousHistory = await listRecentSpeechSessions(userId, 4);
   const historyContext = buildHistoryContext(previousHistory);
 
   const audioForm = new FormData();
   audioForm.append('file', file, 'speech.webm');
-  audioForm.append('model', 'whisper-large-v3');
+  audioForm.append('model', 'openai/whisper-large-v3');
   audioForm.append('response_format', 'verbose_json');
 
-  const whisperRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+  const whisperRes = await fetch('https://api.deepinfra.com/v1/openai/audio/transcriptions', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${GROQ_API_KEY}` },
+    headers: { Authorization: `Bearer ${DEEPINFRA_API_KEY}` },
     body: audioForm,
   });
 
-  const whisperData = await whisperRes.json();
+  const whisperData = await whisperRes.json().catch(() => ({}));
 
   if (!whisperRes.ok || whisperData.error) {
     return Response.json({
       transcript: '',
-      feedback: formatGroqError(
+      feedback: formatApiError(
         'Speech transcription',
         whisperRes.status,
         whisperData?.error?.message,
@@ -123,18 +131,27 @@ export async function POST(req: NextRequest) {
   }
 
   const transcript = whisperData.text || '';
+  if (!transcript.trim()) {
+    return Response.json({
+      transcript,
+      feedback: 'Could not detect any speech in the audio. Please speak clearly into your microphone.',
+      history: previousHistory,
+      rubricMode,
+      template: template?.label ?? null,
+    });
+  }
   const duration = Number(whisperData.duration || 0);
   const wordCount = transcript.split(/\s+/).filter(Boolean).length;
   const wordsPerMin = duration > 0 ? Math.round((wordCount / duration) * 60) : 0;
 
-  const analysisRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+  const analysisRes = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${GROQ_API_KEY}`,
+      Authorization: `Bearer ${DEEPINFRA_API_KEY}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
+      model: 'google/gemma-4-26B-A4B-it',
       messages: [
         {
           role: 'system',
@@ -146,7 +163,7 @@ Do not soften criticism.
 Do not flatter weak speaking.
 Every fix must include an actual speaking technique, drill, or rehearsal method.
 When previous evaluations are provided, compare today's performance against recurring weaknesses and call out repeated mistakes.
-If a template is selected, obey that template strictly and punish mismatch.
+If a template is selected, you MUST evaluate EXCLUSIVELY against its specific rubric. Obey that template strictly, severely punish any mismatch, and anchor every single feedback point to the template's rules.
 If no template is selected, be harsher, more technical, and more unforgiving than a normal coach.
 Reality matters more than kindness.
 Score execution only, never effort.`,
@@ -171,9 +188,9 @@ BRUTALLY HONEST FEEDBACK:
 3. [one daily repetition line or rehearsal command written in imperative form and tied to the rubric failure]
 
 Scoring rules:
-- Be strict. Average speaking should not get a high score.
+- Be strictly objective. Average speaking should not get a high score.
+- STRICT TEMPLATE ENFORCEMENT: If a template is active, any failure to follow its exact structure, tone, and protocol MUST result in a heavily penalized score. No exceptions.
 - If structure is weak, score must drop hard.
-- If the selected template is violated, score must drop hard.
 - If the transcript is vague, repetitive, casual when it should be formal, unsupported when it should be argumentative, or messy when it should be structured, say so explicitly.
 - Do not reward effort, bravery, or sincerity. Score execution only.
 - A speech that sounds unprepared, loose, amateur, or poorly controlled must be called that directly.
@@ -199,12 +216,12 @@ ${transcript}`,
     }),
   });
 
-  const analysisData = await analysisRes.json();
+  const analysisData = await analysisRes.json().catch(() => ({}));
 
   if (!analysisRes.ok || analysisData.error) {
     return Response.json({
       transcript,
-      feedback: formatGroqError(
+      feedback: formatApiError(
         'Speech analysis',
         analysisRes.status,
         analysisData?.error?.message,
@@ -241,3 +258,4 @@ ${transcript}`,
 }
 
 export const runtime = 'nodejs';
+export const maxDuration = 300;

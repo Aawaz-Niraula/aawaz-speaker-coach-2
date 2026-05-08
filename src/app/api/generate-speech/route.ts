@@ -7,16 +7,20 @@ export async function POST(req: NextRequest) {
     return Response.json({ speech: '', error: 'Please enter a valid topic.' });
   }
 
-  const GROQ_API_KEY = process.env.GROQ_API_KEY;
+  const DEEPINFRA_API_KEY = process.env.DEEPINFRA_API_KEY;
 
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+  if (!DEEPINFRA_API_KEY) {
+    return Response.json({ speech: '', error: 'Server configuration error: missing API key.' });
+  }
+
+  const res = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${GROQ_API_KEY}`,
+      Authorization: `Bearer ${DEEPINFRA_API_KEY}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
+      model: 'mistralai/Mistral-Small-24B-Instruct-2501',
       messages: [
         {
           role: 'system',
@@ -38,10 +42,10 @@ Requirements:
     }),
   });
 
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
 
-  if (data.error) {
-    return Response.json({ speech: '', error: data.error.message });
+  if (data.error || !res.ok) {
+    return Response.json({ speech: '', error: data.error?.message || 'Failed to generate speech script.' });
   }
 
   const speech = data.choices?.[0]?.message?.content || '';
@@ -49,3 +53,4 @@ Requirements:
 }
 
 export const runtime = 'edge';
+export const maxDuration = 300;
