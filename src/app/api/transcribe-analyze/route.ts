@@ -65,10 +65,20 @@ Prioritize ruthless technical honesty about structure, pace, wording, control, a
 }
 
 export async function POST(req: NextRequest) {
-  const formData = await req.formData();
+  let formData: FormData;
+
+  try {
+    formData = await req.formData();
+  } catch {
+    return Response.json(
+      { transcript: '', feedback: 'Invalid audio upload. Please record again.', history: [] },
+      { status: 400 },
+    );
+  }
+
   const file = formData.get('file') as File | null;
-  const userId = String(formData.get('userId') || '').trim();
-  const selectedTemplateId = String(formData.get('templateId') || '').trim() || null;
+  const userId = String(formData.get('userId') || '').trim().slice(0, 128);
+  const selectedTemplateId = String(formData.get('templateId') || '').trim().slice(0, 80) || null;
 
   if (!file || file.size < 3000) {
     return Response.json({
@@ -76,6 +86,17 @@ export async function POST(req: NextRequest) {
       feedback: 'No audio detected. Use a proper microphone and speak clearly.',
       history: [],
     });
+  }
+
+  if (file.size > 20 * 1024 * 1024) {
+    return Response.json(
+      {
+        transcript: '',
+        feedback: 'Audio is too large. Keep recordings under 20 MB and try again.',
+        history: [],
+      },
+      { status: 413 },
+    );
   }
 
   if (!userId) {
@@ -113,8 +134,17 @@ export async function POST(req: NextRequest) {
   const whisperRes = await fetch('https://api.deepinfra.com/v1/openai/audio/transcriptions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${DEEPINFRA_API_KEY}` },
+    signal: AbortSignal.timeout(90000),
     body: audioForm,
-  });
+  }).catch(() => null);
+
+  if (!whisperRes) {
+    return Response.json({
+      transcript: '',
+      feedback: 'Speech transcription is temporarily unavailable right now. Please try again in a little while.',
+      history: previousHistory,
+    }, { status: 503 });
+  }
 
   const whisperData = await whisperRes.json().catch(() => ({}));
 
@@ -150,6 +180,7 @@ export async function POST(req: NextRequest) {
       Authorization: `Bearer ${DEEPINFRA_API_KEY}`,
       'Content-Type': 'application/json',
     },
+    signal: AbortSignal.timeout(90000),
     body: JSON.stringify({
       model: 'google/gemma-4-26B-A4B-it',
       messages: [
@@ -214,7 +245,15 @@ ${transcript}`,
       max_tokens: 900,
       temperature: 0.3,
     }),
-  });
+  }).catch(() => null);
+
+  if (!analysisRes) {
+    return Response.json({
+      transcript,
+      feedback: 'Speech analysis is temporarily unavailable right now. Please try again in a little while.',
+      history: previousHistory,
+    }, { status: 503 });
+  }
 
   const analysisData = await analysisRes.json().catch(() => ({}));
 
