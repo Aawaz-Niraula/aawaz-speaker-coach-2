@@ -1,5 +1,7 @@
 import { NextRequest } from 'next/server';
 
+import { fetchWithRetry } from '@/lib/fetch';
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => null);
@@ -19,7 +21,7 @@ export async function POST(req: NextRequest) {
       return Response.json({ speech: '', error: 'Server configuration error: missing API key.' }, { status: 500 });
     }
 
-    const res = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
+    const res = await fetchWithRetry('https://api.deepinfra.com/v1/openai/chat/completions', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${DEEPINFRA_API_KEY}`,
@@ -47,7 +49,7 @@ Requirements:
         max_tokens: Math.ceil(targetWordCount * 2.2),
         temperature: 0.8,
       }),
-    });
+    }, 1);
 
     const data = await res.json().catch(() => ({}));
 

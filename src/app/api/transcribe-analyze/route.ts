@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
 
 import { insertSpeechSession, listRecentSpeechSessions } from '@/lib/db';
+import { fetchWithRetry } from '@/lib/fetch';
 import { GENERAL_RUBRIC, getSpeechTemplate } from '@/lib/speech-config';
 
 function formatApiError(prefix: string, status: number, message?: string) {
@@ -131,12 +132,12 @@ export async function POST(req: NextRequest) {
   audioForm.append('model', 'openai/whisper-large-v3');
   audioForm.append('response_format', 'verbose_json');
 
-  const whisperRes = await fetch('https://api.deepinfra.com/v1/openai/audio/transcriptions', {
+  const whisperRes = await fetchWithRetry('https://api.deepinfra.com/v1/openai/audio/transcriptions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${DEEPINFRA_API_KEY}` },
     signal: AbortSignal.timeout(90000),
     body: audioForm,
-  }).catch(() => null);
+  }, 1).catch(() => null);
 
   if (!whisperRes) {
     return Response.json({
@@ -174,7 +175,7 @@ export async function POST(req: NextRequest) {
   const wordCount = transcript.split(/\s+/).filter(Boolean).length;
   const wordsPerMin = duration > 0 ? Math.round((wordCount / duration) * 60) : 0;
 
-  const analysisRes = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
+  const analysisRes = await fetchWithRetry('https://api.deepinfra.com/v1/openai/chat/completions', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${DEEPINFRA_API_KEY}`,
@@ -203,17 +204,17 @@ Score execution only, never effort.`,
           role: 'user',
           content: `Analyse this speech transcript and reply in EXACTLY this format only:
 
-ANALYSIS:
-- Total filler words (um/uh/like/you know/so): X
-- Speaking speed: ${wordsPerMin} words/min (target 130-160)
-- Clarity & volume: Excellent / Good / Weak / Inaudible
-- Structure check: [brief judgment tied to the active rubric]
-- Overall score: X/100
+📊 ANALYSIS
+• Total filler words (um/uh/like/you know/so): X
+• Speaking speed: ${wordsPerMin} words/min (target 130-160)
+• Clarity & volume: Excellent / Good / Weak / Inaudible
+• Structure check: [brief judgment tied to the active rubric]
+• Overall score: X/100
 
-BRUTALLY HONEST FEEDBACK:
+🔥 BRUTALLY HONEST FEEDBACK
 [3-5 short, direct sentences. Start with the biggest technical weakness. Be blunt. If the speaker repeated an old mistake, say so plainly. If the structure, tone, protocol, or logic is weak, say it without softening it.]
 
-3 SPECIFIC FIXES:
+🛠️ 3 SPECIFIC FIXES
 1. [one exact behavior change with a technical speaking instruction tied to the rubric failure]
 2. [one drill they can practice, with reps, timing, or structure, tied to the rubric failure]
 3. [one daily repetition line or rehearsal command written in imperative form and tied to the rubric failure]
@@ -245,7 +246,7 @@ ${transcript}`,
       max_tokens: 900,
       temperature: 0.3,
     }),
-  }).catch(() => null);
+  }, 1).catch(() => null);
 
   if (!analysisRes) {
     return Response.json({
