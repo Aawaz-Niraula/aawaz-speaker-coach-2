@@ -279,20 +279,35 @@ function FeedbackDisplay({
       {/* ── Analysis Metrics ─────────────────────────────── */}
       {parsed.analysisItems.length > 0 && (
         <Shell>
-          <p className="mb-4 font-serif text-lg font-medium tracking-tight text-white sm:text-xl">📊 Analysis</p>
+          <p className="mb-4 font-serif text-lg font-medium tracking-tight text-white sm:text-xl">Analysis</p>
           <div className="grid gap-3 sm:grid-cols-2">
-            {parsed.analysisItems.map((item, i) => (
+            {parsed.analysisItems.map((item, i) => {
+              const isStructure = item.label.toLowerCase().includes('structure');
+              const structureBullets = isStructure ? item.value.split(/[.;]/).map((s) => s.trim()).filter(Boolean) : [];
+              return (
               <motion.div
                 key={i}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.08 }}
-                className="rounded-[18px] border border-white/10 bg-[#0b0b12]/50 p-4 sm:rounded-[22px]"
+                className={cn('rounded-[18px] border border-white/10 bg-[#0b0b12]/50 p-4 sm:rounded-[22px]', isStructure && 'sm:col-span-2')}
               >
-                <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">{item.label}</div>
-                <div className="mt-2 text-sm font-medium text-[#f2efff] sm:text-base">{item.value}</div>
+                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#ddd6fe] sm:text-sm">{item.label}</div>
+                {isStructure && structureBullets.length > 1 ? (
+                  <ul className="mt-3 grid gap-2">
+                    {structureBullets.map((b, bi) => (
+                      <li key={bi} className="flex items-start gap-2.5 text-sm leading-relaxed text-[#f2efff]">
+                        <span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#a78bfa]"></span>
+                        {b}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="mt-2 text-sm font-medium text-[#f2efff] sm:text-base">{item.value}</div>
+                )}
               </motion.div>
-            ))}
+              );
+            })}
           </div>
         </Shell>
       )}
@@ -300,7 +315,7 @@ function FeedbackDisplay({
       {/* ── Brutal Feedback ───────────────────────────────── */}
       {parsed.brutalFeedback && (
         <Shell className="border-[#f87171]/15">
-          <p className="mb-3 font-serif text-lg font-medium tracking-tight text-white sm:text-xl">🔥 Brutally Honest Feedback</p>
+          <p className="mb-3 font-serif text-lg font-medium tracking-tight text-white sm:text-xl">Brutally Honest Feedback</p>
           <p className="whitespace-pre-wrap break-words text-sm leading-7 text-[#f2efff] sm:leading-8">{parsed.brutalFeedback}</p>
           <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
             <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => copyText(parsed.brutalFeedback, 'Feedback')}><Copy className="h-4 w-4" /></Button>
@@ -690,7 +705,7 @@ export default function Home() {
           </div>
         </aside>
 
-        <main className="min-w-0 flex-1 px-3 pb-14 pt-24 sm:px-4 md:px-6 md:pt-10 lg:px-8">
+        <main className="min-w-0 flex-1 px-3 pb-14 pt-16 sm:px-4 md:px-6 md:pt-8 lg:px-8">
           <div className="mb-5 flex items-center gap-3 sm:gap-4 md:hidden">
             <Button variant="secondary" size="icon" onClick={() => setSidebarOpen(true)}><Menu className="h-5 w-5" /></Button>
             <div className="flex min-w-0 items-center gap-2">
@@ -762,25 +777,32 @@ export default function Home() {
                   </div>
                 </div>
                 {activeTab === 'coach' && (
-                  <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3"><div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">Templates</div><div className="mt-1 text-sm sm:text-base text-[#f2efff]">4 modes</div></div>
-                    <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3"><div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">History</div><div className="mt-1 text-sm sm:text-base text-[#f2efff]">{history.length} sessions</div></div>
-                    <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3 sm:col-span-2 xl:col-span-1">
-                      <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">Average</div>
-                      <div className="mt-2 flex items-center gap-3">
-                        {averageScore !== null ? (
-                          <>
-                            <div className="h-10 w-10">
-                              <CircularProgressbar value={averageScore} text={`${averageScore}`} styles={buildStyles({ textSize: '28px', textColor: '#f2efff', pathColor: '#a78bfa', trailColor: 'rgba(255,255,255,0.08)' })} />
-                            </div>
-                            <span className="font-mono text-xs text-[#857ca2]">/100</span>
-                          </>
-                        ) : (
-                          <span className="text-sm text-[#f2efff]">N/A</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="mt-5 rounded-[20px] border border-white/10 bg-[#0b0b12]/40 p-4 sm:rounded-[24px] sm:p-5"
+                  >
+                    <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2] mb-3">How to use</div>
+                    <ul className="space-y-2.5">
+                      {[
+                        'Choose an evaluation template or use the general rubric',
+                        'Tap the microphone to record your speech',
+                        'Get instant AI-powered feedback with a detailed score',
+                      ].map((tip, i) => (
+                        <motion.li
+                          key={i}
+                          initial={{ opacity: 0, x: -8 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.15 + i * 0.08 }}
+                          className="flex items-start gap-2.5 text-sm leading-relaxed text-[#f2efff]"
+                        >
+                          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a78bfa,#f9a8d4)] font-mono text-[10px] font-bold text-[#06060b]">{i + 1}</span>
+                          {tip}
+                        </motion.li>
+                      ))}
+                    </ul>
+                  </motion.div>
                 )}
                 {activeTab === 'speech' && (
                   <motion.div
@@ -795,6 +817,62 @@ export default function Home() {
                         'Enter any topic and set your desired word count',
                         'Hit Generate to get an AI-crafted practice speech',
                         'Read it aloud, then switch to Speaking Coach to record',
+                      ].map((tip, i) => (
+                        <motion.li
+                          key={i}
+                          initial={{ opacity: 0, x: -8 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.15 + i * 0.08 }}
+                          className="flex items-start gap-2.5 text-sm leading-relaxed text-[#f2efff]"
+                        >
+                          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a78bfa,#f9a8d4)] font-mono text-[10px] font-bold text-[#06060b]">{i + 1}</span>
+                          {tip}
+                        </motion.li>
+                      ))}
+                    </ul>
+                  </motion.div>
+                )}
+                {activeTab === 'history' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="mt-5 rounded-[20px] border border-white/10 bg-[#0b0b12]/40 p-4 sm:rounded-[24px] sm:p-5"
+                  >
+                    <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2] mb-3">How to use</div>
+                    <ul className="space-y-2.5">
+                      {[
+                        'Browse your saved sessions and tap to expand details',
+                        'Review transcripts and full coach feedback for each session',
+                        'Delete sessions you no longer need',
+                      ].map((tip, i) => (
+                        <motion.li
+                          key={i}
+                          initial={{ opacity: 0, x: -8 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.15 + i * 0.08 }}
+                          className="flex items-start gap-2.5 text-sm leading-relaxed text-[#f2efff]"
+                        >
+                          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a78bfa,#f9a8d4)] font-mono text-[10px] font-bold text-[#06060b]">{i + 1}</span>
+                          {tip}
+                        </motion.li>
+                      ))}
+                    </ul>
+                  </motion.div>
+                )}
+                {activeTab === 'progress' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="mt-5 rounded-[20px] border border-white/10 bg-[#0b0b12]/40 p-4 sm:rounded-[24px] sm:p-5"
+                  >
+                    <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2] mb-3">How to use</div>
+                    <ul className="space-y-2.5">
+                      {[
+                        'Track your score trend over time in the chart below',
+                        'Generate AI insights to understand your strengths',
+                        'Identify recurring weaknesses and target them in practice',
                       ].map((tip, i) => (
                         <motion.li
                           key={i}
