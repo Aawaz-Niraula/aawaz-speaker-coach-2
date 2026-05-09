@@ -11,6 +11,7 @@ import {
   ChevronDown,
   Copy,
   MessageCircleMore,
+  Plus,
   Volume2,
   Menu,
   Mic,
@@ -239,6 +240,77 @@ function parseFeedback(text: string): ParsedFeedback {
   return { analysisItems, score, brutalFeedback, fixes, rawText: text };
 }
 
+/* ── ELP Explainer Popup ─────────────────────────────────────────── */
+function ELPPopup({ onClose }: { onClose: () => void }) {
+  return (
+    <>
+      <button
+        type="button"
+        className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+        aria-label="Close ELP explainer"
+      />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.92, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto max-h-[80vh] rounded-[24px] border border-white/10 bg-[#0b0b12]/95 p-5 shadow-[0_30px_80px_rgba(2,6,23,0.7)] backdrop-blur-xl sm:rounded-[28px] sm:p-7"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <p className="font-serif text-xl font-medium tracking-tight text-white sm:text-2xl">ELP Framework</p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#f87171]/30 bg-[#dc2626]/15 text-[#f87171] hover:bg-[#dc2626]/25"
+            aria-label="Close"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <p className="mt-2 text-sm leading-relaxed text-[#857ca2]">Ethos · Logos · Pathos — the three pillars of persuasive speaking.</p>
+
+        <div className="mt-5 grid gap-4">
+          <div className="rounded-[18px] border border-white/10 bg-white/4 p-4 sm:rounded-[22px]">
+            <div className="text-sm font-semibold uppercase tracking-[0.18em] text-[#a78bfa]">Ethos — Credibility</div>
+            <p className="mt-2 text-sm leading-relaxed text-[#f2efff]">Establish why the audience should trust you on this topic. Share first-hand experience, qualifications, or deep personal understanding.</p>
+            <p className="mt-2 rounded-2xl border border-white/8 bg-white/4 px-3 py-2.5 text-[13px] italic leading-relaxed text-[#ddd6fe]">&quot;I grew up in a family that lived below the poverty line — I don&apos;t speak about poverty from a textbook, I speak from memory. I know the weight of choosing between food and medicine.&quot;</p>
+          </div>
+          <div className="rounded-[18px] border border-white/10 bg-white/4 p-4 sm:rounded-[22px]">
+            <div className="text-sm font-semibold uppercase tracking-[0.18em] text-[#a78bfa]">Logos — Logic</div>
+            <p className="mt-2 text-sm leading-relaxed text-[#f2efff]">Build your case with facts, statistics, data, and logical reasoning that make the argument intellectually undeniable.</p>
+            <p className="mt-2 rounded-2xl border border-white/8 bg-white/4 px-3 py-2.5 text-[13px] italic leading-relaxed text-[#ddd6fe]">&quot;According to the World Bank, roughly 700 million people still live on less than $2.15 a day. UNICEF reports that 5.2 million children under five died in 2019 — many from preventable causes directly linked to poverty.&quot;</p>
+          </div>
+          <div className="rounded-[18px] border border-white/10 bg-white/4 p-4 sm:rounded-[22px]">
+            <div className="text-sm font-semibold uppercase tracking-[0.18em] text-[#f9a8d4]">Pathos — Emotion</div>
+            <p className="mt-2 text-sm leading-relaxed text-[#f2efff]">Create genuine emotional resonance. Paint vivid, visceral imagery that moves the audience to feel the weight of your message.</p>
+            <p className="mt-2 rounded-2xl border border-white/8 bg-white/4 px-3 py-2.5 text-[13px] italic leading-relaxed text-[#ddd6fe]">&quot;Imagine a mother who loves her child more than life itself — but can do nothing but watch that child perish from a treatable disease, because she cannot afford the medication. That is not a scene from a dystopian film. That is reality for millions, right now, as we speak.&quot;</p>
+          </div>
+        </div>
+      </motion.div>
+    </>
+  );
+}
+
+/* ── Text renderer that makes ELP clickable ──────────────────────── */
+function renderWithELP(text: string, onClickELP: () => void): React.ReactNode {
+  const parts = text.split(/(ELP)/g);
+  if (parts.length === 1) return text;
+  return parts.map((part, i) =>
+    part === 'ELP' ? (
+      <button
+        key={i}
+        type="button"
+        onClick={onClickELP}
+        className="inline font-semibold text-[#a78bfa] underline decoration-[#a78bfa]/40 underline-offset-2 transition hover:text-[#ddd6fe] hover:decoration-[#ddd6fe]/60"
+      >
+        ELP
+      </button>
+    ) : (
+      <span key={i}>{part}</span>
+    ),
+  );
+}
+
 /* ── Feedback Display ────────────────────────────────────────────── */
 function FeedbackDisplay({
   feedback,
@@ -251,23 +323,28 @@ function FeedbackDisplay({
 }) {
   const parsed = useMemo(() => parseFeedback(feedback), [feedback]);
   const hasSections = parsed.analysisItems.length > 0 || parsed.brutalFeedback || parsed.fixes.length > 0;
+  const [elpOpen, setElpOpen] = useState(false);
+  const openELP = () => setElpOpen(true);
 
   if (!hasSections) {
     // Fallback: render raw text if parsing fails
     return (
       <Shell>
         <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.3em] text-[#857ca2]">Coach Verdict</p>
-        <p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-[#f2efff]">{feedback}</p>
+        <p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-[#f2efff]">{renderWithELP(feedback, openELP)}</p>
         <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
           <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => copyText(feedback, 'Feedback')}><Copy className="h-4 w-4" /></Button>
           <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => speakText(feedback, 'Feedback')}><Volume2 className="h-4 w-4" /></Button>
         </div>
+        <AnimatePresence>{elpOpen && <ELPPopup onClose={() => setElpOpen(false)} />}</AnimatePresence>
       </Shell>
     );
   }
 
   return (
     <div className="grid gap-5">
+      <AnimatePresence>{elpOpen && <ELPPopup onClose={() => setElpOpen(false)} />}</AnimatePresence>
+
       {/* ── Score Ring ────────────────────────────────────── */}
       {parsed.score !== null && (
         <Shell className="border-[#a78bfa]/20 bg-[linear-gradient(135deg,rgba(167,139,250,0.08),rgba(249,168,212,0.06))]">
@@ -298,12 +375,12 @@ function FeedbackDisplay({
                     {structureBullets.map((b, bi) => (
                       <li key={bi} className="flex items-start gap-2.5 text-sm leading-relaxed text-[#f2efff]">
                         <span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#a78bfa]"></span>
-                        {b}
+                        {renderWithELP(b, openELP)}
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <div className="mt-2 text-sm font-medium text-[#f2efff] sm:text-base">{item.value}</div>
+                  <div className="mt-2 text-sm font-medium text-[#f2efff] sm:text-base">{renderWithELP(item.value, openELP)}</div>
                 )}
               </motion.div>
               );
@@ -316,7 +393,7 @@ function FeedbackDisplay({
       {parsed.brutalFeedback && (
         <Shell className="border-[#f87171]/15">
           <p className="mb-3 font-serif text-lg font-medium tracking-tight text-white sm:text-xl">Brutally Honest Feedback</p>
-          <p className="whitespace-pre-wrap break-words text-sm leading-7 text-[#f2efff] sm:leading-8">{parsed.brutalFeedback}</p>
+          <p className="whitespace-pre-wrap break-words text-sm leading-7 text-[#f2efff] sm:leading-8">{renderWithELP(parsed.brutalFeedback, openELP)}</p>
           <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
             <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => copyText(parsed.brutalFeedback, 'Feedback')}><Copy className="h-4 w-4" /></Button>
             <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => speakText(parsed.brutalFeedback, 'Feedback')}><Volume2 className="h-4 w-4" /></Button>
@@ -338,7 +415,7 @@ function FeedbackDisplay({
                 className="flex gap-3 rounded-[18px] border border-white/10 bg-[#0b0b12]/50 p-4 sm:rounded-[22px]"
               >
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a78bfa,#f9a8d4)] font-mono text-xs font-bold text-[#06060b]">{i + 1}</span>
-                <p className="text-sm leading-6 text-[#f2efff]">{fix}</p>
+                <p className="text-sm leading-6 text-[#f2efff]">{renderWithELP(fix, openELP)}</p>
               </motion.div>
             ))}
           </div>
@@ -743,37 +820,55 @@ export default function Home() {
               <div className="relative z-20">
               <Shell>
                 <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-[#857ca2]">{activeTab}</p>
-                <div className="mt-3 flex flex-wrap items-start gap-3">
-                  <div className="relative hidden shrink-0 md:block">
-                    <PopupIconButton onClick={() => { setCreatorOpen((current) => !current); setHelpOpen(false); }} icon={<MessageCircleMore className="h-4 w-4" />} label="Open creator message" />
-                    <AnimatePresence>
-                      {creatorOpen ? (
-                        <PopupPanel title="Message From The Creator" onClose={() => setCreatorOpen(false)} align="left">
-                          <p>ello boyz and gurls speak your heart out but nabirsa hai AI can make mistakes and very big ones so kei problems aaye ma contact me directly hai! - aawaz</p>
-                        </PopupPanel>
-                      ) : null}
-                    </AnimatePresence>
+                <div className="mt-3 flex items-start justify-between gap-3 sm:gap-4">
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                    <div className="relative hidden shrink-0 md:block">
+                      <PopupIconButton onClick={() => { setCreatorOpen((current) => !current); setHelpOpen(false); }} icon={<MessageCircleMore className="h-4 w-4" />} label="Open creator message" />
+                      <AnimatePresence>
+                        {creatorOpen ? (
+                          <PopupPanel title="Message From The Creator" onClose={() => setCreatorOpen(false)} align="left">
+                            <p>ello boyz and gurls speak your heart out but nabirsa hai AI can make mistakes and very big ones so kei problems aaye ma contact me directly hai! - aawaz</p>
+                          </PopupPanel>
+                        ) : null}
+                      </AnimatePresence>
+                    </div>
+                    <h1 className="font-serif text-[clamp(2.1rem,6vw,5rem)] leading-[0.95] tracking-[-0.04em] sm:text-[clamp(2.4rem,6vw,5rem)]">
+                      {activeTab === 'coach' && 'Speaking Coach'}
+                      {activeTab === 'speech' && 'Speech Practice'}
+                      {activeTab === 'history' && 'Speech History'}
+                      {activeTab === 'progress' && 'Progress'}
+                    </h1>
+                    <div className="relative hidden shrink-0 md:block">
+                      <PopupIconButton onClick={() => { setHelpOpen((current) => !current); setCreatorOpen(false); }} icon={<span className="text-sm font-bold">?</span>} label="Open app help" className="mt-1" />
+                      <AnimatePresence>
+                        {helpOpen ? (
+                          <PopupPanel title="Quick Help" onClose={() => setHelpOpen(false)} align="left">
+                            <div className="space-y-2">
+                              <p>Use <span className="text-[#ddd6fe]">Speaking Coach</span> to record and get feedback.</p>
+                              <p>Use <span className="text-[#ddd6fe]">Speech Practice</span> to generate a sample speech.</p>
+                              <p>Use <span className="text-[#ddd6fe]">Speech History</span> to review saved sessions.</p>
+                              <p>Use <span className="text-[#ddd6fe]">Progress</span> to track your improvement over time.</p>
+                            </div>
+                          </PopupPanel>
+                        ) : null}
+                      </AnimatePresence>
+                    </div>
                   </div>
-                  <h1 className="max-w-4xl font-serif text-[clamp(2.1rem,6vw,5rem)] leading-[0.95] tracking-[-0.04em] sm:text-[clamp(2.4rem,6vw,5rem)]">
-                    {activeTab === 'coach' && 'Speaking Coach'}
-                    {activeTab === 'speech' && 'Speech Practice'}
-                    {activeTab === 'history' && 'Speech History'}
-                    {activeTab === 'progress' && 'Progress'}
-                  </h1>
-                  <div className="relative hidden shrink-0 md:block">
-                    <PopupIconButton onClick={() => { setHelpOpen((current) => !current); setCreatorOpen(false); }} icon={<span className="text-sm font-bold">?</span>} label="Open app help" className="mt-1" />
-                    <AnimatePresence>
-                      {helpOpen ? (
-                        <PopupPanel title="Quick Help" onClose={() => setHelpOpen(false)} align="right">
-                          <div className="space-y-2">
-                            <p>Use <span className="text-[#ddd6fe]">Speaking Coach</span> to record and get feedback.</p>
-                            <p>Use <span className="text-[#ddd6fe]">Speech Practice</span> to generate a sample speech.</p>
-                            <p>Use <span className="text-[#ddd6fe]">Speech History</span> to review saved sessions.</p>
-                            <p>Use <span className="text-[#ddd6fe]">Progress</span> to track your improvement over time.</p>
-                          </div>
-                        </PopupPanel>
-                      ) : null}
-                    </AnimatePresence>
+                  
+                  <div className="flex shrink-0 items-start">
+                    {activeTab === 'coach' && (
+                      <button
+                        type="button"
+                        onClick={() => { setTranscript(''); setFeedback(''); setSeconds(0); setSelectedTemplateId(null); setIsRecording(false); setIsAnalyzing(false); toast.success('Ready for a new speech.'); }}
+                        className="mt-1 flex shrink-0 flex-col items-center gap-1 transition hover:opacity-80"
+                        aria-label="New speech"
+                      >
+                        <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[#a78bfa]/30 bg-[linear-gradient(135deg,rgba(167,139,250,0.18),rgba(249,168,212,0.12))] text-[#a78bfa] shadow-[0_0_16px_rgba(167,139,250,0.18)] sm:h-10 sm:w-10">
+                          <Plus className="h-4 w-4 sm:h-5 sm:w-5" />
+                        </span>
+                        <span className="font-mono text-[8px] uppercase tracking-[0.2em] text-[#857ca2] sm:text-[9px]">New speech</span>
+                      </button>
+                    )}
                   </div>
                 </div>
                 {activeTab === 'coach' && (
@@ -919,29 +1014,6 @@ export default function Home() {
                       </div>
                     </div>
                   </Shell>
-                  <AnimatePresence>
-                    {isAnalyzing && !feedback && (
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                      >
-                        <Shell className="border-[#a78bfa]/15 bg-[linear-gradient(135deg,rgba(167,139,250,0.06),rgba(249,168,212,0.04))]">
-                          <div className="flex flex-col items-center gap-5 py-6 sm:py-8">
-                            <motion.div
-                              animate={{ rotate: 360 }}
-                              transition={{ duration: 1.6, repeat: Infinity, ease: 'linear' }}
-                              className="flex h-16 w-16 items-center justify-center rounded-full border-[3px] border-white/8 border-t-[#a78bfa] sm:h-20 sm:w-20"
-                            />
-                            <div className="text-center">
-                              <p className="font-serif text-base font-medium tracking-tight text-white sm:text-lg">Analyzing your speech</p>
-                              <p className="mt-1.5 font-mono text-[11px] text-[#857ca2]">Analysis might take up to 30 seconds to a minute</p>
-                            </div>
-                          </div>
-                        </Shell>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
                   {transcript && <Shell><p className="mb-3 font-serif text-lg font-medium tracking-tight text-white sm:text-xl">Transcript</p><p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-[#f2efff]">{transcript}</p><ActionBar text={transcript} label="Transcript" /></Shell>}
                   {feedback && <div ref={feedbackRef}><FeedbackDisplay feedback={feedback} copyText={copyText} speakText={speakText} /></div>}
                 </>
