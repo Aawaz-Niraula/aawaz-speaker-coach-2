@@ -147,16 +147,192 @@ function formatHistoryDate(value: string) {
   return parsed.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
-  return <div className="rounded-[24px] border border-white/10 bg-white/6 p-4 shadow-[0_20px_80px_rgba(2,6,23,0.45)] backdrop-blur-xl sm:rounded-[28px] sm:p-6">{children}</div>;
+function Shell({ children, className: extra }: { children: React.ReactNode; className?: string }) {
+  return <div className={cn('rounded-[24px] border border-white/10 bg-white/6 p-4 shadow-[0_20px_80px_rgba(2,6,23,0.45)] backdrop-blur-xl sm:rounded-[28px] sm:p-6', extra)}>{children}</div>;
 }
 
-function Score({ text }: { text: string }) {
-  const score = extractScore(text);
-  if (score === null) return null;
+/* ── Animated Score Ring ─────────────────────────────────────────── */
+function AnimatedScore({ value }: { value: number }) {
+  const [displayed, setDisplayed] = useState(0);
+  useEffect(() => {
+    let frame: number;
+    const start = performance.now();
+    const duration = 1200;
+    const tick = (now: number) => {
+      const t = Math.min((now - start) / duration, 1);
+      const ease = 1 - Math.pow(1 - t, 3);
+      setDisplayed(Math.round(ease * value));
+      if (t < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [value]);
+
+  const color = value >= 70 ? '#a78bfa' : value >= 45 ? '#facc15' : '#f87171';
+
   return (
-    <div className="h-24 w-24">
-      <CircularProgressbar value={score} text={`${score}`} styles={buildStyles({ textColor: '#f2efff', pathColor: '#a78bfa', trailColor: 'rgba(255,255,255,0.08)' })} />
+    <motion.div
+      initial={{ scale: 0.8, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ type: 'spring', stiffness: 200, damping: 18 }}
+      className="relative mx-auto flex flex-col items-center gap-2"
+    >
+      <div className="h-32 w-32 sm:h-36 sm:w-36">
+        <CircularProgressbar
+          value={displayed}
+          text={`${displayed}`}
+          styles={buildStyles({
+            textSize: '24px',
+            textColor: '#f2efff',
+            pathColor: color,
+            trailColor: 'rgba(255,255,255,0.06)',
+            pathTransitionDuration: 0,
+          })}
+        />
+      </div>
+      <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-[#857ca2]">out of 100</span>
+    </motion.div>
+  );
+}
+
+/* ── Feedback Parser ─────────────────────────────────────────────── */
+type ParsedFeedback = {
+  analysisItems: { label: string; value: string }[];
+  score: number | null;
+  brutalFeedback: string;
+  fixes: string[];
+  rawText: string;
+};
+
+function parseFeedback(text: string): ParsedFeedback {
+  const score = extractScore(text);
+
+  // Extract ANALYSIS section
+  const analysisItems: { label: string; value: string }[] = [];
+  const analysisMatch = text.match(/(?:📊\s*)?ANALYSIS[:\s]*\n([\s\S]*?)(?=\n(?:🔥|BRUTALLY)|$)/i);
+  if (analysisMatch) {
+    const lines = analysisMatch[1].split('\n').map((l) => l.replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean);
+    for (const line of lines) {
+      const colonIdx = line.indexOf(':');
+      if (colonIdx > 0) {
+        const label = line.slice(0, colonIdx).trim();
+        const value = line.slice(colonIdx + 1).trim();
+        if (label.toLowerCase().includes('overall score')) continue; // shown in ring
+        analysisItems.push({ label, value });
+      }
+    }
+  }
+
+  // Extract BRUTALLY HONEST FEEDBACK
+  let brutalFeedback = '';
+  const brutalMatch = text.match(/(?:🔥\s*)?BRUTALLY HONEST FEEDBACK[:\s]*\n([\s\S]*?)(?=\n(?:🛠|3 SPECIFIC|$))/i);
+  if (brutalMatch) brutalFeedback = brutalMatch[1].trim();
+
+  // Extract 3 SPECIFIC FIXES
+  const fixes: string[] = [];
+  const fixesMatch = text.match(/(?:🛠️?\s*)?3 SPECIFIC FIXES[:\s]*\n([\s\S]*?)$/i);
+  if (fixesMatch) {
+    const fixLines = fixesMatch[1].split('\n').map((l) => l.replace(/^\d+\.\s*/, '').trim()).filter(Boolean);
+    fixes.push(...fixLines.slice(0, 3));
+  }
+
+  return { analysisItems, score, brutalFeedback, fixes, rawText: text };
+}
+
+/* ── Feedback Display ────────────────────────────────────────────── */
+function FeedbackDisplay({
+  feedback,
+  copyText,
+  speakText,
+}: {
+  feedback: string;
+  copyText: (v: string, l: string) => void;
+  speakText: (v: string, l: string) => void;
+}) {
+  const parsed = useMemo(() => parseFeedback(feedback), [feedback]);
+  const hasSections = parsed.analysisItems.length > 0 || parsed.brutalFeedback || parsed.fixes.length > 0;
+
+  if (!hasSections) {
+    // Fallback: render raw text if parsing fails
+    return (
+      <Shell>
+        <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.3em] text-[#857ca2]">Coach Verdict</p>
+        <p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-[#f2efff]">{feedback}</p>
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
+          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => copyText(feedback, 'Feedback')}><Copy className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => speakText(feedback, 'Feedback')}><Volume2 className="h-4 w-4" /></Button>
+        </div>
+      </Shell>
+    );
+  }
+
+  return (
+    <div className="grid gap-5">
+      {/* ── Score Ring ────────────────────────────────────── */}
+      {parsed.score !== null && (
+        <Shell className="border-[#a78bfa]/20 bg-[linear-gradient(135deg,rgba(167,139,250,0.08),rgba(249,168,212,0.06))]">
+          <p className="mb-4 text-center font-serif text-lg font-medium tracking-tight text-white sm:text-xl">Overall Score</p>
+          <AnimatedScore value={parsed.score} />
+        </Shell>
+      )}
+
+      {/* ── Analysis Metrics ─────────────────────────────── */}
+      {parsed.analysisItems.length > 0 && (
+        <Shell>
+          <p className="mb-4 font-serif text-lg font-medium tracking-tight text-white sm:text-xl">📊 Analysis</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {parsed.analysisItems.map((item, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.08 }}
+                className="rounded-[18px] border border-white/10 bg-[#0b0b12]/50 p-4 sm:rounded-[22px]"
+              >
+                <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">{item.label}</div>
+                <div className="mt-2 text-sm font-medium text-[#f2efff] sm:text-base">{item.value}</div>
+              </motion.div>
+            ))}
+          </div>
+        </Shell>
+      )}
+
+      {/* ── Brutal Feedback ───────────────────────────────── */}
+      {parsed.brutalFeedback && (
+        <Shell className="border-[#f87171]/15">
+          <p className="mb-3 font-serif text-lg font-medium tracking-tight text-white sm:text-xl">🔥 Brutally Honest Feedback</p>
+          <p className="whitespace-pre-wrap break-words text-sm leading-7 text-[#f2efff] sm:leading-8">{parsed.brutalFeedback}</p>
+          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => copyText(parsed.brutalFeedback, 'Feedback')}><Copy className="h-4 w-4" /></Button>
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => speakText(parsed.brutalFeedback, 'Feedback')}><Volume2 className="h-4 w-4" /></Button>
+          </div>
+        </Shell>
+      )}
+
+      {/* ── Specific Fixes ────────────────────────────────── */}
+      {parsed.fixes.length > 0 && (
+        <Shell>
+          <p className="mb-4 font-serif text-lg font-medium tracking-tight text-white sm:text-xl">🛠️ Specific Fixes</p>
+          <div className="grid gap-3">
+            {parsed.fixes.map((fix, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, x: -12 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: i * 0.1 }}
+                className="flex gap-3 rounded-[18px] border border-white/10 bg-[#0b0b12]/50 p-4 sm:rounded-[22px]"
+              >
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a78bfa,#f9a8d4)] font-mono text-xs font-bold text-[#06060b]">{i + 1}</span>
+                <p className="text-sm leading-6 text-[#f2efff]">{fix}</p>
+              </motion.div>
+            ))}
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => copyText(parsed.fixes.join('\n'), 'Fixes')}><Copy className="h-4 w-4" /></Button>
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => speakText(parsed.fixes.join('. '), 'Fixes')}><Volume2 className="h-4 w-4" /></Button>
+          </div>
+        </Shell>
+      )}
     </div>
   );
 }
@@ -231,6 +407,7 @@ export default function Home() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const feedbackRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!userId) return;
@@ -254,6 +431,16 @@ export default function Home() {
     const scores = history.map((item) => item.overall_score).filter((score): score is number => typeof score === 'number');
     return scores.length ? Math.round(scores.reduce((sum, value) => sum + value, 0) / scores.length) : null;
   }, [history]);
+
+  // Auto-scroll to feedback after analysis completes
+  useEffect(() => {
+    if (feedback && feedbackRef.current) {
+      const timeout = setTimeout(() => {
+        feedbackRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 300);
+      return () => clearTimeout(timeout);
+    }
+  }, [feedback]);
 
   const startRecording = async () => {
     try {
@@ -596,58 +783,32 @@ export default function Home() {
                   </div>
                 )}
                 {activeTab === 'speech' && (
-                  <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3">
-                      <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">Generate</div>
-                      <ul className="mt-2 space-y-1 text-sm text-[#f2efff]">
-                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#a78bfa]"></span>Enter any speech topic</li>
-                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#a78bfa]"></span>Set your target word count</li>
-                      </ul>
-                    </div>
-                    <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3">
-                      <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">Practice</div>
-                      <ul className="mt-2 space-y-1 text-sm text-[#f2efff]">
-                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#f9a8d4]"></span>AI-crafted script instantly</li>
-                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#f9a8d4]"></span>Rehearse before recording</li>
-                      </ul>
-                    </div>
-                  </div>
-                )}
-                {activeTab === 'history' && (
-                  <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3">
-                      <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">Review</div>
-                      <ul className="mt-2 space-y-1 text-sm text-[#f2efff]">
-                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#a78bfa]"></span>Browse all past sessions</li>
-                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#a78bfa]"></span>View transcript &amp; score</li>
-                      </ul>
-                    </div>
-                    <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3">
-                      <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">Insights</div>
-                      <ul className="mt-2 space-y-1 text-sm text-[#f2efff]">
-                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#f9a8d4]"></span>Full coach feedback</li>
-                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#f9a8d4]"></span>Track your improvement</li>
-                      </ul>
-                    </div>
-                  </div>
-                )}
-                {activeTab === 'progress' && (
-                  <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3">
-                      <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">Track</div>
-                      <ul className="mt-2 space-y-1 text-sm text-[#f2efff]">
-                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#a78bfa]"></span>Visualize score trends</li>
-                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#a78bfa]"></span>AI-powered analysis</li>
-                      </ul>
-                    </div>
-                    <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3">
-                      <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">Improve</div>
-                      <ul className="mt-2 space-y-1 text-sm text-[#f2efff]">
-                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#f9a8d4]"></span>Pinpoint weaknesses</li>
-                        <li className="flex items-start gap-2"><span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#f9a8d4]"></span>Data-driven feedback</li>
-                      </ul>
-                    </div>
-                  </div>
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="mt-5 rounded-[20px] border border-white/10 bg-[#0b0b12]/40 p-4 sm:rounded-[24px] sm:p-5"
+                  >
+                    <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2] mb-3">How to use</div>
+                    <ul className="space-y-2.5">
+                      {[
+                        'Enter any topic and set your desired word count',
+                        'Hit Generate to get an AI-crafted practice speech',
+                        'Read it aloud, then switch to Speaking Coach to record',
+                      ].map((tip, i) => (
+                        <motion.li
+                          key={i}
+                          initial={{ opacity: 0, x: -8 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.15 + i * 0.08 }}
+                          className="flex items-start gap-2.5 text-sm leading-relaxed text-[#f2efff]"
+                        >
+                          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a78bfa,#f9a8d4)] font-mono text-[10px] font-bold text-[#06060b]">{i + 1}</span>
+                          {tip}
+                        </motion.li>
+                      ))}
+                    </ul>
+                  </motion.div>
                 )}
               </Shell>
               </div>
@@ -680,8 +841,31 @@ export default function Home() {
                       </div>
                     </div>
                   </Shell>
-                  {transcript && <Shell><p className="mb-3 font-mono text-[11px] uppercase tracking-[0.3em] text-[#857ca2]">Transcript</p><p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-[#f2efff]">{transcript}</p><ActionBar text={transcript} label="Transcript" /></Shell>}
-                  {feedback && <Shell><div className="grid gap-5 md:grid-cols-[auto,1fr]"><div className="mx-auto md:mx-0"><Score text={feedback} /></div><div><p className="mb-3 font-mono text-[11px] uppercase tracking-[0.3em] text-[#857ca2]">Coach Verdict</p><p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-[#f2efff]">{feedback}</p><ActionBar text={feedback} label="Feedback" /></div></div></Shell>}
+                  <AnimatePresence>
+                    {isAnalyzing && !feedback && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                      >
+                        <Shell className="border-[#a78bfa]/15 bg-[linear-gradient(135deg,rgba(167,139,250,0.06),rgba(249,168,212,0.04))]">
+                          <div className="flex flex-col items-center gap-5 py-6 sm:py-8">
+                            <motion.div
+                              animate={{ rotate: 360 }}
+                              transition={{ duration: 1.6, repeat: Infinity, ease: 'linear' }}
+                              className="flex h-16 w-16 items-center justify-center rounded-full border-[3px] border-white/8 border-t-[#a78bfa] sm:h-20 sm:w-20"
+                            />
+                            <div className="text-center">
+                              <p className="font-serif text-base font-medium tracking-tight text-white sm:text-lg">Analyzing your speech</p>
+                              <p className="mt-1.5 font-mono text-[11px] text-[#857ca2]">Analysis might take up to 30 seconds to a minute</p>
+                            </div>
+                          </div>
+                        </Shell>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                  {transcript && <Shell><p className="mb-3 font-serif text-lg font-medium tracking-tight text-white sm:text-xl">Transcript</p><p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-[#f2efff]">{transcript}</p><ActionBar text={transcript} label="Transcript" /></Shell>}
+                  {feedback && <div ref={feedbackRef}><FeedbackDisplay feedback={feedback} copyText={copyText} speakText={speakText} /></div>}
                 </>
               )}
 
@@ -746,8 +930,8 @@ export default function Home() {
                   </Shell>
                   {selectedSession && (
                     <>
-                      <Shell><p className="mb-3 font-mono text-[11px] uppercase tracking-[0.3em] text-[#857ca2]">Transcript</p><p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-[#f2efff]">{selectedSession.transcript}</p><ActionBar text={selectedSession.transcript} label="Transcript" /></Shell>
-                      <Shell><div className="grid gap-5 md:grid-cols-[auto,1fr]"><div className="mx-auto md:mx-0"><Score text={selectedSession.feedback} /></div><div><p className="mb-3 font-mono text-[11px] uppercase tracking-[0.3em] text-[#857ca2]">Coach Verdict</p><p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-[#f2efff]">{selectedSession.feedback}</p><ActionBar text={selectedSession.feedback} label="Feedback" /></div></div></Shell>
+                      <Shell><p className="mb-3 font-serif text-lg font-medium tracking-tight text-white sm:text-xl">Transcript</p><p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-[#f2efff]">{selectedSession.transcript}</p><ActionBar text={selectedSession.transcript} label="Transcript" /></Shell>
+                      <FeedbackDisplay feedback={selectedSession.feedback} copyText={copyText} speakText={speakText} />
                     </>
                   )}
                 </>
