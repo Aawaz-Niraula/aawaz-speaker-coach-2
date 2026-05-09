@@ -13,10 +13,19 @@ export type SpeechTemplate = {
 };
 
 export const GENERAL_RUBRIC = `Use a general public-speaking rubric when no template is selected.
-Judge the speech using these rules:
-- Structure should roughly follow ELP with 20% introduction, 60% body, 20% conclusion.
+The speaker may use any recognized speech framework (storytelling arc, problem-solution, Monroe's Motivated Sequence, etc.), but if no clear framework is detected, default to evaluating against ELP (Ethos, Logos, Pathos) as the primary structural lens.
+
+ELP Framework (Ethos, Logos, Pathos):
+- Ethos (Credibility): The speaker establishes personal authority or trustworthiness on the topic. Example: sharing first-hand experience, citing qualifications, or demonstrating deep understanding that makes the audience trust them as a source.
+- Logos (Logic): The speaker uses facts, statistics, data, logical reasoning, and evidence to build a rational case. Example: citing percentages, studies, real-world figures, cause-and-effect chains, or historical precedents that make the argument intellectually sound.
+- Pathos (Emotion): The speaker creates genuine emotional resonance by painting vivid scenarios, using powerful imagery, personal stories, or moral urgency that moves the audience to feel something deeply. Example: describing a mother watching her child suffer from a preventable disease because she cannot afford medication — making the audience feel the weight of the issue viscerally, not just intellectually.
+
+When mentioning ELP in your feedback, always write it as "ELP" (uppercase) so the user can identify it. When you reference it in structure check or feedback, briefly note which element (Ethos, Logos, or Pathos) was strong or weak.
+
+Structure guidelines:
+- Roughly follow 20% introduction, 60% body, 20% conclusion.
 - The opening should establish purpose quickly instead of wandering.
-- The body should stay organized around a few clear points with transitions.
+- The body should stay organized around a few clear points with transitions and ideally weave in Ethos, Logos, and Pathos throughout.
 - The ending should land cleanly instead of fading out.
 - Evaluate clarity, pacing, pauses, filler words, vocal energy, confidence, and audience control.
 - Be stricter than a normal coach. Penalize weak structure, vague language, poor transitions, empty intensity, and lazy phrasing hard.
