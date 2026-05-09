@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { listRecentSpeechSessions } from '@/lib/db';
+import { fetchWithRetry } from '@/lib/fetch';
 
 export async function POST(req: NextRequest) {
   try {
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
       return `${i + 1}. ${label} | ${score}/100 | ${wpm}wpm | ${fb}`;
     }).join('\n');
 
-    const res = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
+    const res = await fetchWithRetry('https://api.deepinfra.com/v1/openai/chat/completions', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${DEEPINFRA_API_KEY}`,
@@ -72,7 +73,7 @@ export async function POST(req: NextRequest) {
         max_tokens: 400,
         temperature: 0.2,
       }),
-    });
+    }, 1);
 
     const data = await res.json().catch(() => ({}));
 
