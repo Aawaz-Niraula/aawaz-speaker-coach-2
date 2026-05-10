@@ -43,6 +43,10 @@ type SpeechHistoryItem = {
   transcript: string;
   feedback: string;
 };
+type HistoryResponse = { history?: SpeechHistoryItem[] };
+type AnalyzeResponse = HistoryResponse & { transcript?: string; feedback?: string };
+type SpeechResponse = { speech?: string };
+type InsightsResponse = { insights?: string[]; weaknesses?: string[] };
 
 const navItems: NavItem[] = [
   { id: 'coach', label: 'Speaking Coach', icon: Mic },
@@ -50,6 +54,8 @@ const navItems: NavItem[] = [
   { id: 'history', label: 'Speech History', icon: Trophy },
   { id: 'progress', label: 'Progress', icon: TrendingUp },
 ];
+
+const MAX_RECORDING_SECONDS = 300;
 
 function ProgressChart({ history }: { history: SpeechHistoryItem[] }) {
   const scored = history
@@ -128,10 +134,16 @@ function usePersistentUserId() {
   const [userId] = useState(() => {
     if (typeof window === 'undefined') return '';
     const key = 'aawaz-user-id';
-    const existing = window.localStorage.getItem(key);
-    if (existing) return existing;
     const nextId = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `user-${Date.now()}`;
-    window.localStorage.setItem(key, nextId);
+
+    try {
+      const existing = window.localStorage.getItem(key);
+      if (existing) return existing;
+      window.localStorage.setItem(key, nextId);
+    } catch {
+      return nextId;
+    }
+
     return nextId;
   });
   return userId;
@@ -146,6 +158,30 @@ function formatHistoryDate(value: string) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+async function requestJson<T>(url: string, init?: RequestInit, timeoutMs = 90000): Promise<T> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, { ...init, signal: controller.signal });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok || data.error) {
+      throw new Error(typeof data.error === 'string' ? data.error : 'Request failed.');
+    }
+
+    return data as T;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('The request took too long. Please try again.');
+    }
+
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
 
 function Shell({ children, className: extra }: { children: React.ReactNode; className?: string }) {
@@ -503,26 +539,24 @@ export default function Home() {
 
   useEffect(() => {
     if (!userId) return;
+    let cancelled = false;
+
     const load = async () => {
       try {
-        const res = await fetch(`/api/evaluations/history?userId=${encodeURIComponent(userId)}`);
-        const data = await res.json();
-        setHistory(data.history || []);
-      } catch {
-        toast.error('Could not load saved history.');
+        const data = await requestJson<HistoryResponse>(`/api/evaluations/history?userId=${encodeURIComponent(userId)}`, undefined, 25000);
+        if (!cancelled) setHistory(data.history || []);
+      } catch (err) {
+        if (!cancelled) toast.error(err instanceof Error ? err.message : 'Could not load saved history.');
       }
     };
+
     void load();
     return () => {
+      cancelled = true;
       if (timerRef.current) clearInterval(timerRef.current);
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, [userId]);
-
-  const averageScore = useMemo(() => {
-    const scores = history.map((item) => item.overall_score).filter((score): score is number => typeof score === 'number');
-    return scores.length ? Math.round(scores.reduce((sum, value) => sum + value, 0) / scores.length) : null;
-  }, [history]);
 
   // Auto-scroll to feedback after analysis completes
   useEffect(() => {
@@ -535,7 +569,21 @@ export default function Home() {
   }, [feedback]);
 
   const startRecording = async () => {
+    if (!userId) {
+      toast.error('User identity is still loading. Please try again.');
+      return;
+    }
+
+    if (!('MediaRecorder' in window) || !navigator.mediaDevices?.getUserMedia) {
+      toast.error('Audio recording is not supported in this browser.');
+      return;
+    }
+
     try {
+      if (timerRef.current) clearInterval(timerRef.current);
+      mediaRecorderRef.current?.stop();
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
       mediaStreamRef.current = stream;
@@ -546,15 +594,22 @@ export default function Home() {
       recorder.onstop = async () => {
         mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
         mediaStreamRef.current = null;
+        mediaRecorderRef.current = null;
         const blob = new Blob(chunksRef.current, { type: 'audio/webm;codecs=opus' });
+        chunksRef.current = [];
+
+        if (blob.size < 3000) {
+          toast.error('No audio detected. Please speak clearly and try again.');
+          setIsAnalyzing(false);
+          return;
+        }
+
         const form = new FormData();
         form.append('file', blob, 'speech.webm');
         form.append('userId', userId);
         if (selectedTemplateId) form.append('templateId', selectedTemplateId);
         try {
-          const res = await fetch('/api/transcribe-analyze', { method: 'POST', body: form });
-          const data = await res.json();
-          if (!res.ok || data.error) throw new Error(data.error || 'Failed to analyze speech.');
+          const data = await requestJson<AnalyzeResponse>('/api/transcribe-analyze', { method: 'POST', body: form }, 140000);
           setTranscript(data.transcript || '');
           setFeedback(data.feedback || '');
           setHistory(data.history || []);
@@ -573,8 +628,15 @@ export default function Home() {
       setSeconds(0);
       setIsRecording(true);
       setIsAnalyzing(false);
-      if (timerRef.current) clearInterval(timerRef.current);
-      timerRef.current = setInterval(() => setSeconds((current) => current + 1), 1000);
+      timerRef.current = setInterval(() => {
+        setSeconds((current) => {
+          const next = current + 1;
+          if (next >= MAX_RECORDING_SECONDS) {
+            window.setTimeout(() => stopRecording(), 0);
+          }
+          return next;
+        });
+      }, 1000);
       toast.message('Recording started.');
     } catch {
       toast.error('Microphone access is required.');
@@ -582,8 +644,11 @@ export default function Home() {
   };
 
   const stopRecording = () => {
-    mediaRecorderRef.current?.stop();
+    if (mediaRecorderRef.current?.state !== 'recording') return;
+
+    mediaRecorderRef.current.stop();
     if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = null;
     setIsRecording(false);
     setIsAnalyzing(true);
   };
@@ -599,14 +664,12 @@ export default function Home() {
     setSpeech('');
     setError('');
     try {
-      const res = await fetch('/api/generate-speech', {
+      const data = await requestJson<SpeechResponse>('/api/generate-speech', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, wordCount }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || 'Failed to generate.');
-      setSpeech(data.speech);
+        body: JSON.stringify({ topic, wordCount, userId }),
+      }, 70000);
+      setSpeech(data.speech || '');
       toast.success('Practice speech generated.');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to generate.';
@@ -619,13 +682,11 @@ export default function Home() {
 
   const deleteSession = async (sessionId: string) => {
     try {
-      const res = await fetch('/api/evaluations/history', {
+      const data = await requestJson<HistoryResponse>('/api/evaluations/history', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, sessionId }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || 'Failed to delete session.');
+      }, 25000);
       setHistory(data.history || []);
       setSelectedSessionId((current) => (current === sessionId ? null : current));
       toast.success('Speech session deleted.');
@@ -642,13 +703,11 @@ export default function Home() {
     setInsights([]);
     setWeaknesses([]);
     try {
-      const res = await fetch('/api/generate-insights', {
+      const data = await requestJson<InsightsResponse>('/api/generate-insights', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || 'Failed to generate insights.');
+      }, 50000);
       setInsights(data.insights || []);
       setWeaknesses(data.weaknesses || []);
       toast.success('Insights generated.');

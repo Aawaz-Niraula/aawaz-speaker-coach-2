@@ -2,6 +2,8 @@ import { createClient } from '@libsql/client';
 
 type DbClient = ReturnType<typeof createClient>;
 
+const MAX_SESSIONS_PER_USER = 50;
+
 let dbClient: DbClient | null | undefined;
 let schemaReady = false;
 let schemaReadyPromise: Promise<DbClient | null> | null = null;
@@ -153,6 +155,21 @@ export async function insertSpeechSession(session: Omit<SpeechSessionRecord, 'cr
       ],
     });
 
+    await db.execute({
+      sql: `
+        DELETE FROM speech_sessions
+        WHERE user_id = ?
+          AND id NOT IN (
+            SELECT id
+            FROM speech_sessions
+            WHERE user_id = ?
+            ORDER BY datetime(created_at) DESC
+            LIMIT ?
+          )
+      `,
+      args: [session.user_id, session.user_id, MAX_SESSIONS_PER_USER],
+    });
+
     return true;
   } catch (error) {
     console.error('Failed to insert speech session:', error);
@@ -168,7 +185,7 @@ export async function deleteSpeechSession(userId: string, sessionId: string) {
   }
 
   try {
-    await db.execute({
+    const result = await db.execute({
       sql: `
         DELETE FROM speech_sessions
         WHERE id = ? AND user_id = ?
@@ -176,7 +193,7 @@ export async function deleteSpeechSession(userId: string, sessionId: string) {
       args: [sessionId, userId],
     });
 
-    return true;
+    return result.rowsAffected > 0;
   } catch (error) {
     console.error('Failed to delete speech session:', error);
     return false;

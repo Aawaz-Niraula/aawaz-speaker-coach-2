@@ -1,7 +1,14 @@
 import { NextRequest } from 'next/server';
 
+import { getProviderErrorMessage, isAbortTimeout, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
 import { listRecentSpeechSessions } from '@/lib/db';
 import { fetchWithRetry } from '@/lib/fetch';
+import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
+
+const INSIGHT_MODELS = [
+  'mistralai/Mistral-Small-24B-Instruct-2501',
+  'Qwen/Qwen3.5-9B',
+] as const;
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,6 +32,15 @@ export async function POST(req: NextRequest) {
 
     if (!DEEPINFRA_API_KEY) {
       return Response.json({ error: 'Server configuration error: missing API key.' }, { status: 500 });
+    }
+
+    const rateKey = `generate-insights:${getClientKey(req, userId)}`;
+    const rateLimit = checkRateLimit(rateKey, 15, 10 * 60 * 1000);
+    if (!rateLimit.allowed) {
+      return Response.json(
+        { error: 'Too many insight requests. Please wait a moment and try again.' },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
+      );
     }
 
     // Pre-compute stats on the server to reduce LLM work
@@ -51,36 +67,67 @@ export async function POST(req: NextRequest) {
       return `${i + 1}. ${label} | ${score}/100 | ${wpm}wpm | ${fb}`;
     }).join('\n');
 
-    const res = await fetchWithRetry('https://api.deepinfra.com/v1/openai/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${DEEPINFRA_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      signal: AbortSignal.timeout(25000),
-      body: JSON.stringify({
-        model: 'mistralai/Mistral-Small-24B-Instruct-2501',
-        messages: [
-          {
-            role: 'system',
-            content: `Reply ONLY with valid JSON: {"insights":["..."],"weaknesses":["..."]}. 3 insights (factual, with numbers), 2 weaknesses (concrete issues). No markdown.`,
-          },
-          {
-            role: 'user',
-            content: `${sessions.length} sessions. Avg score: ${avgScore ?? 'N/A'}/100, Avg WPM: ${avgWpm ?? 'N/A'}. By mode: ${modeAvgs}. First score: ${scores[scores.length - 1] ?? '-'}, Latest: ${scores[0] ?? '-'}.\n\n${sessionLines}`,
-          },
-        ],
-        max_tokens: 400,
-        temperature: 0.2,
-      }),
-    }, 1);
+    let data: ChatCompletionData = {};
+    let lastStatus = 503;
+    let lastMessage = 'Failed to generate insights.';
+    let succeeded = false;
 
-    const data = await res.json().catch(() => ({}));
+    for (const model of INSIGHT_MODELS) {
+      const res = await fetchWithRetry('https://api.deepinfra.com/v1/openai/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${DEEPINFRA_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(25000),
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: 'system',
+              content: `Reply ONLY with valid JSON: {"insights":["..."],"weaknesses":["..."]}. 3 insights (factual, with numbers), 2 weaknesses (concrete issues). No markdown.`,
+            },
+            {
+              role: 'user',
+              content: `${sessions.length} sessions. Avg score: ${avgScore ?? 'N/A'}/100, Avg WPM: ${avgWpm ?? 'N/A'}. By mode: ${modeAvgs}. First score: ${scores[scores.length - 1] ?? '-'}, Latest: ${scores[0] ?? '-'}.\n\n${sessionLines}`,
+            },
+          ],
+          max_tokens: 400,
+          temperature: 0.2,
+        }),
+      }, 1).catch(() => null);
 
-    if (data.error || !res.ok) {
+      if (!res) {
+        lastStatus = 503;
+        lastMessage = 'Insight generation is temporarily unavailable. Please try again in a little while.';
+
+        if (model !== INSIGHT_MODELS[INSIGHT_MODELS.length - 1]) {
+          continue;
+        }
+
+        break;
+      }
+
+      data = await res.json().catch(() => ({})) as ChatCompletionData;
+      lastStatus = res.ok ? 502 : res.status;
+      lastMessage = getProviderErrorMessage(data) || lastMessage;
+
+      if (data.error || !res.ok) {
+        if (isProviderUnavailable(lastStatus, lastMessage) && model !== INSIGHT_MODELS[INSIGHT_MODELS.length - 1]) {
+          continue;
+        }
+
+        break;
+      }
+
+      succeeded = true;
+      break;
+    }
+
+    if (!succeeded) {
       return Response.json(
-        { error: data.error?.message || 'Failed to generate insights.' },
-        { status: res.ok ? 502 : res.status },
+        { error: lastStatus === 429 ? "Today's free AI limit has been reached. Please try again later." : lastMessage },
+        { status: lastStatus },
       );
     }
 
@@ -100,9 +147,8 @@ export async function POST(req: NextRequest) {
       });
     }
   } catch (error) {
-    const isTimeout = error instanceof DOMException && error.name === 'TimeoutError';
     return Response.json(
-      { error: isTimeout ? 'Insight generation timed out. Please try again.' : 'Insight generation failed.' },
+      { error: isAbortTimeout(error) ? 'Insight generation timed out. Please try again.' : 'Insight generation failed.' },
       { status: 503 },
     );
   }
