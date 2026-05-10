@@ -2,9 +2,16 @@ import { randomUUID } from 'crypto';
 
 import { NextRequest } from 'next/server';
 
+import { getProviderErrorMessage, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
 import { insertSpeechSession, listRecentSpeechSessions } from '@/lib/db';
 import { fetchWithRetry } from '@/lib/fetch';
+import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
 import { GENERAL_RUBRIC, getSpeechTemplate } from '@/lib/speech-config';
+
+const ANALYSIS_MODELS = [
+  'google/gemma-4-26B-A4B-it',
+  'Qwen/Qwen3-14B',
+] as const;
 
 function formatApiError(prefix: string, status: number, message?: string) {
   if (status === 429) {
@@ -124,6 +131,19 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const rateKey = `transcribe-analyze:${getClientKey(req, userId)}`;
+  const rateLimit = checkRateLimit(rateKey, 12, 10 * 60 * 1000);
+  if (!rateLimit.allowed) {
+    return Response.json(
+      {
+        transcript: '',
+        feedback: 'Too many analysis requests. Please wait a moment and try again.',
+        history: [],
+      },
+      { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
+    );
+  }
+
   const previousHistory = await listRecentSpeechSessions(userId, 4);
   const historyContext = buildHistoryContext(previousHistory);
 
@@ -175,7 +195,13 @@ export async function POST(req: NextRequest) {
   const wordCount = transcript.split(/\s+/).filter(Boolean).length;
   const wordsPerMin = duration > 0 ? Math.round((wordCount / duration) * 60) : 0;
 
-  const analysisRes = await fetchWithRetry('https://api.deepinfra.com/v1/openai/chat/completions', {
+  let analysisData: ChatCompletionData = {};
+  let analysisStatus = 503;
+  let analysisMessage: string | undefined;
+  let analysisSucceeded = false;
+
+  for (const model of ANALYSIS_MODELS) {
+    const analysisRes = await fetchWithRetry('https://api.deepinfra.com/v1/openai/chat/completions', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${DEEPINFRA_API_KEY}`,
@@ -183,7 +209,7 @@ export async function POST(req: NextRequest) {
     },
     signal: AbortSignal.timeout(90000),
     body: JSON.stringify({
-      model: 'google/gemma-4-26B-A4B-it',
+      model,
       messages: [
         {
           role: 'system',
@@ -246,25 +272,42 @@ ${transcript}`,
       max_tokens: 900,
       temperature: 0.3,
     }),
-  }, 1).catch(() => null);
+    }, 1).catch(() => null);
 
-  if (!analysisRes) {
-    return Response.json({
-      transcript,
-      feedback: 'Speech analysis is temporarily unavailable right now. Please try again in a little while.',
-      history: previousHistory,
-    }, { status: 503 });
+    if (!analysisRes) {
+      analysisStatus = 503;
+      analysisMessage = 'Speech analysis is temporarily unavailable right now. Please try again in a little while.';
+
+      if (model !== ANALYSIS_MODELS[ANALYSIS_MODELS.length - 1]) {
+        continue;
+      }
+
+      break;
+    }
+
+    analysisData = await analysisRes.json().catch(() => ({}));
+    analysisStatus = analysisRes.status;
+    analysisMessage = getProviderErrorMessage(analysisData);
+
+    if (!analysisRes.ok || analysisData.error) {
+      if (isProviderUnavailable(analysisStatus, analysisMessage) && model !== ANALYSIS_MODELS[ANALYSIS_MODELS.length - 1]) {
+        continue;
+      }
+
+      break;
+    }
+
+    analysisSucceeded = true;
+    break;
   }
 
-  const analysisData = await analysisRes.json().catch(() => ({}));
-
-  if (!analysisRes.ok || analysisData.error) {
+  if (!analysisSucceeded) {
     return Response.json({
       transcript,
       feedback: formatApiError(
         'Speech analysis',
-        analysisRes.status,
-        analysisData?.error?.message,
+        analysisStatus,
+        analysisMessage,
       ),
       history: previousHistory,
     });
