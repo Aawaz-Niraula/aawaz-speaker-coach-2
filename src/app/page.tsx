@@ -10,8 +10,10 @@ import {
   Check,
   ChevronDown,
   Copy,
+  Download,
   MessageCircleMore,
   Plus,
+  Play,
   Volume2,
   Menu,
   Mic,
@@ -44,9 +46,14 @@ type SpeechHistoryItem = {
   feedback: string;
 };
 type HistoryResponse = { history?: SpeechHistoryItem[] };
-type AnalyzeResponse = HistoryResponse & { transcript?: string; feedback?: string };
+type AnalyzeResponse = HistoryResponse & { transcript?: string; feedback?: string; voiceSampleSaved?: boolean };
 type SpeechResponse = { speech?: string };
 type InsightsResponse = { insights?: string[]; weaknesses?: string[] };
+type SpeechAudioMode = 'example' | 'clone';
+type SpeechAudioState = {
+  example: { url: string; isLoading: boolean };
+  clone: { url: string; isLoading: boolean };
+};
 
 const navItems: NavItem[] = [
   { id: 'coach', label: 'Speaking Coach', icon: Mic },
@@ -56,6 +63,7 @@ const navItems: NavItem[] = [
 ];
 
 const MAX_RECORDING_SECONDS = 300;
+const VOICE_SAMPLE_SECONDS = 10;
 
 function ProgressChart({ history }: { history: SpeechHistoryItem[] }) {
   const scored = history
@@ -521,6 +529,10 @@ export default function Home() {
   const [topic, setTopic] = useState('');
   const [wordCount, setWordCount] = useState(180);
   const [speech, setSpeech] = useState('');
+  const [speechAudio, setSpeechAudio] = useState<SpeechAudioState>({
+    example: { url: '', isLoading: false },
+    clone: { url: '', isLoading: false },
+  });
   const [error, setError] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -536,6 +548,7 @@ export default function Home() {
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const feedbackRef = useRef<HTMLDivElement | null>(null);
+  const speechAudioRef = useRef(speechAudio);
 
   useEffect(() => {
     if (!userId) return;
@@ -557,6 +570,18 @@ export default function Home() {
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, [userId]);
+
+  useEffect(() => {
+    speechAudioRef.current = speechAudio;
+  }, [speechAudio]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(speechAudioRef.current).forEach((item) => {
+        if (item.url) URL.revokeObjectURL(item.url);
+      });
+    };
+  }, []);
 
   // Auto-scroll to feedback after analysis completes
   useEffect(() => {
@@ -595,7 +620,9 @@ export default function Home() {
         mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
         mediaStreamRef.current = null;
         mediaRecorderRef.current = null;
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm;codecs=opus' });
+        const audioType = recorder.mimeType || chunksRef.current[0]?.type || 'audio/webm;codecs=opus';
+        const blob = new Blob(chunksRef.current, { type: audioType });
+        const sampleBlob = new Blob(chunksRef.current.slice(0, VOICE_SAMPLE_SECONDS), { type: audioType });
         chunksRef.current = [];
 
         if (blob.size < 3000) {
@@ -606,6 +633,7 @@ export default function Home() {
 
         const form = new FormData();
         form.append('file', blob, 'speech.webm');
+        form.append('voiceSample', sampleBlob.size >= 3000 ? sampleBlob : blob, 'voice-sample.webm');
         form.append('userId', userId);
         if (selectedTemplateId) form.append('templateId', selectedTemplateId);
         try {
@@ -614,6 +642,9 @@ export default function Home() {
           setFeedback(data.feedback || '');
           setHistory(data.history || []);
           setSelectedSessionId(null);
+          if (data.voiceSampleSaved === false) {
+            toast.error('Analysis completed, but the voice sample could not be stored for cloning.');
+          }
           toast.success('Speech analyzed and saved.');
         } catch (err) {
           toast.error(err instanceof Error ? err.message : 'Failed to analyze speech.');
@@ -621,7 +652,7 @@ export default function Home() {
           setIsAnalyzing(false);
         }
       };
-      recorder.start();
+      recorder.start(1000);
       mediaRecorderRef.current = recorder;
       setTranscript('');
       setFeedback('');
@@ -662,6 +693,13 @@ export default function Home() {
     }
     setIsGenerating(true);
     setSpeech('');
+    Object.values(speechAudioRef.current).forEach((item) => {
+      if (item.url) URL.revokeObjectURL(item.url);
+    });
+    setSpeechAudio({
+      example: { url: '', isLoading: false },
+      clone: { url: '', isLoading: false },
+    });
     setError('');
     try {
       const data = await requestJson<SpeechResponse>('/api/generate-speech', {
@@ -677,6 +715,71 @@ export default function Home() {
       toast.error(message);
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const generateSpeechAudio = async (mode: SpeechAudioMode) => {
+    if (!speech.trim()) {
+      toast.error('First generate a text script.');
+      return;
+    }
+
+    if (speechAudio[mode].isLoading) return;
+
+    const form = new FormData();
+    form.append('mode', mode);
+    form.append('text', speech);
+    form.append('userId', userId);
+
+    if (speechAudioRef.current[mode].url) {
+      URL.revokeObjectURL(speechAudioRef.current[mode].url);
+    }
+
+    setSpeechAudio((current) => ({
+      ...current,
+      [mode]: { url: '', isLoading: true },
+    }));
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 180000);
+
+    try {
+      const res = await fetch('/api/generate-speech-audio', {
+        method: 'POST',
+        body: form,
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(typeof data.error === 'string' ? data.error : 'Could not generate speech audio.');
+      }
+
+      const blob = await res.blob();
+      if (!blob.size) throw new Error('The voice model returned an empty audio file.');
+      const url = URL.createObjectURL(blob);
+      setSpeechAudio((current) => {
+        if (current[mode].url) URL.revokeObjectURL(current[mode].url);
+        return {
+          ...current,
+          [mode]: { url, isLoading: false },
+        };
+      });
+      toast.success(mode === 'clone' ? 'Speech generated in your voice.' : 'Example speech audio generated.');
+    } catch (err) {
+      const message =
+        err instanceof DOMException && err.name === 'AbortError'
+          ? 'Voice generation took too long. Please try again.'
+          : err instanceof Error
+            ? err.message
+            : 'Could not generate speech audio.';
+      toast.error(message);
+      setSpeechAudio((current) => ({
+        ...current,
+        [mode]: { ...current[mode], isLoading: false },
+      }));
+    } finally {
+      window.clearTimeout(timeout);
     }
   };
 
@@ -763,6 +866,52 @@ export default function Home() {
       ) : null}
     </div>
   );
+
+  const SpeechAudioActions = () => {
+    const items: { mode: SpeechAudioMode; label: string; helper: string }[] = [
+      { mode: 'example', label: 'Hear Example Speech', helper: 'Polished public-speaking voice' },
+      { mode: 'clone', label: 'Hear in your own voice', helper: 'Uses your latest analyzed sample' },
+    ];
+
+    return (
+      <div className="mb-5 grid gap-3 md:grid-cols-2">
+        {items.map((item) => {
+          const state = speechAudio[item.mode];
+          const filename = item.mode === 'clone' ? 'aawaz-your-voice-speech.opus' : 'aawaz-example-speech.opus';
+          return (
+            <div key={item.mode} className="rounded-[20px] border border-white/10 bg-[#0b0b12]/55 p-3 sm:rounded-[24px] sm:p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <button
+                  type="button"
+                  onClick={() => generateSpeechAudio(item.mode)}
+                  disabled={state.isLoading || isGenerating}
+                  className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[16px] border border-[#a78bfa]/25 bg-[linear-gradient(135deg,rgba(167,139,250,0.18),rgba(249,168,212,0.10))] px-4 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#f2efff] transition hover:bg-white/10 disabled:pointer-events-none disabled:opacity-50 sm:rounded-[18px] lg:w-auto lg:min-w-[220px]"
+                >
+                  <Play className={cn('h-4 w-4 shrink-0', state.isLoading && 'animate-pulse')} />
+                  <span className="min-w-0 break-words">{state.isLoading ? 'Generating...' : item.label}</span>
+                </button>
+                {state.url ? (
+                  <a
+                    href={state.url}
+                    download={filename}
+                    className="inline-flex h-11 w-full items-center justify-center rounded-[16px] border border-white/10 bg-white/6 text-[#ddd6fe] transition hover:bg-white/10 lg:w-11 lg:rounded-full"
+                    aria-label={`Download ${item.label.toLowerCase()}`}
+                    title={`Download ${item.label.toLowerCase()}`}
+                  >
+                    <Download className="h-4 w-4" />
+                  </a>
+                ) : null}
+              </div>
+              <div className="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[#857ca2]">{item.helper}</div>
+              {state.url ? (
+                <audio controls src={state.url} className="mt-3 h-10 w-full" preload="metadata" />
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   const PopupIconButton = ({
     onClick,
@@ -1115,7 +1264,7 @@ export default function Home() {
                         <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-[#857ca2]">Sample Speech</p>
                         {!isGenerating && <Button variant="ghost" size="icon" onClick={generateSpeech}><RefreshCw className="h-4 w-4" /></Button>}
                       </div>
-                      {isGenerating ? <div className="flex gap-2">{[0, 1, 2].map((i) => <motion.div key={i} animate={{ y: [0, -6, 0], opacity: [0.4, 1, 0.4] }} transition={{ duration: 0.7, repeat: Infinity, delay: i * 0.14 }} className="h-2 w-2 rounded-full bg-[#a78bfa]" />)}</div> : <><p className="whitespace-pre-wrap break-words text-[15px] leading-7 sm:leading-8 text-[#f2efff]">{speech}</p><ActionBar text={speech} label="Speech" onRegenerate={generateSpeech} /></>}
+                      {isGenerating ? <div className="flex gap-2">{[0, 1, 2].map((i) => <motion.div key={i} animate={{ y: [0, -6, 0], opacity: [0.4, 1, 0.4] }} transition={{ duration: 0.7, repeat: Infinity, delay: i * 0.14 }} className="h-2 w-2 rounded-full bg-[#a78bfa]" />)}</div> : <><SpeechAudioActions /><p className="whitespace-pre-wrap break-words text-[15px] leading-7 sm:leading-8 text-[#f2efff]">{speech}</p><ActionBar text={speech} label="Speech" onRegenerate={generateSpeech} /></>}
                     </Shell>
                   )}
                 </>

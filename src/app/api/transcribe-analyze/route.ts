@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
 
 import { getProviderErrorMessage, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
-import { insertSpeechSession, listRecentSpeechSessions } from '@/lib/db';
+import { insertSpeechSession, listRecentSpeechSessions, upsertSpeechVoiceSample } from '@/lib/db';
 import { fetchWithRetry } from '@/lib/fetch';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
 import { GENERAL_RUBRIC, getSpeechTemplate } from '@/lib/speech-config';
@@ -85,6 +85,7 @@ export async function POST(req: NextRequest) {
   }
 
   const file = formData.get('file') as File | null;
+  const voiceSample = formData.get('voiceSample') as File | null;
   const userId = String(formData.get('userId') || '').trim().slice(0, 128);
   const selectedTemplateId = String(formData.get('templateId') || '').trim().slice(0, 80) || null;
 
@@ -101,6 +102,17 @@ export async function POST(req: NextRequest) {
       {
         transcript: '',
         feedback: 'Audio is too large. Keep recordings under 20 MB and try again.',
+        history: [],
+      },
+      { status: 413 },
+    );
+  }
+
+  if (voiceSample && voiceSample.size > 8 * 1024 * 1024) {
+    return Response.json(
+      {
+        transcript: '',
+        feedback: 'Voice sample is too large. Record a shorter speech analysis and try again.',
         history: [],
       },
       { status: 413 },
@@ -329,12 +341,27 @@ ${transcript}`,
     duration_seconds: duration || null,
   });
 
+  let voiceSampleSaved = false;
+  try {
+    const sampleToStore = voiceSample && voiceSample.size >= 3000 ? voiceSample : file;
+    const sampleBytes = await sampleToStore.arrayBuffer();
+    voiceSampleSaved = await upsertSpeechVoiceSample({
+      userId,
+      audioData: sampleBytes,
+      mimeType: sampleToStore.type || 'audio/webm;codecs=opus',
+      filename: sampleToStore.name || 'voice-sample.webm',
+    });
+  } catch (error) {
+    console.error('Failed to prepare speech voice sample:', error);
+  }
+
   const updatedHistory = await listRecentSpeechSessions(userId, 6);
 
   return Response.json({
     transcript,
     feedback,
     history: updatedHistory,
+    voiceSampleSaved,
     rubricMode,
     template: template?.label ?? null,
   });
