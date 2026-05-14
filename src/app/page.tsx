@@ -50,6 +50,7 @@ type AnalyzeResponse = HistoryResponse & { transcript?: string; feedback?: strin
 type SpeechResponse = { speech?: string };
 type InsightsResponse = { insights?: string[]; weaknesses?: string[] };
 type SpeechAudioMode = 'example' | 'clone';
+type SpeechExampleVoice = 'female' | 'male';
 type SpeechAudioState = {
   example: { url: string; isLoading: boolean };
   clone: { url: string; isLoading: boolean };
@@ -533,6 +534,7 @@ export default function Home() {
     example: { url: '', isLoading: false },
     clone: { url: '', isLoading: false },
   });
+  const [exampleVoice, setExampleVoice] = useState<SpeechExampleVoice>('female');
   const [error, setError] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -730,6 +732,7 @@ export default function Home() {
     form.append('mode', mode);
     form.append('text', speech);
     form.append('userId', userId);
+    if (mode === 'example') form.append('exampleVoice', exampleVoice);
 
     if (speechAudioRef.current[mode].url) {
       URL.revokeObjectURL(speechAudioRef.current[mode].url);
@@ -873,13 +876,46 @@ export default function Home() {
       { mode: 'clone', label: 'Hear in your own voice', helper: 'Uses your latest analyzed sample' },
     ];
 
+    const updateExampleVoice = (voice: SpeechExampleVoice) => {
+      if (speechAudio.example.isLoading || exampleVoice === voice) return;
+      if (speechAudioRef.current.example.url) {
+        URL.revokeObjectURL(speechAudioRef.current.example.url);
+      }
+      setExampleVoice(voice);
+      setSpeechAudio((current) => ({
+        ...current,
+        example: { url: '', isLoading: false },
+      }));
+    };
+
     return (
       <div className="mb-5 grid gap-3 md:grid-cols-2">
         {items.map((item) => {
           const state = speechAudio[item.mode];
-          const filename = item.mode === 'clone' ? 'aawaz-your-voice-speech.opus' : 'aawaz-example-speech.opus';
+          const filename = item.mode === 'clone' ? 'aawaz-your-voice-speech.opus' : `aawaz-example-${exampleVoice}-speech.opus`;
           return (
             <div key={item.mode} className="rounded-[20px] border border-white/10 bg-[#0b0b12]/55 p-3 sm:rounded-[24px] sm:p-4">
+              {item.mode === 'example' ? (
+                <div className="mb-3 inline-flex rounded-full border border-white/10 bg-white/5 p-1">
+                  {(['female', 'male'] as const).map((voice) => (
+                    <button
+                      key={voice}
+                      type="button"
+                      onClick={() => updateExampleVoice(voice)}
+                      disabled={state.isLoading}
+                      className={cn(
+                        'h-8 rounded-full px-3 font-mono text-[10px] uppercase tracking-[0.18em] transition disabled:pointer-events-none disabled:opacity-60',
+                        exampleVoice === voice
+                          ? 'bg-[#ddd6fe] text-[#06060b]'
+                          : 'text-[#857ca2] hover:bg-white/10 hover:text-[#f2efff]',
+                      )}
+                      aria-pressed={exampleVoice === voice}
+                    >
+                      {voice}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <button
                   type="button"
