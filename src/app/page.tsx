@@ -64,7 +64,7 @@ const navItems: NavItem[] = [
 ];
 
 const MAX_RECORDING_SECONDS = 300;
-const VOICE_SAMPLE_SECONDS = 10;
+const VOICE_SAMPLE_SECONDS = 15;
 
 function ProgressChart({ history }: { history: SpeechHistoryItem[] }) {
   const scored = history
@@ -169,7 +169,7 @@ function formatHistoryDate(value: string) {
   return parsed.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-async function requestJson<T>(url: string, init?: RequestInit, timeoutMs = 90000): Promise<T> {
+async function requestJson<T>(url: string, init?: RequestInit, timeoutMs = 300000): Promise<T> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
@@ -178,7 +178,8 @@ async function requestJson<T>(url: string, init?: RequestInit, timeoutMs = 90000
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok || data.error) {
-      throw new Error(typeof data.error === 'string' ? data.error : 'Request failed.');
+      const errorMsg = typeof data.error === 'string' ? data.error : (typeof data.feedback === 'string' ? data.feedback : 'Request failed.');
+      throw new Error(errorMsg);
     }
 
     return data as T;
@@ -558,7 +559,7 @@ export default function Home() {
 
     const load = async () => {
       try {
-        const data = await requestJson<HistoryResponse>(`/api/evaluations/history?userId=${encodeURIComponent(userId)}`, undefined, 25000);
+        const data = await requestJson<HistoryResponse>(`/api/evaluations/history?userId=${encodeURIComponent(userId)}`, undefined, 300000);
         if (!cancelled) setHistory(data.history || []);
       } catch (err) {
         if (!cancelled) toast.error(err instanceof Error ? err.message : 'Could not load saved history.');
@@ -639,7 +640,7 @@ export default function Home() {
         form.append('userId', userId);
         if (selectedTemplateId) form.append('templateId', selectedTemplateId);
         try {
-          const data = await requestJson<AnalyzeResponse>('/api/transcribe-analyze', { method: 'POST', body: form }, 140000);
+          const data = await requestJson<AnalyzeResponse>('/api/transcribe-analyze', { method: 'POST', body: form }, 300000);
           setTranscript(data.transcript || '');
           setFeedback(data.feedback || '');
           setHistory(data.history || []);
@@ -708,7 +709,7 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic, wordCount, userId }),
-      }, 70000);
+      }, 300000);
       setSpeech(data.speech || '');
       toast.success('Practice speech generated.');
     } catch (err) {
@@ -744,7 +745,7 @@ export default function Home() {
     }));
 
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 180000);
+    const timeout = window.setTimeout(() => controller.abort(), 300000);
 
     try {
       const res = await fetch('/api/generate-speech-audio', {
@@ -792,7 +793,7 @@ export default function Home() {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, sessionId }),
-      }, 25000);
+      }, 300000);
       setHistory(data.history || []);
       setSelectedSessionId((current) => (current === sessionId ? null : current));
       toast.success('Speech session deleted.');
@@ -813,7 +814,7 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId }),
-      }, 50000);
+      }, 300000);
       setInsights(data.insights || []);
       setWeaknesses(data.weaknesses || []);
       toast.success('Insights generated.');
