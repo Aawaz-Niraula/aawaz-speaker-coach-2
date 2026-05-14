@@ -87,7 +87,7 @@ async function readAudioResponse(res: Response) {
     const data = await res.json().catch(() => ({}));
     const payload = findAudioPayload(data);
     if (payload?.startsWith('http')) {
-      const audioRes = await fetchWithRetry(payload, { signal: AbortSignal.timeout(60000) }, 1);
+      const audioRes = await fetchWithRetry(payload, {}, 1, 1000, 60000);
       if (audioRes.ok) {
         return readAudioResponse(audioRes);
       }
@@ -117,7 +117,6 @@ async function synthesizeWithVoice(voiceId: string, text: string, modelId: strin
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    signal: AbortSignal.timeout(120000),
     body: JSON.stringify({
       text,
       model_id: modelId,
@@ -129,7 +128,7 @@ async function synthesizeWithVoice(voiceId: string, text: string, modelId: strin
       style_prompt: STYLE_PROMPT,
       instructions: STYLE_PROMPT,
     }),
-  }, 1);
+  }, 1, 1000, 120000);
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -181,9 +180,8 @@ async function synthesizeDirect(modelId: string, text: string, token: string, sa
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-    signal: AbortSignal.timeout(120000),
     body,
-  }, body instanceof FormData ? 0 : 1);
+  }, body instanceof FormData ? 0 : 1, 1000, 120000);
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -202,9 +200,8 @@ async function createVoice(sample: File, userId: string, token: string) {
   const res = await fetchWithRetry('https://api.deepinfra.com/v1/voices/add', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(120000),
     body: voiceForm,
-  }, 0);
+  }, 0, 1000, 120000);
 
   const data = await res.json().catch(() => ({}));
   const voiceId = typeof data?.voice_id === 'string' ? data.voice_id : '';

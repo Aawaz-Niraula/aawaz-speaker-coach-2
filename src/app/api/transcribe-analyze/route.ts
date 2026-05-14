@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 
-import { NextRequest } from 'next/server';
+import { after, NextRequest } from 'next/server';
 
 import { getProviderErrorMessage, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
 import { insertSpeechSession, listRecentSpeechSessions, upsertSpeechVoiceSample } from '@/lib/db';
@@ -167,9 +167,8 @@ export async function POST(req: NextRequest) {
   const whisperRes = await fetchWithRetry('https://api.deepinfra.com/v1/openai/audio/transcriptions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${DEEPINFRA_API_KEY}` },
-    signal: AbortSignal.timeout(90000),
     body: audioForm,
-  }, 1).catch(() => null);
+  }, 1, 1000, 75000).catch(() => null);
 
   if (!whisperRes) {
     return Response.json({
@@ -219,7 +218,6 @@ export async function POST(req: NextRequest) {
       Authorization: `Bearer ${DEEPINFRA_API_KEY}`,
       'Content-Type': 'application/json',
     },
-    signal: AbortSignal.timeout(90000),
     body: JSON.stringify({
       model,
       messages: [
@@ -284,7 +282,7 @@ ${transcript}`,
       max_tokens: 900,
       temperature: 0.3,
     }),
-    }, 1).catch(() => null);
+    }, 0, 0, 75000).catch(() => null);
 
     if (!analysisRes) {
       analysisStatus = 503;
@@ -328,7 +326,7 @@ ${transcript}`,
   const feedback = analysisData.choices?.[0]?.message?.content || 'No feedback from coach.';
   const overallScore = extractOverallScore(feedback);
 
-  await insertSpeechSession({
+  const newSessionHeader = {
     id: randomUUID(),
     user_id: userId,
     template_id: template?.id ?? null,
@@ -339,23 +337,43 @@ ${transcript}`,
     overall_score: overallScore,
     words_per_min: wordsPerMin || null,
     duration_seconds: duration || null,
+    created_at: new Date().toISOString().replace('T', ' ').substring(0, 19)
+  };
+
+  const updatedHistory = [newSessionHeader, ...previousHistory].slice(0, 6);
+  const voiceSampleSaved = !!(voiceSample && voiceSample.size >= 3000) || !!file;
+
+  after(async () => {
+    try {
+      await insertSpeechSession({
+        id: newSessionHeader.id,
+        user_id: newSessionHeader.user_id,
+        template_id: newSessionHeader.template_id,
+        template_label: newSessionHeader.template_label,
+        rubric_mode: newSessionHeader.rubric_mode,
+        transcript: newSessionHeader.transcript,
+        feedback: newSessionHeader.feedback,
+        overall_score: newSessionHeader.overall_score,
+        words_per_min: newSessionHeader.words_per_min,
+        duration_seconds: newSessionHeader.duration_seconds,
+      });
+    } catch (e) {
+      console.error('Failed to insert speech session in background:', e);
+    }
+
+    try {
+      const sampleToStore = voiceSample && voiceSample.size >= 3000 ? voiceSample : file;
+      const sampleBytes = await sampleToStore.arrayBuffer();
+      await upsertSpeechVoiceSample({
+        userId,
+        audioData: sampleBytes,
+        mimeType: sampleToStore.type || 'audio/webm;codecs=opus',
+        filename: sampleToStore.name || 'voice-sample.webm',
+      });
+    } catch (error) {
+      console.error('Failed to prepare speech voice sample in background:', error);
+    }
   });
-
-  let voiceSampleSaved = false;
-  try {
-    const sampleToStore = voiceSample && voiceSample.size >= 3000 ? voiceSample : file;
-    const sampleBytes = await sampleToStore.arrayBuffer();
-    voiceSampleSaved = await upsertSpeechVoiceSample({
-      userId,
-      audioData: sampleBytes,
-      mimeType: sampleToStore.type || 'audio/webm;codecs=opus',
-      filename: sampleToStore.name || 'voice-sample.webm',
-    });
-  } catch (error) {
-    console.error('Failed to prepare speech voice sample:', error);
-  }
-
-  const updatedHistory = await listRecentSpeechSessions(userId, 6);
 
   return Response.json({
     transcript,

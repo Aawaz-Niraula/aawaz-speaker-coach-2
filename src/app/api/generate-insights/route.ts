@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
           Authorization: `Bearer ${DEEPINFRA_API_KEY}`,
           'Content-Type': 'application/json',
         },
-        signal: AbortSignal.timeout(25000),
+
         body: JSON.stringify({
           model,
           messages: [
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
           max_tokens: 400,
           temperature: 0.2,
         }),
-      }, 1).catch(() => null);
+      }, 0, 0, 75000).catch(() => null);
 
       if (!res) {
         lastStatus = 503;

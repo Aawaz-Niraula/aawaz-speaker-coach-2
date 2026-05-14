@@ -163,12 +163,7 @@ export async function upsertSpeechVoiceSample({
         INSERT INTO speech_voice_samples (
           user_id, audio_data, mime_type, filename, size_bytes
         ) VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(user_id) DO UPDATE SET
-          audio_data = excluded.audio_data,
-          mime_type = excluded.mime_type,
-          filename = excluded.filename,
-          size_bytes = excluded.size_bytes,
-          updated_at = CURRENT_TIMESTAMP
+        ON CONFLICT(user_id) DO NOTHING
       `,
       args: [userId, audioData, mimeType, filename, audioData.byteLength],
     });
