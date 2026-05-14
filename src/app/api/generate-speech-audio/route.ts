@@ -6,11 +6,15 @@ import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
 
 const DEFAULT_TTS_MODEL = 'XiaomiMiMo/MiMo-V2.5-tts';
 const VOICE_CLONE_MODEL = 'XiaomiMiMo/MiMo-V2.5-tts-voiceclone';
-const DEFAULT_VOICE_ID = 'mimo_default';
+const EXAMPLE_VOICES = {
+  female: 'Mia',
+  male: 'Milo',
+} as const;
 const STYLE_PROMPT =
-  'High-confidence, eloquent public speaking: brilliant, composed, persuasive, warm, crystal-clear articulation, measured pauses, strong audience command, polished cadence, and an inspiring keynote-level delivery.';
+  'Sound like a real human public speaker, not a robotic narrator. Deliver with confident, eloquent, brilliant stage presence: warm and persuasive, emotionally expressive, natural breath, varied pacing, lifelike pauses, subtle emphasis, rising energy on inspiring lines, thoughtful softness on reflective lines, and clear audience command. Use natural conversational rhythm, not flat monotone reading.';
 
 type AudioMode = 'example' | 'clone';
+type ExampleVoice = keyof typeof EXAMPLE_VOICES;
 
 function cleanText(value: FormDataEntryValue | null) {
   return typeof value === 'string' ? value.trim().slice(0, 6000) : '';
@@ -40,11 +44,9 @@ function decodeBase64Audio(value: string) {
   if (!cleaned || cleaned.startsWith('http')) return null;
 
   try {
-    const binary = atob(cleaned);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) {
-      bytes[i] = binary.charCodeAt(i);
-    }
+    const buffer = Buffer.from(cleaned, 'base64');
+    const bytes = new Uint8Array(buffer.byteLength);
+    bytes.set(buffer);
     return bytes.buffer;
   } catch {
     return null;
@@ -121,6 +123,9 @@ async function synthesizeWithVoice(voiceId: string, text: string, modelId: strin
       model_id: modelId,
       output_format: 'opus',
       language_code: 'en',
+      voice: voiceId,
+      voice_id: voiceId,
+      style: STYLE_PROMPT,
       style_prompt: STYLE_PROMPT,
       instructions: STYLE_PROMPT,
     }),
@@ -134,11 +139,14 @@ async function synthesizeWithVoice(voiceId: string, text: string, modelId: strin
   return readAudioResponse(res);
 }
 
-async function synthesizeDirect(modelId: string, text: string, token: string, sample?: File) {
+async function synthesizeDirect(modelId: string, text: string, token: string, sample?: File, voiceId?: string) {
   const isClone = Boolean(sample);
   const body = isClone ? new FormData() : JSON.stringify({
     text,
+    voice: voiceId,
+    voice_id: voiceId,
     prompt: STYLE_PROMPT,
+    style: STYLE_PROMPT,
     style_prompt: STYLE_PROMPT,
     instructions: STYLE_PROMPT,
     response_format: 'opus',
@@ -148,7 +156,12 @@ async function synthesizeDirect(modelId: string, text: string, token: string, sa
 
   if (body instanceof FormData && sample) {
     body.append('text', text);
+    if (voiceId) {
+      body.append('voice', voiceId);
+      body.append('voice_id', voiceId);
+    }
     body.append('prompt', STYLE_PROMPT);
+    body.append('style', STYLE_PROMPT);
     body.append('style_prompt', STYLE_PROMPT);
     body.append('instructions', STYLE_PROMPT);
     body.append('response_format', 'opus');
@@ -170,7 +183,7 @@ async function synthesizeDirect(modelId: string, text: string, token: string, sa
         },
     signal: AbortSignal.timeout(120000),
     body,
-  }, 1);
+  }, body instanceof FormData ? 0 : 1);
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -191,7 +204,7 @@ async function createVoice(sample: File, userId: string, token: string) {
     headers: { Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(120000),
     body: voiceForm,
-  }, 1);
+  }, 0);
 
   const data = await res.json().catch(() => ({}));
   const voiceId = typeof data?.voice_id === 'string' ? data.voice_id : '';
@@ -209,6 +222,7 @@ export async function POST(req: NextRequest) {
     const mode = String(form.get('mode') || 'example') as AudioMode;
     const text = cleanText(form.get('text'));
     const userId = cleanText(form.get('userId')).slice(0, 128);
+    const requestedExampleVoice = String(form.get('exampleVoice') || 'female') as ExampleVoice;
 
     if (mode !== 'example' && mode !== 'clone') {
       return Response.json({ error: 'Invalid speech audio mode.' }, { status: 400 });
@@ -216,6 +230,10 @@ export async function POST(req: NextRequest) {
 
     if (!text) {
       return Response.json({ error: 'First generate a text script.' }, { status: 400 });
+    }
+
+    if (mode === 'example' && !Object.prototype.hasOwnProperty.call(EXAMPLE_VOICES, requestedExampleVoice)) {
+      return Response.json({ error: 'Invalid example voice.' }, { status: 400 });
     }
 
     const DEEPINFRA_API_KEY = process.env.DEEPINFRA_API_KEY;
@@ -261,10 +279,11 @@ export async function POST(req: NextRequest) {
         result = await synthesizeDirect(VOICE_CLONE_MODEL, text, DEEPINFRA_API_KEY, sample);
       }
     } else {
+      const voiceId = EXAMPLE_VOICES[requestedExampleVoice];
       try {
-        result = await synthesizeWithVoice(DEFAULT_VOICE_ID, text, DEFAULT_TTS_MODEL, DEEPINFRA_API_KEY);
+        result = await synthesizeWithVoice(voiceId, text, DEFAULT_TTS_MODEL, DEEPINFRA_API_KEY);
       } catch {
-        result = await synthesizeDirect(DEFAULT_TTS_MODEL, text, DEEPINFRA_API_KEY);
+        result = await synthesizeDirect(DEFAULT_TTS_MODEL, text, DEEPINFRA_API_KEY, undefined, voiceId);
       }
     }
 
