@@ -8,6 +8,37 @@ let dbClient: DbClient | null | undefined;
 let schemaReady = false;
 let schemaReadyPromise: Promise<DbClient | null> | null = null;
 
+function bytesFromBase64(value: string) {
+  try {
+    const binary = atob(value);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+  } catch {
+    return new ArrayBuffer(0);
+  }
+}
+
+function normalizeBlobValue(value: unknown) {
+  if (value instanceof ArrayBuffer) {
+    return value;
+  }
+
+  if (value instanceof Uint8Array) {
+    const copy = new Uint8Array(value.byteLength);
+    copy.set(value);
+    return copy.buffer;
+  }
+
+  if (typeof value === 'string') {
+    return bytesFromBase64(value);
+  }
+
+  return new ArrayBuffer(0);
+}
+
 function getDbClient() {
   if (dbClient !== undefined) {
     return dbClient;
@@ -43,6 +74,16 @@ export type SpeechSessionRecord = {
   created_at: string;
 };
 
+export type SpeechVoiceSampleRecord = {
+  user_id: string;
+  audio_data: ArrayBuffer;
+  mime_type: string;
+  filename: string;
+  size_bytes: number;
+  created_at: string;
+  updated_at: string;
+};
+
 export async function ensureSpeechSchema() {
   const db = getDbClient();
 
@@ -76,6 +117,18 @@ export async function ensureSpeechSchema() {
       ON speech_sessions (user_id, created_at DESC)
     `);
 
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS speech_voice_samples (
+        user_id TEXT PRIMARY KEY,
+        audio_data BLOB NOT NULL,
+        mime_type TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     schemaReady = true;
     return db;
   })().catch((error) => {
@@ -85,6 +138,84 @@ export async function ensureSpeechSchema() {
   });
 
   return schemaReadyPromise;
+}
+
+export async function upsertSpeechVoiceSample({
+  userId,
+  audioData,
+  mimeType,
+  filename,
+}: {
+  userId: string;
+  audioData: ArrayBuffer;
+  mimeType: string;
+  filename: string;
+}) {
+  const db = await ensureSpeechSchema();
+
+  if (!db) {
+    return false;
+  }
+
+  try {
+    await db.execute({
+      sql: `
+        INSERT INTO speech_voice_samples (
+          user_id, audio_data, mime_type, filename, size_bytes
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+          audio_data = excluded.audio_data,
+          mime_type = excluded.mime_type,
+          filename = excluded.filename,
+          size_bytes = excluded.size_bytes,
+          updated_at = CURRENT_TIMESTAMP
+      `,
+      args: [userId, audioData, mimeType, filename, audioData.byteLength],
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Failed to upsert speech voice sample:', error);
+    return false;
+  }
+}
+
+export async function getSpeechVoiceSample(userId: string) {
+  const db = await ensureSpeechSchema();
+
+  if (!db) {
+    return null;
+  }
+
+  try {
+    const result = await db.execute({
+      sql: `
+        SELECT user_id, audio_data, mime_type, filename, size_bytes, created_at, updated_at
+        FROM speech_voice_samples
+        WHERE user_id = ?
+        LIMIT 1
+      `,
+      args: [userId],
+    });
+
+    const row = result.rows[0];
+    if (!row) return null;
+
+    const audioData = normalizeBlobValue(row.audio_data);
+
+    return {
+      user_id: String(row.user_id),
+      audio_data: audioData,
+      mime_type: String(row.mime_type),
+      filename: String(row.filename),
+      size_bytes: Number(row.size_bytes),
+      created_at: String(row.created_at),
+      updated_at: String(row.updated_at),
+    } as SpeechVoiceSampleRecord;
+  } catch (error) {
+    console.error('Failed to get speech voice sample:', error);
+    return null;
+  }
 }
 
 export async function listRecentSpeechSessions(userId: string, limit = 6) {
