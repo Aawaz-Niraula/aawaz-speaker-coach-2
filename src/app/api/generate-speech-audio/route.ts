@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 
-import { getSpeechVoiceSample } from '@/lib/db';
-import { fetchWithRetry } from '@/lib/fetch';
+import { GuestLimitError, guestLimitResponse, resolveAppUser } from '@/lib/app-user';
+import { getSpeechVoiceSample, setSpeechVoiceSampleProviderVoiceId } from '@/lib/db';
+import { fetchWithRetry, fetchWithRetryLimited } from '@/lib/fetch';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
 
 const DEFAULT_TTS_MODEL = 'XiaomiMiMo/MiMo-V2.5-tts';
@@ -111,7 +112,7 @@ async function readAudioResponse(res: Response) {
 }
 
 async function synthesizeWithVoice(voiceId: string, text: string, modelId: string, token: string) {
-  const res = await fetchWithRetry(`https://api.deepinfra.com/v1/text-to-speech/${encodeURIComponent(voiceId)}/stream?output_format=opus`, {
+  const res = await fetchWithRetryLimited('tts', `https://api.deepinfra.com/v1/text-to-speech/${encodeURIComponent(voiceId)}/stream?output_format=opus`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -138,9 +139,8 @@ async function synthesizeWithVoice(voiceId: string, text: string, modelId: strin
   return readAudioResponse(res);
 }
 
-async function synthesizeDirect(modelId: string, text: string, token: string, sample?: File, voiceId?: string) {
-  const isClone = Boolean(sample);
-  const body = isClone ? new FormData() : JSON.stringify({
+async function synthesizeDirect(modelId: string, text: string, token: string, voiceId?: string) {
+  const body = JSON.stringify({
     text,
     voice: voiceId,
     voice_id: voiceId,
@@ -153,35 +153,14 @@ async function synthesizeDirect(modelId: string, text: string, token: string, sa
     format: 'opus',
   });
 
-  if (body instanceof FormData && sample) {
-    body.append('text', text);
-    if (voiceId) {
-      body.append('voice', voiceId);
-      body.append('voice_id', voiceId);
-    }
-    body.append('prompt', STYLE_PROMPT);
-    body.append('style', STYLE_PROMPT);
-    body.append('style_prompt', STYLE_PROMPT);
-    body.append('instructions', STYLE_PROMPT);
-    body.append('response_format', 'opus');
-    body.append('output_format', 'opus');
-    body.append('format', 'opus');
-    body.append('file', sample, sample.name || 'voice-sample.webm');
-    body.append('audio', sample, sample.name || 'voice-sample.webm');
-    body.append('reference_audio', sample, sample.name || 'voice-sample.webm');
-    body.append('prompt_audio', sample, sample.name || 'voice-sample.webm');
-  }
-
-  const res = await fetchWithRetry(`https://api.deepinfra.com/v1/inference/${modelId}`, {
+  const res = await fetchWithRetryLimited('tts', `https://api.deepinfra.com/v1/inference/${modelId}`, {
     method: 'POST',
-    headers: body instanceof FormData
-      ? { Authorization: `Bearer ${token}` }
-      : {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
     body,
-  }, body instanceof FormData ? 0 : 1, 1000, 120000);
+  }, 1, 1000, 120000);
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -197,7 +176,7 @@ async function createVoice(sample: File, userId: string, token: string) {
   voiceForm.append('description', 'Short voice sample captured after speech analysis for practice speech playback.');
   voiceForm.append('files', sample, sample.name || 'voice-sample.webm');
 
-  const res = await fetchWithRetry('https://api.deepinfra.com/v1/voices/add', {
+  const res = await fetchWithRetryLimited('voice', 'https://api.deepinfra.com/v1/voices/add', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
     body: voiceForm,
@@ -218,7 +197,7 @@ export async function POST(req: NextRequest) {
     const form = await req.formData();
     const mode = String(form.get('mode') || 'example') as AudioMode;
     const text = cleanText(form.get('text'));
-    const userId = cleanText(form.get('userId')).slice(0, 128);
+    const providedUserId = cleanText(form.get('userId')).slice(0, 128);
     const requestedExampleVoice = String(form.get('exampleVoice') || 'female') as ExampleVoice;
 
     if (mode !== 'example' && mode !== 'clone') {
@@ -238,6 +217,7 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: 'Server configuration error: missing API key.' }, { status: 500 });
     }
 
+    const { userId } = await resolveAppUser(req, providedUserId, true);
     const rateKey = `generate-speech-audio:${mode}:${getClientKey(req, userId)}`;
     const rateLimit = checkRateLimit(rateKey, 8, 10 * 60 * 1000);
     if (!rateLimit.allowed) {
@@ -247,7 +227,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    let result: Awaited<ReturnType<typeof readAudioResponse>>;
+    const globalRateLimit = checkRateLimit('global:generate-speech-audio', 120, 5 * 60 * 1000);
+    if (!globalRateLimit.allowed) {
+      return Response.json(
+        { error: 'Voice generation is busy right now. Please try again in a moment.' },
+        { status: 429, headers: { 'Retry-After': String(globalRateLimit.retryAfterSeconds) } },
+      );
+    }
+
+    let result: Awaited<ReturnType<typeof readAudioResponse>> | null = null;
 
     if (mode === 'clone') {
       if (!userId) {
@@ -269,19 +257,32 @@ export async function POST(req: NextRequest) {
         { type: storedSample.mime_type || 'audio/webm;codecs=opus' },
       );
 
-      try {
-        const voiceId = await createVoice(sample, userId, DEEPINFRA_API_KEY);
+      let voiceId = storedSample.provider_voice_id || '';
+
+      if (voiceId) {
+        try {
+          result = await synthesizeWithVoice(voiceId, text, VOICE_CLONE_MODEL, DEEPINFRA_API_KEY);
+        } catch {
+          voiceId = '';
+        }
+      }
+
+      if (!voiceId) {
+        voiceId = await createVoice(sample, userId, DEEPINFRA_API_KEY);
+        await setSpeechVoiceSampleProviderVoiceId(userId, voiceId);
         result = await synthesizeWithVoice(voiceId, text, VOICE_CLONE_MODEL, DEEPINFRA_API_KEY);
-      } catch {
-        result = await synthesizeDirect(VOICE_CLONE_MODEL, text, DEEPINFRA_API_KEY, sample);
       }
     } else {
       const voiceId = EXAMPLE_VOICES[requestedExampleVoice];
       try {
         result = await synthesizeWithVoice(voiceId, text, DEFAULT_TTS_MODEL, DEEPINFRA_API_KEY);
       } catch {
-        result = await synthesizeDirect(DEFAULT_TTS_MODEL, text, DEEPINFRA_API_KEY, undefined, voiceId);
+        result = await synthesizeDirect(DEFAULT_TTS_MODEL, text, DEEPINFRA_API_KEY, voiceId);
       }
+    }
+
+    if (!result) {
+      throw new Error('Speech audio generation failed.');
     }
 
     return new Response(result.audio, {
@@ -293,6 +294,10 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
+    if (error instanceof GuestLimitError) {
+      return guestLimitResponse();
+    }
+
     return Response.json(
       { error: error instanceof Error ? error.message : 'Speech audio generation failed. Please try again.' },
       { status: 503 },

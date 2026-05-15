@@ -11,6 +11,7 @@ import {
   ChevronDown,
   Copy,
   Download,
+  LogOut,
   MessageCircleMore,
   Plus,
   Play,
@@ -23,6 +24,7 @@ import {
   Trash2,
   TrendingUp,
   Trophy,
+  User,
   WandSparkles,
   X,
 } from 'lucide-react';
@@ -31,10 +33,11 @@ import 'react-circular-progressbar/dist/styles.css';
 import { toast, Toaster } from 'sonner';
 
 import { Button } from '@/components/ui/button';
+import { authClient } from '@/lib/auth-client';
 import { SPEECH_TEMPLATES, type SpeechTemplateId } from '@/lib/speech-config';
 import { cn } from '@/lib/utils';
 
-type Tab = 'coach' | 'speech' | 'history' | 'progress';
+type Tab = 'coach' | 'speech' | 'history' | 'progress' | 'account';
 type NavItem = { id: Tab; label: string; icon: typeof Mic };
 type SpeechHistoryItem = {
   id: string;
@@ -46,8 +49,8 @@ type SpeechHistoryItem = {
   feedback: string;
 };
 type HistoryResponse = { history?: SpeechHistoryItem[] };
-type AnalyzeResponse = HistoryResponse & { transcript?: string; feedback?: string; voiceSampleSaved?: boolean };
-type SpeechResponse = { speech?: string };
+type AnalyzeResponse = HistoryResponse & { transcript?: string; feedback?: string; voiceSampleSaved?: boolean; isGuest?: boolean; guestRemaining?: number | null };
+type SpeechResponse = { speech?: string; isGuest?: boolean; guestRemaining?: number | null };
 type InsightsResponse = { insights?: string[]; weaknesses?: string[] };
 type SpeechAudioMode = 'example' | 'clone';
 type SpeechExampleVoice = 'female' | 'male';
@@ -61,6 +64,7 @@ const navItems: NavItem[] = [
   { id: 'speech', label: 'Speech Practice', icon: WandSparkles },
   { id: 'history', label: 'Speech History', icon: Trophy },
   { id: 'progress', label: 'Progress', icon: TrendingUp },
+  { id: 'account', label: 'Account', icon: User },
 ];
 
 const MAX_RECORDING_SECONDS = 300;
@@ -158,6 +162,10 @@ function usePersistentUserId() {
   return userId;
 }
 
+function isValidAccountPassword(password: string) {
+  return password.length > 5 && /[A-Za-z]/.test(password) && /\d/.test(password);
+}
+
 function extractScore(text: string) {
   const match = text.match(/overall score[:\s-]*(\d+)\/100/i);
   return match ? Number(match[1]) : null;
@@ -179,6 +187,11 @@ async function requestJson<T>(url: string, init?: RequestInit, timeoutMs = 30000
 
     if (!res.ok || data.error) {
       const errorMsg = typeof data.error === 'string' ? data.error : (typeof data.feedback === 'string' ? data.feedback : 'Request failed.');
+      if (data.authRequired) {
+        const error = new Error(errorMsg);
+        error.name = 'AuthRequiredError';
+        throw error;
+      }
       throw new Error(errorMsg);
     }
 
@@ -520,7 +533,10 @@ function TemplatePicker({ value, onChange }: { value: SpeechTemplateId | null; o
 }
 
 export default function Home() {
-  const userId = usePersistentUserId();
+  const guestUserId = usePersistentUserId();
+  const { data: session, isPending: isSessionPending, refetch: refetchSession } = authClient.useSession();
+  const accountUser = session?.user ?? null;
+  const userId = accountUser?.id || guestUserId;
   const [activeTab, setActiveTab] = useState<Tab>('coach');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -546,9 +562,15 @@ export default function Home() {
   const [insights, setInsights] = useState<string[]>([]);
   const [weaknesses, setWeaknesses] = useState<string[]>([]);
   const [isLoadingInsights, setIsLoadingInsights] = useState(false);
+  const [authMode, setAuthMode] = useState<'sign-in' | 'sign-up'>('sign-up');
+  const [authName, setAuthName] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [isAuthBusy, setIsAuthBusy] = useState(false);
+  const [authPromptOpen, setAuthPromptOpen] = useState(false);
+  const [guestUses, setGuestUses] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const feedbackRef = useRef<HTMLDivElement | null>(null);
   const speechAudioRef = useRef(speechAudio);
@@ -579,7 +601,42 @@ export default function Home() {
   }, [speechAudio]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = Number(window.localStorage.getItem('aawaz-guest-uses') || '0');
+    if (Number.isFinite(stored)) setGuestUses(stored);
+  }, []);
+
+  useEffect(() => {
+    if (!accountUser?.id || !guestUserId || accountUser.id === guestUserId) return;
+
+    let cancelled = false;
+    const claim = async () => {
+      try {
+        await requestJson<{ ok?: boolean }>('/api/account/claim-guest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ guestId: guestUserId }),
+        }, 300000);
+
+        if (cancelled) return;
+        window.localStorage.setItem('aawaz-guest-uses', '0');
+        setGuestUses(0);
+        const data = await requestJson<HistoryResponse>(`/api/evaluations/history?userId=${encodeURIComponent(accountUser.id)}`, undefined, 300000);
+        if (!cancelled) setHistory(data.history || []);
+      } catch {
+        if (!cancelled) toast.error('Signed in, but guest history could not be attached.');
+      }
+    };
+
+    void claim();
     return () => {
+      cancelled = true;
+    };
+  }, [accountUser?.id, guestUserId]);
+
+  useEffect(() => {
+    return () => {
+      mediaRecorderRef.current = null;
       Object.values(speechAudioRef.current).forEach((item) => {
         if (item.url) URL.revokeObjectURL(item.url);
       });
@@ -609,24 +666,31 @@ export default function Home() {
 
     try {
       if (timerRef.current) clearInterval(timerRef.current);
-      mediaRecorderRef.current?.stop();
+      const activeRecorder = mediaRecorderRef.current;
+      mediaRecorderRef.current = null;
+      if (activeRecorder?.state === 'recording' || activeRecorder?.state === 'paused') {
+        activeRecorder.stop();
+      }
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
       mediaStreamRef.current = stream;
-      chunksRef.current = [];
       recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunksRef.current.push(event.data);
+        if (event.data.size > 0) chunks.push(event.data);
       };
       recorder.onstop = async () => {
+        if (mediaRecorderRef.current !== recorder) {
+          return;
+        }
+
         mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
         mediaStreamRef.current = null;
         mediaRecorderRef.current = null;
-        const audioType = recorder.mimeType || chunksRef.current[0]?.type || 'audio/webm;codecs=opus';
-        const blob = new Blob(chunksRef.current, { type: audioType });
-        const sampleBlob = new Blob(chunksRef.current.slice(0, VOICE_SAMPLE_SECONDS), { type: audioType });
-        chunksRef.current = [];
+        const audioType = recorder.mimeType || chunks[0]?.type || 'audio/webm;codecs=opus';
+        const blob = new Blob(chunks, { type: audioType });
+        const sampleBlob = new Blob(chunks.slice(0, VOICE_SAMPLE_SECONDS), { type: audioType });
 
         if (blob.size < 3000) {
           toast.error('No audio detected. Please speak clearly and try again.');
@@ -636,7 +700,9 @@ export default function Home() {
 
         const form = new FormData();
         form.append('file', blob, 'speech.webm');
-        form.append('voiceSample', sampleBlob.size >= 3000 ? sampleBlob : blob, 'voice-sample.webm');
+        if (sampleBlob.size >= 3000) {
+          form.append('voiceSample', sampleBlob, 'voice-sample.webm');
+        }
         form.append('userId', userId);
         if (selectedTemplateId) form.append('templateId', selectedTemplateId);
         try {
@@ -648,8 +714,10 @@ export default function Home() {
           if (data.voiceSampleSaved === false) {
             toast.error('Analysis completed, but the voice sample could not be stored for cloning.');
           }
+          trackGuestUse(data.guestRemaining);
           toast.success('Speech analyzed and saved.');
         } catch (err) {
+          if (handleAuthRequired(err)) return;
           toast.error(err instanceof Error ? err.message : 'Failed to analyze speech.');
         } finally {
           setIsAnalyzing(false);
@@ -687,6 +755,119 @@ export default function Home() {
     setIsAnalyzing(true);
   };
 
+  const resetSpeechRecording = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = null;
+
+    const recorder = mediaRecorderRef.current;
+    mediaRecorderRef.current = null;
+    if (recorder?.state === 'recording' || recorder?.state === 'paused') {
+      recorder.stop();
+    }
+
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
+    setTranscript('');
+    setFeedback('');
+    setSeconds(0);
+    setSelectedTemplateId(null);
+    setIsRecording(false);
+    setIsAnalyzing(false);
+    toast.success('Ready for a new speech.');
+  };
+
+  const trackGuestUse = (remaining?: number | null) => {
+    if (accountUser) return;
+
+    const used = typeof remaining === 'number' ? Math.max(0, 3 - remaining) : guestUses + 1;
+    setGuestUses(used);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('aawaz-guest-uses', String(used));
+    }
+
+    if (used >= 2) {
+      setAuthMode('sign-up');
+      setAuthPromptOpen(true);
+    }
+  };
+
+  const handleAuthRequired = (err: unknown) => {
+    if (err instanceof Error && err.name === 'AuthRequiredError') {
+      setAuthMode('sign-up');
+      setAuthPromptOpen(true);
+      toast.error(err.message);
+      return true;
+    }
+
+    return false;
+  };
+
+  const submitAuth = async () => {
+    if (isAuthBusy) return;
+
+    const email = authEmail.trim();
+    const password = authPassword;
+    const name = authName.trim() || email.split('@')[0] || 'Aawaz User';
+
+    if (!email || !password) {
+      toast.error('Enter your email and password.');
+      return;
+    }
+
+    if (authMode === 'sign-up' && !isValidAccountPassword(password)) {
+      toast.error('Password must be longer than 5 characters and include letters and numbers.');
+      return;
+    }
+
+    setIsAuthBusy(true);
+    try {
+      const result = authMode === 'sign-up'
+        ? await authClient.signUp.email({ email, password, name })
+        : await authClient.signIn.email({ email, password, rememberMe: true });
+
+      if (result.error) {
+        throw new Error(result.error.message || 'Authentication failed.');
+      }
+
+      await refetchSession();
+      setAuthPromptOpen(false);
+      toast.success(authMode === 'sign-up' ? 'Account created.' : 'Signed in.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Authentication failed.');
+    } finally {
+      setIsAuthBusy(false);
+    }
+  };
+
+  const signInWithGoogle = async () => {
+    setIsAuthBusy(true);
+    try {
+      await authClient.signIn.social({
+        provider: 'google',
+        callbackURL: window.location.href,
+        errorCallbackURL: window.location.href,
+      });
+    } catch (err) {
+      setIsAuthBusy(false);
+      toast.error(err instanceof Error ? err.message : 'Google sign-in failed.');
+    }
+  };
+
+  const signOut = async () => {
+    setIsAuthBusy(true);
+    try {
+      await authClient.signOut();
+      await refetchSession();
+      setHistory([]);
+      setSelectedSessionId(null);
+      toast.success('Signed out.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not sign out.');
+    } finally {
+      setIsAuthBusy(false);
+    }
+  };
+
   const generateSpeech = async () => {
     if (isGenerating) return;
 
@@ -711,8 +892,13 @@ export default function Home() {
         body: JSON.stringify({ topic, wordCount, userId }),
       }, 300000);
       setSpeech(data.speech || '');
+      trackGuestUse(data.guestRemaining);
       toast.success('Practice speech generated.');
     } catch (err) {
+      if (handleAuthRequired(err)) {
+        setError(err instanceof Error ? err.message : 'Create an account to continue.');
+        return;
+      }
       const message = err instanceof Error ? err.message : 'Failed to generate.';
       setError(message);
       toast.error(message);
@@ -769,8 +955,16 @@ export default function Home() {
           [mode]: { url, isLoading: false },
         };
       });
+      trackGuestUse(null);
       toast.success(mode === 'clone' ? 'Speech generated in your voice.' : 'Example speech audio generated.');
     } catch (err) {
+      if (handleAuthRequired(err)) {
+        setSpeechAudio((current) => ({
+          ...current,
+          [mode]: { ...current[mode], isLoading: false },
+        }));
+        return;
+      }
       const message =
         err instanceof DOMException && err.name === 'AbortError'
           ? 'Voice generation took too long. Please try again.'
@@ -817,8 +1011,10 @@ export default function Home() {
       }, 300000);
       setInsights(data.insights || []);
       setWeaknesses(data.weaknesses || []);
+      trackGuestUse(null);
       toast.success('Insights generated.');
     } catch (err) {
+      if (handleAuthRequired(err)) return;
       toast.error(err instanceof Error ? err.message : 'Failed to generate insights.');
     } finally {
       setIsLoadingInsights(false);
@@ -847,6 +1043,124 @@ export default function Home() {
     toast.success(`Reading ${label.toLowerCase()}.`);
   };
 
+  const AuthControls = ({ compact = false }: { compact?: boolean }) => (
+    <div className={cn('grid gap-4', compact ? 'mt-4' : '')}>
+      <div className="inline-flex w-full rounded-full border border-white/10 bg-white/5 p-1">
+        {(['sign-up', 'sign-in'] as const).map((mode) => (
+          <button
+            key={mode}
+            type="button"
+            onClick={() => setAuthMode(mode)}
+            className={cn(
+              'h-10 flex-1 rounded-full font-mono text-[10px] uppercase tracking-[0.22em] transition',
+              authMode === mode ? 'bg-[#ddd6fe] text-[#06060b]' : 'text-[#857ca2] hover:bg-white/10 hover:text-[#f2efff]',
+            )}
+            aria-pressed={authMode === mode}
+          >
+            {mode === 'sign-up' ? 'Create account' : 'Login'}
+          </button>
+        ))}
+      </div>
+
+      {authMode === 'sign-up' ? (
+        <input
+          value={authName}
+          onChange={(event) => setAuthName(event.target.value)}
+          placeholder="Your name"
+          className="h-12 rounded-[18px] border border-white/12 bg-[#0b0b12]/60 px-4 text-sm text-[#f2efff] outline-none placeholder:text-[#857ca2]"
+        />
+      ) : null}
+      <input
+        value={authEmail}
+        onChange={(event) => setAuthEmail(event.target.value)}
+        placeholder="Email"
+        type="email"
+        className="h-12 rounded-[18px] border border-white/12 bg-[#0b0b12]/60 px-4 text-sm text-[#f2efff] outline-none placeholder:text-[#857ca2]"
+      />
+      <input
+        value={authPassword}
+        onChange={(event) => setAuthPassword(event.target.value)}
+        placeholder="Password"
+        type="password"
+        className="h-12 rounded-[18px] border border-white/12 bg-[#0b0b12]/60 px-4 text-sm text-[#f2efff] outline-none placeholder:text-[#857ca2]"
+      />
+      {authMode === 'sign-up' ? (
+        <p className="font-mono text-[11px] leading-5 text-[#857ca2]">Password must be longer than 5 characters and include letters and numbers.</p>
+      ) : null}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Button onClick={submitAuth} disabled={isAuthBusy} className="h-12 rounded-[18px] font-mono text-xs uppercase tracking-[0.22em]">
+          {isAuthBusy ? 'Working...' : authMode === 'sign-up' ? 'Create' : 'Login'}
+        </Button>
+        <Button type="button" variant="secondary" onClick={signInWithGoogle} disabled={isAuthBusy} className="h-12 rounded-[18px] font-mono text-xs uppercase tracking-[0.18em]">
+          Google
+        </Button>
+      </div>
+    </div>
+  );
+
+  const AccountPanel = () => (
+    <Shell>
+      {isSessionPending ? (
+        <div className="flex gap-2">
+          {[0, 1, 2].map((i) => <motion.div key={i} animate={{ y: [0, -6, 0], opacity: [0.4, 1, 0.4] }} transition={{ duration: 0.7, repeat: Infinity, delay: i * 0.14 }} className="h-2 w-2 rounded-full bg-[#a78bfa]" />)}
+        </div>
+      ) : accountUser ? (
+        <div className="grid gap-5">
+          <div className="rounded-[20px] border border-[#a78bfa]/20 bg-[linear-gradient(135deg,rgba(167,139,250,0.12),rgba(249,168,212,0.08))] p-5 sm:rounded-[24px]">
+            <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">Signed in</p>
+            <p className="mt-3 break-words font-serif text-2xl text-white">{accountUser.name || 'Aawaz User'}</p>
+            <p className="mt-1 break-words text-sm text-[#ddd6fe]">{accountUser.email}</p>
+          </div>
+          <Button variant="secondary" onClick={signOut} disabled={isAuthBusy} className="h-12 w-full rounded-[18px] font-mono text-xs uppercase tracking-[0.22em] sm:w-fit">
+            <LogOut className="h-4 w-4" />
+            Sign out
+          </Button>
+        </div>
+      ) : (
+        <div className="grid gap-5">
+          <div>
+            <p className="font-serif text-2xl text-white">Save your progress</p>
+            <p className="mt-2 text-sm leading-6 text-[#857ca2]">You can try Aawaz first. After a few AI actions, create an account to continue saving speech history, insights, and your first voice sample.</p>
+            <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.22em] text-[#ddd6fe]">Guest uses: {Math.min(guestUses, 3)} / 3</p>
+          </div>
+          <AuthControls />
+        </div>
+      )}
+    </Shell>
+  );
+
+  const AuthPromptModal = () => (
+    <AnimatePresence>
+      {authPromptOpen && !accountUser ? (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
+            onClick={() => setAuthPromptOpen(false)}
+            aria-label="Close account prompt"
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.94, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 10 }}
+            className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[24px] border border-white/10 bg-[#0b0b12]/95 p-5 shadow-[0_30px_80px_rgba(2,6,23,0.7)] backdrop-blur-xl sm:rounded-[28px] sm:p-6"
+          >
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <p className="font-serif text-2xl text-white">Create your account</p>
+                <p className="mt-2 text-sm leading-6 text-[#857ca2]">Keep your saved speeches, progress, and own-voice sample tied to you.</p>
+              </div>
+              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setAuthPromptOpen(false)} aria-label="Close">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <AuthControls compact />
+          </motion.div>
+        </>
+      ) : null}
+    </AnimatePresence>
+  );
+
   const ActionBar = ({
     text,
     label,
@@ -874,7 +1188,7 @@ export default function Home() {
   const SpeechAudioActions = () => {
     const items: { mode: SpeechAudioMode; label: string; helper: string }[] = [
       { mode: 'example', label: 'Hear Example Speech', helper: 'Polished public-speaking voice' },
-      { mode: 'clone', label: 'Hear in your own voice', helper: 'Uses your latest analyzed sample' },
+      { mode: 'clone', label: 'Hear in your own voice', helper: 'Uses your first saved 15s sample' },
     ];
 
     const updateExampleVoice = (voice: SpeechExampleVoice) => {
@@ -1052,6 +1366,7 @@ export default function Home() {
                         <p>Use <span className="text-[#ddd6fe]">Speech Practice</span> to generate a sample speech.</p>
                         <p>Use <span className="text-[#ddd6fe]">Speech History</span> to review saved sessions.</p>
                         <p>Use <span className="text-[#ddd6fe]">Progress</span> to track your improvement over time.</p>
+                        <p>Use <span className="text-[#ddd6fe]">Account</span> to save your work across devices.</p>
                       </div>
                     </PopupPanel>
                   ) : null}
@@ -1082,6 +1397,7 @@ export default function Home() {
                       {activeTab === 'speech' && 'Speech Practice'}
                       {activeTab === 'history' && 'Speech History'}
                       {activeTab === 'progress' && 'Progress'}
+                      {activeTab === 'account' && 'Account'}
                     </h1>
                     <div className="relative hidden shrink-0 md:block">
                       <PopupIconButton onClick={() => { setHelpOpen((current) => !current); setCreatorOpen(false); }} icon={<span className="text-sm font-bold">?</span>} label="Open app help" className="mt-1" />
@@ -1093,6 +1409,7 @@ export default function Home() {
                               <p>Use <span className="text-[#ddd6fe]">Speech Practice</span> to generate a sample speech.</p>
                               <p>Use <span className="text-[#ddd6fe]">Speech History</span> to review saved sessions.</p>
                               <p>Use <span className="text-[#ddd6fe]">Progress</span> to track your improvement over time.</p>
+                              <p>Use <span className="text-[#ddd6fe]">Account</span> to save your work across devices.</p>
                             </div>
                           </PopupPanel>
                         ) : null}
@@ -1104,7 +1421,7 @@ export default function Home() {
                     {activeTab === 'coach' && (
                       <button
                         type="button"
-                        onClick={() => { setTranscript(''); setFeedback(''); setSeconds(0); setSelectedTemplateId(null); setIsRecording(false); setIsAnalyzing(false); toast.success('Ready for a new speech.'); }}
+                        onClick={resetSpeechRecording}
                         className="mt-1 flex shrink-0 flex-col items-center gap-1 transition hover:opacity-80"
                         aria-label="New speech"
                       >
@@ -1213,6 +1530,34 @@ export default function Home() {
                         'Track your score trend over time in the chart below',
                         'Generate AI insights to understand your strengths',
                         'Identify recurring weaknesses and target them in practice',
+                      ].map((tip, i) => (
+                        <motion.li
+                          key={i}
+                          initial={{ opacity: 0, x: -8 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.15 + i * 0.08 }}
+                          className="flex items-start gap-2.5 text-sm leading-relaxed text-[#f2efff]"
+                        >
+                          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a78bfa,#f9a8d4)] font-mono text-[10px] font-bold text-[#06060b]">{i + 1}</span>
+                          {tip}
+                        </motion.li>
+                      ))}
+                    </ul>
+                  </motion.div>
+                )}
+                {activeTab === 'account' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="mt-5 rounded-[20px] border border-white/10 bg-[#0b0b12]/40 p-4 sm:rounded-[24px] sm:p-5"
+                  >
+                    <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2] mb-3">How accounts work</div>
+                    <ul className="space-y-2.5">
+                      {[
+                        'Try the app first without creating an account',
+                        'Create an account after a few uses to keep going',
+                        'Your history, insights, and own-voice sample stay tied to your login',
                       ].map((tip, i) => (
                         <motion.li
                           key={i}
@@ -1383,10 +1728,12 @@ export default function Home() {
                   )}
                 </>
               )}
+              {activeTab === 'account' && <AccountPanel />}
             </motion.div>
           </AnimatePresence>
         </main>
       </div>
+      <AuthPromptModal />
     </div>
   );
 }

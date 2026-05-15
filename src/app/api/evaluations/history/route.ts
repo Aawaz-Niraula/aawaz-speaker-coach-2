@@ -1,14 +1,16 @@
 import { NextRequest } from 'next/server';
 
+import { resolveAppUser } from '@/lib/app-user';
 import { deleteSpeechSession, listRecentSpeechSessions } from '@/lib/db';
 
 export async function GET(req: NextRequest) {
-  const userId = req.nextUrl.searchParams.get('userId')?.trim().slice(0, 128);
+  const providedUserId = req.nextUrl.searchParams.get('userId')?.trim().slice(0, 128) || '';
 
-  if (!userId) {
+  if (!providedUserId) {
     return Response.json({ history: [] });
   }
 
+  const { userId } = await resolveAppUser(req, providedUserId, false);
   const history = await listRecentSpeechSessions(userId);
   return Response.json({ history });
 }
@@ -18,13 +20,14 @@ export async function DELETE(req: NextRequest) {
     userId?: unknown;
     sessionId?: unknown;
   } | null;
-  const userId = typeof body?.userId === 'string' ? body.userId.trim().slice(0, 128) : '';
+  const providedUserId = typeof body?.userId === 'string' ? body.userId.trim().slice(0, 128) : '';
   const sessionId = typeof body?.sessionId === 'string' ? body.sessionId.trim().slice(0, 128) : '';
 
-  if (!userId || !sessionId) {
+  if (!providedUserId || !sessionId) {
     return Response.json({ ok: false, error: 'Missing userId or sessionId.' }, { status: 400 });
   }
 
+  const { userId } = await resolveAppUser(req, providedUserId, false);
   const deleted = await deleteSpeechSession(userId, sessionId);
   const history = await listRecentSpeechSessions(userId);
 

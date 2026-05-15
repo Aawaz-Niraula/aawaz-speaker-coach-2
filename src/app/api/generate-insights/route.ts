@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server';
 
 import { getProviderErrorMessage, isAbortTimeout, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
+import { GuestLimitError, guestLimitResponse, resolveAppUser } from '@/lib/app-user';
 import { listRecentSpeechSessions } from '@/lib/db';
-import { fetchWithRetry } from '@/lib/fetch';
+import { fetchWithRetryLimited } from '@/lib/fetch';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
 
 const INSIGHT_MODELS = [
@@ -13,10 +14,28 @@ const INSIGHT_MODELS = [
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => null);
-    const userId = typeof body?.userId === 'string' ? body.userId.trim().slice(0, 128) : '';
+    const providedUserId = typeof body?.userId === 'string' ? body.userId.trim().slice(0, 128) : '';
 
-    if (!userId) {
+    if (!providedUserId) {
       return Response.json({ error: 'Missing userId.' }, { status: 400 });
+    }
+
+    const { userId } = await resolveAppUser(req, providedUserId, true);
+    const rateKey = `generate-insights:${getClientKey(req, userId)}`;
+    const rateLimit = checkRateLimit(rateKey, 15, 10 * 60 * 1000);
+    if (!rateLimit.allowed) {
+      return Response.json(
+        { error: 'Too many insight requests. Please wait a moment and try again.' },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
+      );
+    }
+
+    const globalRateLimit = checkRateLimit('global:generate-insights', 120, 5 * 60 * 1000);
+    if (!globalRateLimit.allowed) {
+      return Response.json(
+        { error: 'Insight generation is busy right now. Please try again in a moment.' },
+        { status: 429, headers: { 'Retry-After': String(globalRateLimit.retryAfterSeconds) } },
+      );
     }
 
     const sessions = await listRecentSpeechSessions(userId, 12);
@@ -32,15 +51,6 @@ export async function POST(req: NextRequest) {
 
     if (!DEEPINFRA_API_KEY) {
       return Response.json({ error: 'Server configuration error: missing API key.' }, { status: 500 });
-    }
-
-    const rateKey = `generate-insights:${getClientKey(req, userId)}`;
-    const rateLimit = checkRateLimit(rateKey, 15, 10 * 60 * 1000);
-    if (!rateLimit.allowed) {
-      return Response.json(
-        { error: 'Too many insight requests. Please wait a moment and try again.' },
-        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
-      );
     }
 
     // Pre-compute stats on the server to reduce LLM work
@@ -73,7 +83,7 @@ export async function POST(req: NextRequest) {
     let succeeded = false;
 
     for (const model of INSIGHT_MODELS) {
-      const res = await fetchWithRetry('https://api.deepinfra.com/v1/openai/chat/completions', {
+      const res = await fetchWithRetryLimited('chat', 'https://api.deepinfra.com/v1/openai/chat/completions', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${DEEPINFRA_API_KEY}`,
@@ -147,6 +157,10 @@ export async function POST(req: NextRequest) {
       });
     }
   } catch (error) {
+    if (error instanceof GuestLimitError) {
+      return guestLimitResponse();
+    }
+
     return Response.json(
       { error: isAbortTimeout(error) ? 'Insight generation timed out. Please try again.' : 'Insight generation failed.' },
       { status: 503 },
@@ -154,5 +168,5 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 export const maxDuration = 300;

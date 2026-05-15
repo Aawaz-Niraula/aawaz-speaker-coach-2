@@ -4,6 +4,7 @@ type Bucket = {
 };
 
 const buckets = new Map<string, Bucket>();
+const MAX_BUCKETS = 5000;
 
 function cleanupBuckets(now: number) {
   if (buckets.size < 1000) return;
@@ -13,13 +14,22 @@ function cleanupBuckets(now: number) {
       buckets.delete(key);
     }
   }
+
+  while (buckets.size > MAX_BUCKETS) {
+    const oldestKey = buckets.keys().next().value;
+    if (!oldestKey) break;
+    buckets.delete(oldestKey);
+  }
 }
 
 export function getClientKey(req: Request, fallback: string) {
   const forwardedFor = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
   const realIp = req.headers.get('x-real-ip')?.trim();
 
-  return fallback || forwardedFor || realIp || 'anonymous';
+  const networkKey = forwardedFor || realIp || 'unknown-ip';
+  const userKey = fallback || 'anonymous';
+
+  return `${userKey}:${networkKey}`;
 }
 
 export function checkRateLimit(key: string, limit: number, windowMs: number) {
