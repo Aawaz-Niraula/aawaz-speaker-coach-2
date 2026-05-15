@@ -3,8 +3,9 @@ import { randomUUID } from 'crypto';
 import { after, NextRequest } from 'next/server';
 
 import { getProviderErrorMessage, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
-import { insertSpeechSession, listRecentSpeechSessions, upsertSpeechVoiceSample } from '@/lib/db';
-import { fetchWithRetry } from '@/lib/fetch';
+import { GuestLimitError, guestLimitResponse, resolveAppUser } from '@/lib/app-user';
+import { getSpeechVoiceSample, insertSpeechSession, listRecentSpeechSessions, upsertSpeechVoiceSample } from '@/lib/db';
+import { fetchWithRetryLimited } from '@/lib/fetch';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
 import { GENERAL_RUBRIC, getSpeechTemplate } from '@/lib/speech-config';
 
@@ -86,7 +87,7 @@ export async function POST(req: NextRequest) {
 
   const file = formData.get('file') as File | null;
   const voiceSample = formData.get('voiceSample') as File | null;
-  const userId = String(formData.get('userId') || '').trim().slice(0, 128);
+  const providedUserId = String(formData.get('userId') || '').trim().slice(0, 128);
   const selectedTemplateId = String(formData.get('templateId') || '').trim().slice(0, 80) || null;
 
   if (!file || file.size < 3000) {
@@ -119,7 +120,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (!userId) {
+  if (!providedUserId) {
     return Response.json(
       {
         transcript: '',
@@ -129,6 +130,26 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
+
+  let resolvedUser: Awaited<ReturnType<typeof resolveAppUser>>;
+  try {
+    resolvedUser = await resolveAppUser(req, providedUserId, true);
+  } catch (error) {
+    if (error instanceof GuestLimitError) {
+      return guestLimitResponse();
+    }
+
+    return Response.json(
+      {
+        transcript: '',
+        feedback: error instanceof Error ? error.message : 'User identity is missing. Refresh the page and try again.',
+        history: [],
+      },
+      { status: 400 },
+    );
+  }
+
+  const { userId, isGuest, guestRemaining } = resolvedUser;
 
   const template = getSpeechTemplate(selectedTemplateId);
   const rubricMode = template ? `template:${template.id}` : 'general';
@@ -156,6 +177,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const globalRateLimit = checkRateLimit('global:transcribe-analyze', 120, 5 * 60 * 1000);
+  if (!globalRateLimit.allowed) {
+    return Response.json(
+      {
+        transcript: '',
+        feedback: 'Speech analysis is busy right now. Please try again in a moment.',
+        history: [],
+      },
+      { status: 429, headers: { 'Retry-After': String(globalRateLimit.retryAfterSeconds) } },
+    );
+  }
+
   const previousHistory = await listRecentSpeechSessions(userId, 4);
   const historyContext = buildHistoryContext(previousHistory);
 
@@ -164,7 +197,7 @@ export async function POST(req: NextRequest) {
   audioForm.append('model', 'openai/whisper-large-v3');
   audioForm.append('response_format', 'verbose_json');
 
-  const whisperRes = await fetchWithRetry('https://api.deepinfra.com/v1/openai/audio/transcriptions', {
+  const whisperRes = await fetchWithRetryLimited('transcription', 'https://api.deepinfra.com/v1/openai/audio/transcriptions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${DEEPINFRA_API_KEY}` },
     body: audioForm,
@@ -212,7 +245,7 @@ export async function POST(req: NextRequest) {
   let analysisSucceeded = false;
 
   for (const model of ANALYSIS_MODELS) {
-    const analysisRes = await fetchWithRetry('https://api.deepinfra.com/v1/openai/chat/completions', {
+    const analysisRes = await fetchWithRetryLimited('chat', 'https://api.deepinfra.com/v1/openai/chat/completions', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${DEEPINFRA_API_KEY}`,
@@ -341,7 +374,26 @@ ${transcript}`,
   };
 
   const updatedHistory = [newSessionHeader, ...previousHistory].slice(0, 6);
-  const voiceSampleSaved = !!(voiceSample && voiceSample.size >= 3000) || !!file;
+  const existingVoiceSample = await getSpeechVoiceSample(userId);
+  const hasUsableVoiceSample = !!existingVoiceSample && existingVoiceSample.size_bytes >= 3000;
+  const hasNewUsableVoiceSample = !!voiceSample && voiceSample.size >= 3000;
+  let voiceSampleSaved = hasUsableVoiceSample;
+
+  if (!hasUsableVoiceSample && hasNewUsableVoiceSample) {
+    try {
+      const sampleToStore = voiceSample!;
+      const sampleBytes = await sampleToStore.arrayBuffer();
+      voiceSampleSaved = await upsertSpeechVoiceSample({
+        userId,
+        audioData: sampleBytes,
+        mimeType: sampleToStore.type || 'audio/webm;codecs=opus',
+        filename: sampleToStore.name || 'voice-sample.webm',
+      });
+    } catch (error) {
+      console.error('Failed to prepare speech voice sample:', error);
+      voiceSampleSaved = false;
+    }
+  }
 
   after(async () => {
     try {
@@ -360,19 +412,6 @@ ${transcript}`,
     } catch (e) {
       console.error('Failed to insert speech session in background:', e);
     }
-
-    try {
-      const sampleToStore = voiceSample && voiceSample.size >= 3000 ? voiceSample : file;
-      const sampleBytes = await sampleToStore.arrayBuffer();
-      await upsertSpeechVoiceSample({
-        userId,
-        audioData: sampleBytes,
-        mimeType: sampleToStore.type || 'audio/webm;codecs=opus',
-        filename: sampleToStore.name || 'voice-sample.webm',
-      });
-    } catch (error) {
-      console.error('Failed to prepare speech voice sample in background:', error);
-    }
   });
 
   return Response.json({
@@ -380,6 +419,8 @@ ${transcript}`,
     feedback,
     history: updatedHistory,
     voiceSampleSaved,
+    isGuest,
+    guestRemaining,
     rubricMode,
     template: template?.label ?? null,
   });

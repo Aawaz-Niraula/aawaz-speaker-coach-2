@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 
 import { getProviderErrorMessage, isAbortTimeout, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
-import { fetchWithRetry } from '@/lib/fetch';
+import { GuestLimitError, guestLimitResponse, resolveAppUser } from '@/lib/app-user';
+import { fetchWithRetryLimited } from '@/lib/fetch';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
 
 const SPEECH_MODELS = [
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => null);
     const topic = typeof body?.topic === 'string' ? body.topic.trim().slice(0, 180) : '';
-    const userId = typeof body?.userId === 'string' ? body.userId.trim().slice(0, 128) : '';
+    const providedUserId = typeof body?.userId === 'string' ? body.userId.trim().slice(0, 128) : '';
     const requestedWordCount = Number(body?.wordCount);
     const targetWordCount = Number.isFinite(requestedWordCount) ? Math.min(500, Math.max(80, Math.round(requestedWordCount))) : 180;
     const lowerWordCount = Math.max(70, targetWordCount - 10);
@@ -41,6 +42,7 @@ export async function POST(req: NextRequest) {
       return Response.json({ speech: '', error: 'Server configuration error: missing API key.' }, { status: 500 });
     }
 
+    const { userId, isGuest, guestRemaining } = await resolveAppUser(req, providedUserId, true);
     const rateKey = `generate-speech:${getClientKey(req, userId)}`;
     const rateLimit = checkRateLimit(rateKey, 20, 10 * 60 * 1000);
     if (!rateLimit.allowed) {
@@ -50,11 +52,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const globalRateLimit = checkRateLimit('global:generate-speech', 180, 5 * 60 * 1000);
+    if (!globalRateLimit.allowed) {
+      return Response.json(
+        { speech: '', error: 'Speech generation is busy right now. Please try again in a moment.' },
+        { status: 429, headers: { 'Retry-After': String(globalRateLimit.retryAfterSeconds) } },
+      );
+    }
+
     let lastStatus = 503;
     let lastMessage = 'Failed to generate speech script.';
 
     for (const model of SPEECH_MODELS) {
-      const res = await fetchWithRetry('https://api.deepinfra.com/v1/openai/chat/completions', {
+      const res = await fetchWithRetryLimited('chat', 'https://api.deepinfra.com/v1/openai/chat/completions', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${DEEPINFRA_API_KEY}`,
@@ -112,7 +122,7 @@ Requirements:
 
       const speech = data.choices?.[0]?.message?.content || '';
       if (speech.trim()) {
-        return Response.json({ speech: speech.trim() });
+        return Response.json({ speech: speech.trim(), isGuest, guestRemaining });
       }
 
       lastMessage = 'The AI returned an empty speech. Please try again.';
@@ -123,6 +133,10 @@ Requirements:
       { status: lastStatus },
     );
   } catch (error) {
+    if (error instanceof GuestLimitError) {
+      return guestLimitResponse();
+    }
+
     return Response.json(
       { speech: '', error: isAbortTimeout(error) ? 'Speech generation timed out. Please try a shorter speech or try again.' : 'Speech generation failed. Please try again.' },
       { status: 503 },
@@ -130,5 +144,5 @@ Requirements:
   }
 }
 
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 export const maxDuration = 300;
