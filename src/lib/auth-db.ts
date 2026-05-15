@@ -4,7 +4,7 @@ import { Kysely } from 'kysely';
 let authDb: Kysely<Record<string, unknown>> | null | undefined;
 
 export function getAuthDb() {
-  if (authDb !== undefined) {
+  if (authDb) {
     return authDb;
   }
 
@@ -12,7 +12,6 @@ export function getAuthDb() {
   const authToken = process.env.TURSO_AUTH_TOKEN;
 
   if (!url || !authToken) {
-    authDb = null;
     return null;
   }
 
