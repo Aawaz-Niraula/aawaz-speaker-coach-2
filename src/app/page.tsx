@@ -56,6 +56,10 @@ type AccountProfile = {
   providerId: string;
   accountId: string;
 };
+type AuthStatus = {
+  accountAuthEnabled: boolean;
+  googleEnabled: boolean;
+};
 type SpeechAudioMode = 'example' | 'clone';
 type SpeechExampleVoice = 'female' | 'male';
 type SpeechAudioState = {
@@ -575,6 +579,7 @@ export default function Home() {
   const [guestUses, setGuestUses] = useState(0);
   const [authGreetingMode, setAuthGreetingMode] = useState<'sign-in' | 'sign-up' | null>(null);
   const [accountProfile, setAccountProfile] = useState<AccountProfile | null>(null);
+  const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -622,6 +627,24 @@ export default function Home() {
   useEffect(() => {
     speechAudioRef.current = speechAudio;
   }, [speechAudio]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadAuthStatus = async () => {
+      try {
+        const data = await requestJson<AuthStatus>('/api/account/auth-status', undefined, 300000);
+        if (!cancelled) setAuthStatus(data);
+      } catch (err) {
+        console.error('Could not load auth status:', err);
+        if (!cancelled) setAuthStatus({ accountAuthEnabled: false, googleEnabled: false });
+      }
+    };
+
+    void loadAuthStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -851,6 +874,11 @@ export default function Home() {
   const submitAuth = async () => {
     if (isAuthBusy) return;
 
+    if (authStatus?.accountAuthEnabled === false) {
+      toast.error('Account sign-up needs Better Auth and Turso environment variables configured.');
+      return;
+    }
+
     const email = authEmail.trim();
     const password = authPassword;
     const name = authName.trim() || email.split('@')[0] || 'Aawaz User';
@@ -887,6 +915,15 @@ export default function Home() {
   };
 
   const signInWithGoogle = async () => {
+    if (authStatus?.accountAuthEnabled === false) {
+      toast.error('Google sign-in needs Better Auth and Turso environment variables configured.');
+      return;
+    }
+    if (authStatus?.googleEnabled === false) {
+      toast.error('Google sign-in needs GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET configured.');
+      return;
+    }
+
     setIsAuthBusy(true);
     try {
       const url = new URL(window.location.href);
@@ -899,7 +936,7 @@ export default function Home() {
         disableRedirect: true,
       });
       if (result.error) {
-        throw new Error(result.error.message || 'Google sign-in failed.');
+        throw new Error(result.error.message || result.error.statusText || 'Google sign-in failed.');
       }
       if (result.data?.url) {
         window.location.assign(result.data.url);
