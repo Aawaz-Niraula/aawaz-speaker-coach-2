@@ -9,7 +9,8 @@ function passwordHasLetterAndNumber(password: unknown) {
 
 function getAuthBaseURL() {
   if (process.env.BETTER_AUTH_URL) {
-    return process.env.BETTER_AUTH_URL;
+    const value = process.env.BETTER_AUTH_URL.replace(/\/$/, '');
+    return value.endsWith('/api/auth') ? value : `${value}/api/auth`;
   }
 
   if (process.env.VERCEL_URL) {
@@ -35,7 +36,10 @@ function createAuth() {
 
   return betterAuth({
     appName: 'Aawaz Speaker Coach',
-    database: getAuthDb()!,
+    database: {
+      db: getAuthDb()!,
+      type: 'sqlite',
+    },
     secret: process.env.BETTER_AUTH_SECRET,
     baseURL: getAuthBaseURL(),
     emailAndPassword: {
