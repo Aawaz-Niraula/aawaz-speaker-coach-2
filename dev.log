@@ -1,0 +1,15 @@
+
+> gaawaznew@0.1.0 dev
+> next dev
+
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+   ▲ Next.js 16.0.7 (Turbopack)
+   - Local:         http://localhost:3000
+   - Network:       http://192.168.1.92:3000
+
+ ✓ Starting...
+ ✓ Ready in 439ms
+2026-05-15T10:05:30.612Z WARN [Better Auth]: [better-auth] Base URL could not be determined. Please set a valid base URL using the baseURL config option or the BETTER_AUTH_URL environment variable. Without this, callbacks and redirects may not work correctly.
+ GET /api/evaluations/history?userId=test 200 in 525ms (compile: 510ms, render: 16ms)
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+[?25h

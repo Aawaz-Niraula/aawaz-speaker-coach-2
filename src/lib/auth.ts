@@ -7,6 +7,25 @@ function passwordHasLetterAndNumber(password: unknown) {
   return typeof password === 'string' && /[A-Za-z]/.test(password) && /\d/.test(password);
 }
 
+function getAuthBaseURL() {
+  if (process.env.BETTER_AUTH_URL) {
+    return process.env.BETTER_AUTH_URL;
+  }
+
+  if (process.env.VERCEL_URL) {
+    const origin = process.env.VERCEL_URL.startsWith('http')
+      ? process.env.VERCEL_URL
+      : `https://${process.env.VERCEL_URL}`;
+    return `${origin.replace(/\/$/, '')}/api/auth`;
+  }
+
+  if (process.env.NODE_ENV === 'development') {
+    return 'http://localhost:3000/api/auth';
+  }
+
+  return undefined;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _auth: any;
 
@@ -18,7 +37,7 @@ function createAuth() {
     appName: 'Aawaz Speaker Coach',
     database: getAuthDb()!,
     secret: process.env.BETTER_AUTH_SECRET,
-    baseURL: process.env.BETTER_AUTH_URL,
+    baseURL: getAuthBaseURL(),
     emailAndPassword: {
       enabled: true,
       minPasswordLength: 6,

@@ -52,6 +52,10 @@ type HistoryResponse = { history?: SpeechHistoryItem[] };
 type AnalyzeResponse = HistoryResponse & { transcript?: string; feedback?: string; voiceSampleSaved?: boolean; isGuest?: boolean; guestRemaining?: number | null };
 type SpeechResponse = { speech?: string; isGuest?: boolean; guestRemaining?: number | null };
 type InsightsResponse = { insights?: string[]; weaknesses?: string[] };
+type AccountProfile = {
+  providerId: string;
+  accountId: string;
+};
 type SpeechAudioMode = 'example' | 'clone';
 type SpeechExampleVoice = 'female' | 'male';
 type SpeechAudioState = {
@@ -569,6 +573,8 @@ export default function Home() {
   const [isAuthBusy, setIsAuthBusy] = useState(false);
   const [authPromptOpen, setAuthPromptOpen] = useState(false);
   const [guestUses, setGuestUses] = useState(0);
+  const [authGreetingMode, setAuthGreetingMode] = useState<'sign-in' | 'sign-up' | null>(null);
+  const [accountProfile, setAccountProfile] = useState<AccountProfile | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -584,7 +590,7 @@ export default function Home() {
         const data = await requestJson<HistoryResponse>(`/api/evaluations/history?userId=${encodeURIComponent(userId)}`, undefined, 300000);
         if (!cancelled) setHistory(data.history || []);
       } catch (err) {
-        if (!cancelled) toast.error(err instanceof Error ? err.message : 'Could not load saved history.');
+        console.error('Could not load saved history:', err);
       }
     };
 
@@ -595,6 +601,23 @@ export default function Home() {
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, [userId]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const err = params.get('error');
+      const mode = params.get('auth') === 'sign-in' ? 'sign-in' : params.get('auth') === 'sign-up' ? 'sign-up' : null;
+      if (err) {
+        toast.error(`Authentication error: ${err}`);
+      }
+      if (mode) {
+        setAuthGreetingMode(mode);
+      }
+      if (err || mode) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     speechAudioRef.current = speechAudio;
@@ -633,6 +656,29 @@ export default function Home() {
       cancelled = true;
     };
   }, [accountUser?.id, guestUserId]);
+
+  useEffect(() => {
+    if (!accountUser?.id) {
+      setAccountProfile(null);
+      return;
+    }
+
+    let cancelled = false;
+    const loadProfile = async () => {
+      try {
+        const data = await requestJson<{ account?: AccountProfile }>('/api/account/profile', undefined, 300000);
+        if (!cancelled) setAccountProfile(data.account ?? null);
+      } catch (err) {
+        console.error('Could not load account profile:', err);
+        if (!cancelled) setAccountProfile(null);
+      }
+    };
+
+    void loadProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [accountUser?.id]);
 
   useEffect(() => {
     return () => {
@@ -830,6 +876,7 @@ export default function Home() {
       }
 
       await refetchSession();
+      setAuthGreetingMode(authMode);
       setAuthPromptOpen(false);
       toast.success(authMode === 'sign-up' ? 'Account created.' : 'Signed in.');
     } catch (err) {
@@ -842,11 +889,23 @@ export default function Home() {
   const signInWithGoogle = async () => {
     setIsAuthBusy(true);
     try {
-      await authClient.signIn.social({
+      const url = new URL(window.location.href);
+      url.searchParams.set('auth', authMode);
+      url.searchParams.delete('error');
+      const result = await authClient.signIn.social({
         provider: 'google',
-        callbackURL: window.location.href,
+        callbackURL: url.toString(),
         errorCallbackURL: window.location.href,
+        disableRedirect: true,
       });
+      if (result.error) {
+        throw new Error(result.error.message || 'Google sign-in failed.');
+      }
+      if (result.data?.url) {
+        window.location.assign(result.data.url);
+        return;
+      }
+      throw new Error('Google sign-in did not return a redirect URL.');
     } catch (err) {
       setIsAuthBusy(false);
       toast.error(err instanceof Error ? err.message : 'Google sign-in failed.');
@@ -860,6 +919,8 @@ export default function Home() {
       await refetchSession();
       setHistory([]);
       setSelectedSessionId(null);
+      setAuthGreetingMode(null);
+      setAccountProfile(null);
       toast.success('Signed out.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not sign out.');
@@ -1098,36 +1159,114 @@ export default function Home() {
     </div>
   );
 
-  const AccountPanel = () => (
-    <Shell>
-      {isSessionPending ? (
-        <div className="flex gap-2">
-          {[0, 1, 2].map((i) => <motion.div key={i} animate={{ y: [0, -6, 0], opacity: [0.4, 1, 0.4] }} transition={{ duration: 0.7, repeat: Infinity, delay: i * 0.14 }} className="h-2 w-2 rounded-full bg-[#a78bfa]" />)}
-        </div>
-      ) : accountUser ? (
-        <div className="grid gap-5">
-          <div className="rounded-[20px] border border-[#a78bfa]/20 bg-[linear-gradient(135deg,rgba(167,139,250,0.12),rgba(249,168,212,0.08))] p-5 sm:rounded-[24px]">
-            <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2]">Signed in</p>
-            <p className="mt-3 break-words font-serif text-2xl text-white">{accountUser.name || 'Aawaz User'}</p>
-            <p className="mt-1 break-words text-sm text-[#ddd6fe]">{accountUser.email}</p>
+  const AccountPanel = () => {
+    const createdAt = accountUser ? new Date(accountUser.createdAt) : null;
+    const isNew = createdAt ? Date.now() - createdAt.getTime() < 120000 : false;
+    const isGoogleAccount = accountProfile?.providerId === 'google';
+    const displayName = accountUser?.name || accountUser?.email?.split('@')[0] || 'Aawaz User';
+    const returningIdentifier = isGoogleAccount ? accountProfile?.accountId || accountUser?.id : displayName;
+    const greeting = authGreetingMode === 'sign-up' || (!authGreetingMode && isNew)
+      ? `Welcome ${displayName}`
+      : `Welcome back ${returningIdentifier || 'User'}`;
+    const createdDate = createdAt && !Number.isNaN(createdAt.getTime())
+      ? createdAt.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+      : 'Unavailable';
+
+    return (
+      <Shell>
+        {isSessionPending ? (
+          <div className="flex gap-2">
+            {[0, 1, 2].map((i) => <motion.div key={i} animate={{ y: [0, -6, 0], opacity: [0.4, 1, 0.4] }} transition={{ duration: 0.7, repeat: Infinity, delay: i * 0.14 }} className="h-2 w-2 rounded-full bg-[#a78bfa]" />)}
           </div>
-          <Button variant="secondary" onClick={signOut} disabled={isAuthBusy} className="h-12 w-full rounded-[18px] font-mono text-xs uppercase tracking-[0.22em] sm:w-fit">
-            <LogOut className="h-4 w-4" />
-            Sign out
-          </Button>
-        </div>
-      ) : (
-        <div className="grid gap-5">
-          <div>
-            <p className="font-serif text-2xl text-white">Save your progress</p>
-            <p className="mt-2 text-sm leading-6 text-[#857ca2]">You can try Aawaz first. After a few AI actions, create an account to continue saving speech history, insights, and your first voice sample.</p>
-            <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.22em] text-[#ddd6fe]">Guest uses: {Math.min(guestUses, 3)} / 3</p>
+        ) : accountUser ? (
+          <div className="grid gap-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+              {accountUser.image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={accountUser.image} alt={displayName} className="h-20 w-20 rounded-full border-2 border-white/10 object-cover shadow-[0_16px_40px_rgba(2,6,23,0.35)]" />
+              ) : (
+                <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-white/10 bg-white/5 font-serif text-3xl text-white shadow-[0_16px_40px_rgba(2,6,23,0.35)]">
+                  {displayName.charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div className="min-w-0">
+                <p className="break-words font-serif text-2xl tracking-tight text-white sm:text-3xl">{greeting}</p>
+                <p className="mt-1 break-all text-sm text-[#ddd6fe]">{accountUser.email}</p>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-[18px] border border-white/10 bg-white/4 p-4">
+                <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#857ca2]">User name</div>
+                <div className="mt-1 break-words text-sm text-[#f2efff]">{displayName}</div>
+              </div>
+              <div className="rounded-[18px] border border-white/10 bg-white/4 p-4">
+                <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#857ca2]">User email</div>
+                <div className="mt-1 break-all text-sm text-[#f2efff]">{accountUser.email}</div>
+              </div>
+              <div className="rounded-[18px] border border-white/10 bg-white/4 p-4">
+                <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#857ca2]">Account created</div>
+                <div className="mt-1 text-sm text-[#f2efff]">{createdDate}</div>
+              </div>
+              <div className="rounded-[18px] border border-white/10 bg-white/4 p-4">
+                <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#857ca2]">Login method</div>
+                <div className="mt-1 break-words text-sm capitalize text-[#f2efff]">{accountProfile?.providerId || 'email'}</div>
+              </div>
+            </div>
+
+            <div className="grid gap-3 border-t border-white/10 pt-5 sm:grid-cols-3">
+              <Button variant="secondary" onClick={signOut} disabled={isAuthBusy} className="h-11 rounded-[16px] font-mono text-xs uppercase tracking-[0.1em]">
+                <LogOut className="mr-2 h-4 w-4" />
+                Log out
+              </Button>
+              <Button variant="secondary" onClick={async () => {
+                if (confirm('Delete all your saved speeches and voice samples? This cannot be undone.')) {
+                  try {
+                    await requestJson('/api/account/delete-data', { method: 'DELETE' });
+                    setHistory([]);
+                    toast.success('Account data deleted.');
+                  } catch (e) {
+                    toast.error(e instanceof Error ? e.message : 'Failed to delete data.');
+                  }
+                }
+              }} className="h-11 rounded-[16px] font-mono text-xs uppercase tracking-[0.1em]">
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete Data
+              </Button>
+              <Button variant="danger" onClick={async () => {
+                if (confirm('Delete your entire account? This will log you out and delete all your data. This cannot be undone.')) {
+                  try {
+                    await requestJson('/api/account/delete-account', { method: 'DELETE' });
+                    await authClient.signOut().catch(() => null);
+                    await refetchSession();
+                    setAccountProfile(null);
+                    setAuthGreetingMode(null);
+                    setHistory([]);
+                    setSelectedSessionId(null);
+                    toast.success('Account deleted.');
+                  } catch (e) {
+                    toast.error(e instanceof Error ? e.message : 'Failed to delete account.');
+                  }
+                }
+              }} className="h-11 rounded-[16px] font-mono text-xs uppercase tracking-[0.1em]">
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete Account
+              </Button>
+            </div>
           </div>
-          <AuthControls />
-        </div>
-      )}
-    </Shell>
-  );
+        ) : (
+          <div className="grid gap-5">
+            <div>
+              <p className="font-serif text-2xl text-white">Save your progress</p>
+              <p className="mt-2 text-sm leading-6 text-[#857ca2]">You can try Aawaz first. After a few AI actions, create an account to continue saving speech history, insights, and your first voice sample.</p>
+              <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.22em] text-[#ddd6fe]">Guest uses: {Math.min(guestUses, 3)} / 3</p>
+            </div>
+            <AuthControls />
+          </div>
+        )}
+      </Shell>
+    );
+  };
 
   const AuthPromptModal = () => (
     <AnimatePresence>
@@ -1530,34 +1669,6 @@ export default function Home() {
                         'Track your score trend over time in the chart below',
                         'Generate AI insights to understand your strengths',
                         'Identify recurring weaknesses and target them in practice',
-                      ].map((tip, i) => (
-                        <motion.li
-                          key={i}
-                          initial={{ opacity: 0, x: -8 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: 0.15 + i * 0.08 }}
-                          className="flex items-start gap-2.5 text-sm leading-relaxed text-[#f2efff]"
-                        >
-                          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a78bfa,#f9a8d4)] font-mono text-[10px] font-bold text-[#06060b]">{i + 1}</span>
-                          {tip}
-                        </motion.li>
-                      ))}
-                    </ul>
-                  </motion.div>
-                )}
-                {activeTab === 'account' && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
-                    className="mt-5 rounded-[20px] border border-white/10 bg-[#0b0b12]/40 p-4 sm:rounded-[24px] sm:p-5"
-                  >
-                    <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2] mb-3">How accounts work</div>
-                    <ul className="space-y-2.5">
-                      {[
-                        'Try the app first without creating an account',
-                        'Create an account after a few uses to keep going',
-                        'Your history, insights, and own-voice sample stay tied to your login',
                       ].map((tip, i) => (
                         <motion.li
                           key={i}
