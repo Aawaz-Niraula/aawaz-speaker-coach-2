@@ -18,7 +18,10 @@ function cleanGuestId(value: string) {
 
 export async function resolveAppUser(req: Request, providedUserId: string, consumeGuestUse = false) {
   await ensureAuthSchema();
-  const session = await auth.api.getSession({ headers: req.headers });
+  const session = await auth.api.getSession({ headers: req.headers }).catch((err) => {
+    console.error('getSession failed:', err);
+    return null;
+  });
   const authUserId = session?.user?.id;
 
   if (authUserId) {
