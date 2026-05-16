@@ -960,7 +960,10 @@ export default function Home() {
         disableRedirect: true,
       });
       if (result.error) {
-        throw new Error(result.error.message || result.error.statusText || 'Google sign-in failed.');
+        const message = result.error.message || result.error.statusText || 'Google sign-in failed.';
+        throw new Error(message === 'Google sign-in failed.'
+          ? 'Google sign-in could not start. Check Better Auth, Turso, and Google OAuth environment variables.'
+          : message);
       }
       if (result.data?.url) {
         window.location.assign(result.data.url);
