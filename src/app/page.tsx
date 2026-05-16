@@ -581,9 +581,17 @@ export default function Home() {
   const [authGreetingMode, setAuthGreetingMode] = useState<'sign-in' | 'sign-up' | null>(null);
   const [accountProfile, setAccountProfile] = useState<AccountProfile | null>(null);
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
+  const [voiceSampleMenuOpen, setVoiceSampleMenuOpen] = useState(false);
+  const [voiceSamplePanelOpen, setVoiceSamplePanelOpen] = useState(false);
+  const [isVoiceSampleRecording, setIsVoiceSampleRecording] = useState(false);
+  const [isVoiceSampleSaving, setIsVoiceSampleSaving] = useState(false);
+  const [voiceSampleSeconds, setVoiceSampleSeconds] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const voiceSampleRecorderRef = useRef<MediaRecorder | null>(null);
+  const voiceSampleStreamRef = useRef<MediaStream | null>(null);
+  const voiceSampleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const feedbackRef = useRef<HTMLDivElement | null>(null);
   const speechAudioRef = useRef(speechAudio);
 
@@ -707,6 +715,13 @@ export default function Home() {
   useEffect(() => {
     return () => {
       mediaRecorderRef.current = null;
+      if (voiceSampleTimerRef.current) clearInterval(voiceSampleTimerRef.current);
+      const recorder = voiceSampleRecorderRef.current;
+      voiceSampleRecorderRef.current = null;
+      if (recorder?.state === 'recording' || recorder?.state === 'paused') {
+        recorder.stop();
+      }
+      voiceSampleStreamRef.current?.getTracks().forEach((track) => track.stop());
       Object.values(speechAudioRef.current).forEach((item) => {
         if (item.url) URL.revokeObjectURL(item.url);
       });
@@ -1106,6 +1121,173 @@ export default function Home() {
     }
   };
 
+  const openVoiceSampleRecorder = async () => {
+    setVoiceSampleMenuOpen(false);
+
+    if (!userId) {
+      toast.error('User identity is still loading. Please try again.');
+      return;
+    }
+
+    if (isRecording || isAnalyzing) {
+      toast.error('Finish the current speech recording first.');
+      return;
+    }
+
+    const confirmed = window.confirm('If you record new sample your previous sample will be deleted, confirm?');
+    if (!confirmed) return;
+
+    if (speechAudioRef.current.clone.url) {
+      URL.revokeObjectURL(speechAudioRef.current.clone.url);
+    }
+    setSpeechAudio((current) => ({
+      ...current,
+      clone: { url: '', isLoading: false },
+    }));
+
+    try {
+      const res = await fetch('/api/account/voice-sample', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(typeof data.error === 'string' ? data.error : 'Could not delete the saved voice sample.');
+      }
+
+      setVoiceSamplePanelOpen(true);
+      setVoiceSampleSeconds(0);
+      toast.message('Previous voice sample deleted.');
+    } catch (err) {
+      if (handleAuthRequired(err)) return;
+      toast.error(err instanceof Error ? err.message : 'Could not reset the voice sample.');
+    }
+  };
+
+  const saveVoiceSampleBlob = async (blob: Blob) => {
+    if (blob.size < 3000) {
+      setIsVoiceSampleSaving(false);
+      toast.error('No audio detected. Please speak clearly and try again.');
+      return;
+    }
+
+    setIsVoiceSampleSaving(true);
+    const form = new FormData();
+    form.append('userId', userId);
+    form.append('voiceSample', blob, 'voice-sample.webm');
+
+    try {
+      const res = await fetch('/api/account/voice-sample', {
+        method: 'POST',
+        body: form,
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(typeof data.error === 'string' ? data.error : 'Could not save the new voice sample.');
+      }
+
+      setVoiceSamplePanelOpen(false);
+      setVoiceSampleSeconds(0);
+      toast.success('New voice sample saved.');
+    } catch (err) {
+      if (handleAuthRequired(err)) return;
+      toast.error(err instanceof Error ? err.message : 'Could not save the new voice sample.');
+    } finally {
+      setIsVoiceSampleSaving(false);
+    }
+  };
+
+  const stopVoiceSampleRecording = () => {
+    if (voiceSampleRecorderRef.current?.state !== 'recording') return;
+
+    voiceSampleRecorderRef.current.stop();
+    if (voiceSampleTimerRef.current) clearInterval(voiceSampleTimerRef.current);
+    voiceSampleTimerRef.current = null;
+    setIsVoiceSampleRecording(false);
+    setIsVoiceSampleSaving(true);
+  };
+
+  const startVoiceSampleRecording = async () => {
+    if (!userId) {
+      toast.error('User identity is still loading. Please try again.');
+      return;
+    }
+
+    if (!('MediaRecorder' in window) || !navigator.mediaDevices?.getUserMedia) {
+      toast.error('Audio recording is not supported in this browser.');
+      return;
+    }
+
+    try {
+      if (voiceSampleTimerRef.current) clearInterval(voiceSampleTimerRef.current);
+      const activeRecorder = voiceSampleRecorderRef.current;
+      voiceSampleRecorderRef.current = null;
+      if (activeRecorder?.state === 'recording' || activeRecorder?.state === 'paused') {
+        activeRecorder.stop();
+      }
+      voiceSampleStreamRef.current?.getTracks().forEach((track) => track.stop());
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      voiceSampleStreamRef.current = stream;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunks.push(event.data);
+      };
+      recorder.onstop = () => {
+        if (voiceSampleRecorderRef.current !== recorder) {
+          return;
+        }
+
+        voiceSampleStreamRef.current?.getTracks().forEach((track) => track.stop());
+        voiceSampleStreamRef.current = null;
+        voiceSampleRecorderRef.current = null;
+        const audioType = recorder.mimeType || chunks[0]?.type || 'audio/webm;codecs=opus';
+        const blob = new Blob(chunks, { type: audioType });
+        void saveVoiceSampleBlob(blob);
+      };
+
+      recorder.start(1000);
+      voiceSampleRecorderRef.current = recorder;
+      setVoiceSampleSeconds(0);
+      setIsVoiceSampleRecording(true);
+      setIsVoiceSampleSaving(false);
+      voiceSampleTimerRef.current = setInterval(() => {
+        setVoiceSampleSeconds((current) => {
+          const next = current + 1;
+          if (next >= VOICE_SAMPLE_SECONDS) {
+            window.setTimeout(() => stopVoiceSampleRecording(), 0);
+          }
+          return Math.min(next, VOICE_SAMPLE_SECONDS);
+        });
+      }, 1000);
+      toast.message('Voice sample recording started.');
+    } catch {
+      toast.error('Microphone access is required.');
+    }
+  };
+
+  const cancelVoiceSampleRecorder = () => {
+    if (voiceSampleTimerRef.current) clearInterval(voiceSampleTimerRef.current);
+    voiceSampleTimerRef.current = null;
+
+    const recorder = voiceSampleRecorderRef.current;
+    voiceSampleRecorderRef.current = null;
+    if (recorder?.state === 'recording' || recorder?.state === 'paused') {
+      recorder.stop();
+    }
+
+    voiceSampleStreamRef.current?.getTracks().forEach((track) => track.stop());
+    voiceSampleStreamRef.current = null;
+    setIsVoiceSampleRecording(false);
+    setIsVoiceSampleSaving(false);
+    setVoiceSampleSeconds(0);
+    setVoiceSamplePanelOpen(false);
+  };
+
   const deleteSession = async (sessionId: string) => {
     try {
       const data = await requestJson<HistoryResponse>('/api/evaluations/history', {
@@ -1226,12 +1408,10 @@ export default function Home() {
   const AccountPanel = () => {
     const createdAt = accountUser ? new Date(accountUser.createdAt) : null;
     const isNew = createdAt ? Date.now() - createdAt.getTime() < 120000 : false;
-    const isGoogleAccount = accountProfile?.providerId === 'google';
     const displayName = accountUser?.name || accountUser?.email?.split('@')[0] || 'Aawaz User';
-    const returningIdentifier = isGoogleAccount ? accountProfile?.accountId || accountUser?.id : displayName;
     const greeting = authGreetingMode === 'sign-up' || (!authGreetingMode && isNew)
       ? `Welcome ${displayName}`
-      : `Welcome back ${returningIdentifier || 'User'}`;
+      : `Welcome back ${displayName}`;
     const createdDate = createdAt && !Number.isNaN(createdAt.getTime())
       ? createdAt.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
       : 'Unavailable';
@@ -1435,15 +1615,43 @@ export default function Home() {
                 </div>
               ) : null}
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <button
-                  type="button"
-                  onClick={() => generateSpeechAudio(item.mode)}
-                  disabled={state.isLoading || isGenerating}
-                  className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[16px] border border-[#a78bfa]/25 bg-[linear-gradient(135deg,rgba(167,139,250,0.18),rgba(249,168,212,0.10))] px-4 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#f2efff] transition hover:bg-white/10 disabled:pointer-events-none disabled:opacity-50 sm:rounded-[18px] lg:w-auto lg:min-w-[220px]"
-                >
-                  <Play className={cn('h-4 w-4 shrink-0', state.isLoading && 'animate-pulse')} />
-                  <span className="min-w-0 break-words">{state.isLoading ? 'Generating...' : item.label}</span>
-                </button>
+                <div className="relative flex w-full gap-2 lg:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => generateSpeechAudio(item.mode)}
+                    disabled={state.isLoading || isGenerating || isVoiceSampleRecording || isVoiceSampleSaving}
+                    className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-[16px] border border-[#a78bfa]/25 bg-[linear-gradient(135deg,rgba(167,139,250,0.18),rgba(249,168,212,0.10))] px-4 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#f2efff] transition hover:bg-white/10 disabled:pointer-events-none disabled:opacity-50 sm:rounded-[18px] lg:min-w-[220px] lg:flex-none"
+                  >
+                    <Play className={cn('h-4 w-4 shrink-0', state.isLoading && 'animate-pulse')} />
+                    <span className="min-w-0 break-words">{state.isLoading ? 'Generating...' : item.label}</span>
+                  </button>
+                  {item.mode === 'clone' ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setVoiceSampleMenuOpen((open) => !open)}
+                        disabled={state.isLoading || isGenerating || isVoiceSampleRecording || isVoiceSampleSaving}
+                        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] border border-white/10 bg-white/6 text-[#ddd6fe] transition hover:bg-white/10 disabled:pointer-events-none disabled:opacity-50 sm:rounded-[18px]"
+                        aria-label="Voice sample options"
+                        aria-expanded={voiceSampleMenuOpen}
+                      >
+                        <ChevronDown className={cn('h-4 w-4 transition', voiceSampleMenuOpen && 'rotate-180')} />
+                      </button>
+                      {voiceSampleMenuOpen ? (
+                        <div className="absolute right-0 top-[calc(100%+8px)] z-20 w-56 rounded-[16px] border border-white/10 bg-[#151522] p-1 shadow-[0_20px_60px_rgba(0,0,0,0.35)]">
+                          <button
+                            type="button"
+                            onClick={openVoiceSampleRecorder}
+                            className="flex w-full items-center gap-2 rounded-[13px] px-3 py-3 text-left font-mono text-[10px] uppercase tracking-[0.18em] text-[#f2efff] transition hover:bg-white/8"
+                          >
+                            <Mic className="h-4 w-4 text-[#ddd6fe]" />
+                            Record new sample
+                          </button>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
+                </div>
                 {state.url ? (
                   <a
                     href={state.url}
@@ -1463,6 +1671,48 @@ export default function Home() {
             </div>
           );
         })}
+        {voiceSamplePanelOpen ? (
+          <div className="md:col-span-2 rounded-[20px] border border-[#a78bfa]/20 bg-[#0b0b12]/65 p-4 sm:rounded-[24px]">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#ddd6fe]">New voice sample</div>
+                <p className="mt-2 text-sm leading-6 text-[#857ca2]">Speak clearly for 15 seconds. This sample will replace the one used for your own-voice playback.</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <div className="flex h-11 min-w-16 items-center justify-center rounded-[16px] border border-white/10 bg-white/5 font-mono text-sm text-[#f2efff]">
+                  {voiceSampleSeconds}s
+                </div>
+                <Button
+                  type="button"
+                  variant={isVoiceSampleRecording ? 'danger' : 'secondary'}
+                  onClick={isVoiceSampleRecording ? stopVoiceSampleRecording : startVoiceSampleRecording}
+                  disabled={isVoiceSampleSaving}
+                  className="h-11 rounded-[16px] px-4 font-mono text-[10px] uppercase tracking-[0.16em]"
+                >
+                  {isVoiceSampleRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                  {isVoiceSampleSaving ? 'Saving...' : isVoiceSampleRecording ? 'Stop' : 'Record'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={cancelVoiceSampleRecorder}
+                  disabled={isVoiceSampleSaving}
+                  className="h-11 w-11 rounded-[16px]"
+                  aria-label="Close voice sample recorder"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/8">
+              <div
+                className="h-full rounded-full bg-[linear-gradient(90deg,#a78bfa,#f9a8d4)] transition-all"
+                style={{ width: `${Math.min(100, (voiceSampleSeconds / VOICE_SAMPLE_SECONDS) * 100)}%` }}
+              />
+            </div>
+          </div>
+        ) : null}
       </div>
     );
   };

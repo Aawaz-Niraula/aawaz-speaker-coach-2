@@ -391,6 +391,71 @@ export async function upsertSpeechVoiceSample({
   }
 }
 
+export async function replaceSpeechVoiceSample({
+  userId,
+  audioData,
+  mimeType,
+  filename,
+}: {
+  userId: string;
+  audioData: ArrayBuffer;
+  mimeType: string;
+  filename: string;
+}) {
+  const db = await ensureSpeechSchema();
+
+  if (!db) {
+    return false;
+  }
+
+  try {
+    await db.execute({
+      sql: `
+        DELETE FROM speech_voice_samples
+        WHERE user_id = ?
+      `,
+      args: [userId],
+    });
+
+    const result = await db.execute({
+      sql: `
+        INSERT INTO speech_voice_samples (
+          user_id, audio_data, mime_type, filename, size_bytes
+        ) VALUES (?, ?, ?, ?, ?)
+      `,
+      args: [userId, new Uint8Array(audioData), mimeType, filename, audioData.byteLength],
+    });
+
+    return result.rowsAffected > 0;
+  } catch (error) {
+    console.error('Failed to replace speech voice sample:', error);
+    return false;
+  }
+}
+
+export async function deleteSpeechVoiceSample(userId: string) {
+  const db = await ensureSpeechSchema();
+
+  if (!db) {
+    return false;
+  }
+
+  try {
+    await db.execute({
+      sql: `
+        DELETE FROM speech_voice_samples
+        WHERE user_id = ?
+      `,
+      args: [userId],
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Failed to delete speech voice sample:', error);
+    return false;
+  }
+}
+
 export async function getSpeechVoiceSample(userId: string) {
   const db = await ensureSpeechSchema();
 
