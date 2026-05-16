@@ -59,6 +59,7 @@ type AccountProfile = {
 type AuthStatus = {
   accountAuthEnabled: boolean;
   googleEnabled: boolean;
+  message?: string;
 };
 type SpeechAudioMode = 'example' | 'clone';
 type SpeechExampleVoice = 'female' | 'male';
@@ -871,11 +872,31 @@ export default function Home() {
     return false;
   };
 
+  const getAuthStatus = async () => {
+    try {
+      const data = await requestJson<AuthStatus>('/api/account/auth-status', {
+        cache: 'no-store',
+      }, 300000);
+      setAuthStatus(data);
+      return data;
+    } catch (err) {
+      console.error('Could not load auth status:', err);
+      const fallback = {
+        accountAuthEnabled: false,
+        googleEnabled: false,
+        message: 'Account sign-in is not available because auth configuration could not be checked.',
+      };
+      setAuthStatus(fallback);
+      return fallback;
+    }
+  };
+
   const submitAuth = async () => {
     if (isAuthBusy) return;
 
-    if (authStatus?.accountAuthEnabled === false) {
-      toast.error('Account sign-up needs Better Auth and Turso environment variables configured.');
+    const status = authStatus ?? await getAuthStatus();
+    if (!status.accountAuthEnabled) {
+      toast.error(status.message || 'Account sign-up needs Better Auth and Turso environment variables configured.');
       return;
     }
 
@@ -915,12 +936,15 @@ export default function Home() {
   };
 
   const signInWithGoogle = async () => {
-    if (authStatus?.accountAuthEnabled === false) {
-      toast.error('Google sign-in needs Better Auth and Turso environment variables configured.');
+    if (isAuthBusy) return;
+
+    const status = await getAuthStatus();
+    if (!status.accountAuthEnabled) {
+      toast.error(status.message || 'Google sign-in needs Better Auth and Turso environment variables configured.');
       return;
     }
-    if (authStatus?.googleEnabled === false) {
-      toast.error('Google sign-in needs GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET configured.');
+    if (!status.googleEnabled) {
+      toast.error(status.message || 'Google sign-in needs GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET configured.');
       return;
     }
 
