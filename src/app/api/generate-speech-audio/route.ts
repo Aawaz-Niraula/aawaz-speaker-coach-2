@@ -112,7 +112,7 @@ async function readAudioResponse(res: Response) {
 }
 
 async function synthesizeWithVoice(voiceId: string, text: string, modelId: string, token: string) {
-  const res = await fetchWithRetryLimited('tts', `https://api.deepinfra.com/v1/text-to-speech/${encodeURIComponent(voiceId)}/stream?output_format=opus`, {
+  const res = await fetchWithRetryLimited('tts', `https://api.deepinfra.com/v1/text-to-speech/${encodeURIComponent(voiceId)}`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -123,11 +123,7 @@ async function synthesizeWithVoice(voiceId: string, text: string, modelId: strin
       model_id: modelId,
       output_format: 'opus',
       language_code: 'en',
-      voice: voiceId,
-      voice_id: voiceId,
-      style: STYLE_PROMPT,
-      style_prompt: STYLE_PROMPT,
-      instructions: STYLE_PROMPT,
+      style_instruction: STYLE_PROMPT,
     }),
   }, 1, 1000, 120000);
 
@@ -144,13 +140,9 @@ async function synthesizeDirect(modelId: string, text: string, token: string, vo
     text,
     voice: voiceId,
     voice_id: voiceId,
-    prompt: STYLE_PROMPT,
-    style: STYLE_PROMPT,
-    style_prompt: STYLE_PROMPT,
-    instructions: STYLE_PROMPT,
-    response_format: 'opus',
+    style_instruction: STYLE_PROMPT,
     output_format: 'opus',
-    format: 'opus',
+    language_code: 'en',
   });
 
   const res = await fetchWithRetryLimited('tts', `https://api.deepinfra.com/v1/inference/${modelId}`, {
@@ -174,7 +166,7 @@ async function createVoice(sample: File, userId: string, token: string) {
   const voiceForm = new FormData();
   voiceForm.append('name', `Aawaz voice ${userId.slice(0, 18) || Date.now()}`);
   voiceForm.append('description', 'Short voice sample captured after speech analysis for practice speech playback.');
-  voiceForm.append('files', sample, sample.name || 'voice-sample.webm');
+  voiceForm.append('audio', sample, sample.name || 'voice-sample.webm');
 
   const res = await fetchWithRetryLimited('voice', 'https://api.deepinfra.com/v1/voices/add', {
     method: 'POST',
