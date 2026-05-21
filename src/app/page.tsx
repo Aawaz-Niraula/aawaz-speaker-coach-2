@@ -585,6 +585,7 @@ export default function Home() {
   const [voiceSamplePanelOpen, setVoiceSamplePanelOpen] = useState(false);
   const [isVoiceSampleRecording, setIsVoiceSampleRecording] = useState(false);
   const [isVoiceSampleSaving, setIsVoiceSampleSaving] = useState(false);
+  const [isVoiceSampleResetting, setIsVoiceSampleResetting] = useState(false);
   const [voiceSampleSeconds, setVoiceSampleSeconds] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -1123,6 +1124,7 @@ export default function Home() {
 
   const openVoiceSampleRecorder = async () => {
     setVoiceSampleMenuOpen(false);
+    if (isVoiceSampleResetting) return;
 
     if (!userId) {
       toast.error('User identity is still loading. Please try again.');
@@ -1137,6 +1139,7 @@ export default function Home() {
     const confirmed = window.confirm('If you record new sample your previous sample will be deleted, confirm?');
     if (!confirmed) return;
 
+    setIsVoiceSampleResetting(true);
     if (speechAudioRef.current.clone.url) {
       URL.revokeObjectURL(speechAudioRef.current.clone.url);
     }
@@ -1163,6 +1166,8 @@ export default function Home() {
     } catch (err) {
       if (handleAuthRequired(err)) return;
       toast.error(err instanceof Error ? err.message : 'Could not reset the voice sample.');
+    } finally {
+      setIsVoiceSampleResetting(false);
     }
   };
 
@@ -1619,7 +1624,7 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={() => generateSpeechAudio(item.mode)}
-                    disabled={state.isLoading || isGenerating || isVoiceSampleRecording || isVoiceSampleSaving}
+                    disabled={state.isLoading || isGenerating || isVoiceSampleRecording || isVoiceSampleSaving || isVoiceSampleResetting}
                     className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-[16px] border border-[#a78bfa]/25 bg-[linear-gradient(135deg,rgba(167,139,250,0.18),rgba(249,168,212,0.10))] px-4 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#f2efff] transition hover:bg-white/10 disabled:pointer-events-none disabled:opacity-50 sm:rounded-[18px] lg:min-w-[220px] lg:flex-none"
                   >
                     <Play className={cn('h-4 w-4 shrink-0', state.isLoading && 'animate-pulse')} />
@@ -1630,7 +1635,7 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={() => setVoiceSampleMenuOpen((open) => !open)}
-                        disabled={state.isLoading || isGenerating || isVoiceSampleRecording || isVoiceSampleSaving}
+                        disabled={state.isLoading || isGenerating || isVoiceSampleRecording || isVoiceSampleSaving || isVoiceSampleResetting}
                         className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] border border-white/10 bg-white/6 text-[#ddd6fe] transition hover:bg-white/10 disabled:pointer-events-none disabled:opacity-50 sm:rounded-[18px]"
                         aria-label="Voice sample options"
                         aria-expanded={voiceSampleMenuOpen}
@@ -1642,10 +1647,11 @@ export default function Home() {
                           <button
                             type="button"
                             onClick={openVoiceSampleRecorder}
+                            disabled={isVoiceSampleResetting}
                             className="flex w-full items-center gap-2 rounded-[13px] px-3 py-3 text-left font-mono text-[10px] uppercase tracking-[0.18em] text-[#f2efff] transition hover:bg-white/8"
                           >
                             <Mic className="h-4 w-4 text-[#ddd6fe]" />
-                            Record new sample
+                            {isVoiceSampleResetting ? 'Deleting old sample...' : 'Record new sample'}
                           </button>
                         </div>
                       ) : null}
