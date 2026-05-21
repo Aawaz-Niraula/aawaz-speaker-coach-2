@@ -32,7 +32,13 @@ function providerMessage(data: unknown) {
   if (typeof record.message === 'string') return record.message;
   if (Array.isArray(record.detail)) {
     return record.detail
-      .map((item) => (item && typeof item === 'object' ? (item as Record<string, unknown>).msg : null))
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null;
+        const detail = item as Record<string, unknown>;
+        const message = typeof detail.msg === 'string' ? detail.msg : null;
+        const location = Array.isArray(detail.loc) ? detail.loc.filter((part) => typeof part === 'string').join('.') : '';
+        return message && location ? `${location}: ${message}` : message;
+      })
       .filter(Boolean)
       .join(' ');
   }
@@ -166,7 +172,7 @@ async function createVoice(sample: File, userId: string, token: string) {
   const voiceForm = new FormData();
   voiceForm.append('name', `Aawaz voice ${userId.slice(0, 18) || Date.now()}`);
   voiceForm.append('description', 'Short voice sample captured after speech analysis for practice speech playback.');
-  voiceForm.append('audio', sample, sample.name || 'voice-sample.webm');
+  voiceForm.append('files', sample, sample.name || 'voice-sample.webm');
 
   const res = await fetchWithRetryLimited('voice', 'https://api.deepinfra.com/v1/voices/add', {
     method: 'POST',
