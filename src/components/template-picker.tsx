@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Eyebrow, Shell } from '@/components/ui/shell';
 import { sfx } from '@/lib/sound';
 import { SPEECH_TEMPLATES, type SpeechTemplate, type SpeechTemplateId } from '@/lib/speech-config';
+import { cn } from '@/lib/utils';
 
 /** Full-screen popup showing the hand-designed Canva format image for a rubric. */
 function FormatViewer({ template, onClose }: { template: SpeechTemplate; onClose: () => void }) {
@@ -97,10 +98,20 @@ export function TemplatePicker({
         <Label.Root className="mb-2 block text-sm text-[#ddd6fe]">Evaluation rubric</Label.Root>
         <Select.Root
           value={value ?? 'general'}
-          onValueChange={(next) => onChange(next === 'general' ? null : (next as SpeechTemplateId))}
+          onValueChange={(next) => {
+            sfx.select();
+            onChange(next === 'general' ? null : (next as SpeechTemplateId));
+          }}
           disabled={disabled}
         >
-          <Select.Trigger className="flex h-14 w-full items-center justify-between rounded-[18px] border border-white/12 bg-[#0b0b12]/60 px-4 text-left text-sm text-[#f2efff] transition hover:border-[#a78bfa]/40 disabled:opacity-50 sm:rounded-[22px] sm:px-5">
+          <Select.Trigger
+            className={cn(
+              'flex h-14 w-full items-center justify-between rounded-[18px] border bg-[#0b0b12]/60 px-4 text-left text-sm text-[#f2efff] transition hover:border-[#a78bfa]/40 disabled:opacity-50 sm:rounded-[22px] sm:px-5',
+              value
+                ? 'border-[#a78bfa]/35 shadow-[0_0_18px_rgba(167,139,250,0.12)]'
+                : 'border-white/12',
+            )}
+          >
             <Select.Value placeholder="General evaluation" />
             <Select.Icon><ChevronDown className="h-4 w-4 text-[#857ca2]" /></Select.Icon>
           </Select.Trigger>
@@ -122,55 +133,66 @@ export function TemplatePicker({
           </Select.Portal>
         </Select.Root>
       </Shell>
-      <AnimatePresence>
+      <AnimatePresence initial={false}>
         {selected ? (
+          // The card itself keeps a stable key so switching between rubrics
+          // never unmounts it (no exit/enter lag) — only the inner content
+          // crossfades, instantly.
           <motion.div
-            key={selected.id}
-            initial={{ opacity: 0, y: 12 }}
+            key="rubric-card"
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
             className="relative overflow-hidden rounded-[24px] border border-[#a78bfa]/20 bg-[linear-gradient(135deg,rgba(167,139,250,0.08),rgba(249,168,212,0.05))] p-4 backdrop-blur-xl sm:rounded-[28px] sm:p-6"
           >
             <Button variant="secondary" size="icon" className="absolute right-3 top-3 z-10 h-8 w-8 sm:right-4 sm:top-4" onClick={() => onChange(null)} aria-label="Clear template">
               <X className="h-4 w-4" />
             </Button>
-            <div className="flex items-center gap-2.5 pr-10">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#a78bfa]/15 text-[#a78bfa]">
-                <ScrollText className="h-4 w-4" />
-              </span>
-              <div className="min-w-0">
-                <p className="truncate font-serif text-lg tracking-tight text-white">{selected.label}</p>
-                <p className="truncate font-mono text-[10px] uppercase tracking-[0.18em] text-[#857ca2]">{selected.rubricTitle}</p>
+            <motion.div
+              key={selected.id}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.16, ease: 'easeOut' }}
+            >
+              <div className="flex items-center gap-2.5 pr-10">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#a78bfa]/15 text-[#a78bfa]">
+                  <ScrollText className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate font-serif text-lg tracking-tight text-white">{selected.label}</p>
+                  <p className="truncate font-mono text-[10px] uppercase tracking-[0.18em] text-[#857ca2]">{selected.rubricTitle}</p>
+                </div>
               </div>
-            </div>
-            <ul className="mt-4 grid gap-2 sm:grid-cols-2">
-              {selected.hints.map((rule, i) => (
-                <motion.li
-                  key={i}
-                  initial={{ opacity: 0, x: -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.08 + i * 0.06 }}
-                  className="flex items-start gap-2.5 rounded-[14px] border border-white/8 bg-[#0b0b12]/45 px-3 py-2.5 text-[13px] leading-relaxed text-[#e6e1f7]"
+              <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+                {selected.hints.map((rule, i) => (
+                  <motion.li
+                    key={`${selected.id}-${i}`}
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.035, duration: 0.18, ease: 'easeOut' }}
+                    className="flex items-start gap-2.5 rounded-[14px] border border-white/8 bg-[#0b0b12]/45 px-3 py-2.5 text-[13px] leading-relaxed text-[#e6e1f7]"
+                  >
+                    <span className="mt-1.5 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#f9a8d4]"></span>
+                    {rule}
+                  </motion.li>
+                ))}
+              </ul>
+              <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2.5">
+                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#857ca2]">The coach judges strictly against this rubric — no mercy mode.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    sfx.pop();
+                    setFormatOpen(true);
+                  }}
+                  className="group inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#a78bfa]/30 bg-[#a78bfa]/10 px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#ddd6fe] transition hover:border-[#a78bfa]/55 hover:bg-[#a78bfa]/20 hover:text-white"
                 >
-                  <span className="mt-1.5 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#f9a8d4]"></span>
-                  {rule}
-                </motion.li>
-              ))}
-            </ul>
-            <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2.5">
-              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#857ca2]">The coach judges strictly against this rubric — no mercy mode.</p>
-              <button
-                type="button"
-                onClick={() => {
-                  sfx.pop();
-                  setFormatOpen(true);
-                }}
-                className="group inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#a78bfa]/30 bg-[#a78bfa]/10 px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#ddd6fe] transition hover:border-[#a78bfa]/55 hover:bg-[#a78bfa]/20 hover:text-white"
-              >
-                <ImageIcon className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
-                View format
-              </button>
-            </div>
+                  <ImageIcon className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
+                  View format
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
         ) : null}
       </AnimatePresence>
