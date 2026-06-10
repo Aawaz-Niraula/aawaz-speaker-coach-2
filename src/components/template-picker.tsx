@@ -12,15 +12,6 @@ import { Eyebrow, Shell } from '@/components/ui/shell';
 import { sfx } from '@/lib/sound';
 import { SPEECH_TEMPLATES, type SpeechTemplate, type SpeechTemplateId } from '@/lib/speech-config';
 
-/** Extracts the first few rule bullets from a rubric for a quick preview. */
-function rubricHighlights(rubric: string, count = 4) {
-  return rubric
-    .split('\n')
-    .map((line) => line.replace(/^[-•]\s*/, '').trim())
-    .filter((line, index) => index > 0 && line.length > 0)
-    .slice(0, count);
-}
-
 /** Full-screen popup showing the hand-designed Canva format image for a rubric. */
 function FormatViewer({ template, onClose }: { template: SpeechTemplate; onClose: () => void }) {
   const [failed, setFailed] = useState(false);
@@ -53,7 +44,7 @@ function FormatViewer({ template, onClose }: { template: SpeechTemplate; onClose
             </span>
             <div className="min-w-0">
               <p className="truncate font-serif text-base tracking-tight text-white sm:text-lg">{template.label}</p>
-              <p className="truncate font-mono text-[9px] uppercase tracking-[0.18em] text-[#857ca2]">Speech format · designed for Aawaz</p>
+              <p className="truncate font-mono text-[9px] uppercase tracking-[0.18em] text-[#857ca2]">Designed by aawaz for his dear learners</p>
             </div>
           </div>
           <button
@@ -153,7 +144,7 @@ export function TemplatePicker({
               </div>
             </div>
             <ul className="mt-4 grid gap-2 sm:grid-cols-2">
-              {rubricHighlights(selected.rubric).map((rule, i) => (
+              {selected.hints.map((rule, i) => (
                 <motion.li
                   key={i}
                   initial={{ opacity: 0, x: -8 }}

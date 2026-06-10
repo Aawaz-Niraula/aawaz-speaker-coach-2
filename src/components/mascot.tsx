@@ -64,10 +64,13 @@ export function useAawax() {
 /* ── Body shapes per design ──────────────────────────────────────── */
 const BODY_SHAPES: Record<AawaxStyle['design'], { x: number; y: number; w: number; h: number; rx: number }> = {
   classic: { x: 24, y: 32, w: 72, h: 68, rx: 33 },
-  puff: { x: 22, y: 31, w: 76, h: 70, rx: 38 },
+  snake: { x: 26, y: 30, w: 68, h: 72, rx: 34 },
   boxy: { x: 26, y: 34, w: 68, h: 64, rx: 18 },
   kitty: { x: 24, y: 34, w: 72, h: 66, rx: 32 },
 };
+
+/** Booped mascots show a special "pleased" face that isn't a public mood. */
+type RenderMood = MascotMood | 'pleased';
 
 /**
  * "Aawax" — the Aawaz coach mascot. A small gacha-style blob that guides the
@@ -98,7 +101,7 @@ export function CoachMascot({
   const design = styleOverride?.design ?? style.design;
   const palette = AAWAX_COLORS[styleOverride?.color ?? style.color];
   const body = BODY_SHAPES[design];
-  const effectiveMood: MascotMood = booped ? 'cheer' : mood;
+  const effectiveMood: RenderMood = booped ? 'pleased' : mood;
 
   useEffect(() => {
     if (!booped) return;
@@ -138,8 +141,8 @@ export function CoachMascot({
       {/* soft glow */}
       <circle cx="60" cy="66" r="52" fill={`url(#${ids.glow})`} />
 
-      {/* antenna (kitty gets ears instead) */}
-      {design !== 'kitty' ? (
+      {/* antenna (kitty gets ears, snake gets a tail instead) */}
+      {design !== 'kitty' && design !== 'snake' ? (
         <g>
           <path d="M60 32 C60 24 64 20 68 17" stroke="#ddd6fe" strokeWidth="3" strokeLinecap="round" fill="none" />
           <motion.circle
@@ -152,14 +155,14 @@ export function CoachMascot({
             style={{ transformOrigin: '70px 15px' }}
           />
         </g>
-      ) : (
+      ) : design === 'kitty' ? (
         <g>
           <path d="M33 44 L38 16 L54 34 Z" fill={`url(#${ids.body})`} />
           <path d="M87 44 L82 16 L66 34 Z" fill={`url(#${ids.body})`} />
           <path d="M38 38 L40 24 L49 33 Z" fill={palette.to} opacity="0.65" />
           <path d="M82 38 L80 24 L71 33 Z" fill={palette.to} opacity="0.65" />
         </g>
-      )}
+      ) : null}
 
       {/* arms */}
       <ellipse cx="22" cy="76" rx="8" ry="11" fill={`url(#${ids.body})`} transform={effectiveMood === 'cheer' ? 'rotate(-38 22 76)' : 'rotate(-12 22 76)'} />
@@ -169,9 +172,27 @@ export function CoachMascot({
       <rect x={body.x} y={body.y} width={body.w} height={body.h} rx={body.rx} fill={`url(#${ids.body})`} />
       <rect x={body.x} y={body.y} width={body.w} height={body.h} rx={body.rx} fill={`url(#${ids.belly})`} />
 
-      {/* feet */}
-      <ellipse cx="46" cy="102" rx="10" ry="6" fill={palette.footLeft} />
-      <ellipse cx="74" cy="102" rx="10" ry="6" fill={palette.footRight} />
+      {/* feet (snakes get a curled tail instead) */}
+      {design === 'snake' ? (
+        <g>
+          <path d="M82 96 C 98 102, 106 92, 99 84" fill="none" stroke={palette.footRight} strokeWidth="8" strokeLinecap="round" />
+          <circle cx="99" cy="84" r="2.6" fill={palette.footRight} />
+        </g>
+      ) : (
+        <g>
+          <ellipse cx="46" cy="102" rx="10" ry="6" fill={palette.footLeft} />
+          <ellipse cx="74" cy="102" rx="10" ry="6" fill={palette.footRight} />
+        </g>
+      )}
+
+      {/* snake scales */}
+      {design === 'snake' ? (
+        <g fill="#ffffff" opacity="0.14">
+          <path d="M46 88 l4 -4 4 4 -4 4 Z" />
+          <path d="M58 93 l4 -4 4 4 -4 4 Z" />
+          <path d="M70 88 l4 -4 4 4 -4 4 Z" />
+        </g>
+      ) : null}
 
       {/* headphones for listening */}
       {effectiveMood === 'listen' ? (
@@ -194,7 +215,12 @@ export function CoachMascot({
       ) : null}
 
       {/* eyes */}
-      {effectiveMood === 'cheer' ? (
+      {effectiveMood === 'pleased' ? (
+        <g stroke="#2a2140" strokeWidth="4" strokeLinecap="round" fill="none">
+          <path d="M40 59 Q46 65 52 59" />
+          <path d="M68 59 Q74 65 80 59" />
+        </g>
+      ) : effectiveMood === 'cheer' ? (
         <g stroke="#2a2140" strokeWidth="4" strokeLinecap="round" fill="none">
           <path d="M40 62 Q46 54 52 62" />
           <path d="M68 62 Q74 54 80 62" />
@@ -221,8 +247,8 @@ export function CoachMascot({
       )}
 
       {/* cheeks */}
-      <ellipse cx="37" cy="71" rx="5.5" ry="3.4" fill={palette.to} opacity={effectiveMood === 'oops' ? 0.35 : 0.65} />
-      <ellipse cx="83" cy="71" rx="5.5" ry="3.4" fill={palette.to} opacity={effectiveMood === 'oops' ? 0.35 : 0.65} />
+      <ellipse cx="37" cy="71" rx="5.5" ry="3.4" fill={palette.to} opacity={effectiveMood === 'pleased' ? 0.95 : effectiveMood === 'oops' ? 0.35 : 0.65} />
+      <ellipse cx="83" cy="71" rx="5.5" ry="3.4" fill={palette.to} opacity={effectiveMood === 'pleased' ? 0.95 : effectiveMood === 'oops' ? 0.35 : 0.65} />
 
       {/* kitty whiskers */}
       {design === 'kitty' ? (
@@ -243,9 +269,39 @@ export function CoachMascot({
         <path d="M53 78 Q57 75 61 78 Q65 81 67 78" stroke="#2a2140" strokeWidth="3" fill="none" strokeLinecap="round" />
       ) : effectiveMood === 'listen' || effectiveMood === 'sing' ? (
         <ellipse cx="60" cy="78" rx="5" ry="6" fill="#2a2140" />
+      ) : effectiveMood === 'pleased' ? (
+        <path d="M53 76 Q60 82 67 76" stroke="#2a2140" strokeWidth="3.4" fill="none" strokeLinecap="round" />
       ) : (
         <path d="M52 76 Q60 83 68 76" stroke="#2a2140" strokeWidth="3.4" fill="none" strokeLinecap="round" />
       )}
+
+      {/* snake tongue flick */}
+      {design === 'snake' && effectiveMood !== 'listen' && effectiveMood !== 'sing' ? (
+        <motion.g
+          stroke="#fb7185"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          fill="none"
+          animate={{ scaleY: [0.2, 1, 1, 0.2], opacity: [0, 1, 1, 0] }}
+          transition={{ duration: 2.2, repeat: Infinity, times: [0, 0.12, 0.4, 0.52], ease: 'easeInOut' }}
+          style={{ transformOrigin: '60px 83px' }}
+        >
+          <path d="M60 84 L60 91" />
+          <path d="M60 91 L56.5 95" />
+          <path d="M60 91 L63.5 95" />
+        </motion.g>
+      ) : null}
+
+      {/* boop heart */}
+      {booped ? (
+        <motion.path
+          d="M90 32 c2.5 -4 8 -3 8 1.2 c0 3 -4 5.6 -8 8 c-4 -2.4 -8 -5 -8 -8 c0 -4.2 5.5 -5.2 8 -1.2 Z"
+          fill="#f9a8d4"
+          initial={{ opacity: 0, y: 4, scale: 0.5 }}
+          animate={{ opacity: [0, 1, 1, 0], y: -12, scale: 1 }}
+          transition={{ duration: 1, ease: 'easeOut' }}
+        />
+      ) : null}
 
       {/* thinking dots */}
       {effectiveMood === 'think' ? (
@@ -303,9 +359,9 @@ export function CoachMascot({
         onClick={boop}
         className={cn('cursor-pointer select-none border-none bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-[#a78bfa]/60 rounded-full', className)}
         style={{ width: size, height: size }}
-        animate={booped ? { scale: [1, 1.18, 0.94, 1.06, 1], rotate: [0, -6, 5, -2, 0] } : float ? { y: [0, -4, 0] } : { y: 0 }}
+        animate={booped ? { rotate: [0, -4, 4, -2, 0], y: [0, -4, 0, -2, 0], scale: [1, 1.05, 1] } : float ? { y: [0, -4, 0] } : { y: 0 }}
         transition={booped
-          ? { duration: 0.55, ease: 'easeOut' }
+          ? { duration: 0.6, ease: 'easeOut' }
           : float
             ? { duration: 3.4, repeat: Infinity, ease: 'easeInOut' }
             : undefined}

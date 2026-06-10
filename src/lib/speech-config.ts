@@ -10,7 +10,10 @@ export type SpeechTemplate = {
   label: string;
   src: string;
   rubricTitle: string;
+  /** Strict evaluation instructions sent to the AI coach. */
   rubric: string;
+  /** Friendly, human-sounding pointers shown to the user in the UI. */
+  hints: string[];
 };
 
 export const GENERAL_RUBRIC = `Use a general public-speaking rubric when no template is selected.
@@ -48,6 +51,12 @@ export const SPEECH_TEMPLATES: SpeechTemplate[] = [
 - Transitions must feel deliberate, ceremonial, and operationally clear, not improvised.
 - The closing must invite the next step, speaker, or stage transition with authority and protocol awareness.
 - Penalize casual tone, weak protocol, messy sequencing, and any loss of formal control heavily.`,
+    hints: [
+      'Please take this as the organiser\u2019s speech at a formal event, so keep it composed and respectful.',
+      'Greet the respected guests early and get to the purpose of the event quickly.',
+      'Thank and acknowledge people in a clean, deliberate order without rambling.',
+      'Close by handing over to the next speaker or stage with confidence.',
+    ],
   },
   {
     id: 'formal-chiefguest',
@@ -62,6 +71,12 @@ export const SPEECH_TEMPLATES: SpeechTemplate[] = [
 - Language must stay polished, precise, and ceremonial rather than vague, repetitive, or flat.
 - The ending must sound ceremonious, intentional, and worthy of the event.
 - Penalize broken protocol, clumsy praise, weak dignity, and language that lowers the status of the occasion.`,
+    hints: [
+      'Please take this as a ceremonial chief-guest speech, with warmth balanced by protocol.',
+      'Set the tone of respect and occasion right from your opening lines.',
+      'Move clearly through the occasion, the recognitions, and your key message.',
+      'End on something ceremonious and worthy of the event.',
+    ],
   },
   {
     id: 'debate',
@@ -76,6 +91,12 @@ export const SPEECH_TEMPLATES: SpeechTemplate[] = [
 - Delivery must sound assertive, controlled, and strategically paced rather than dramatic without logic.
 - The conclusion must restate the stance forcefully and close the case.
 - Penalize weak logic, unsupported assertions, fuzzy wording, and poor argumentative structure heavily.`,
+    hints: [
+      'Please take this as a competitive debate speech, not a general talk.',
+      'State your stance early and leave no confusion about where you stand.',
+      'Keep your arguments clearly separated, supported with evidence, and ranked by strength.',
+      'Anticipate the other side and answer their points directly before you close.',
+    ],
   },
   {
     id: 'monroe-motivated-sequence',
@@ -91,6 +112,12 @@ export const SPEECH_TEMPLATES: SpeechTemplate[] = [
 - Action: the ending must give the audience a specific, immediate, doable call to action. Penalize weak endings like "so think about it" or generic appeals.
 - Penalize missing steps, out-of-order steps, or steps that blur together with no clear transition.
 - Delivery must build persuasive momentum across the sequence rather than staying flat.`,
+    hints: [
+      'Please build this as a persuasive speech that follows Monroe\u2019s five steps in order.',
+      'Hook attention fast, then make the problem feel real and urgent for your audience.',
+      'Offer a clear solution and paint the future with it and without it.',
+      'Finish with one specific action your audience can take right away.',
+    ],
   },
   {
     id: 'general-public-speaking',
@@ -105,6 +132,12 @@ export const SPEECH_TEMPLATES: SpeechTemplate[] = [
 - The conclusion should summarize the takeaway and finish decisively.
 - Judge whether the speech feels prepared, structured, audience-aware, and intentionally organized.
 - Penalize drifting structure, weak point development, generic examples, and endings that fade out.`,
+    hints: [
+      'Please treat this as a structured, prepared speech rather than a casual talk.',
+      'Hook attention early, introduce your topic, and preview where you are going.',
+      'Develop two or three clear ideas with examples and smooth transitions.',
+      'Summarize your takeaway and finish decisively instead of fading out.',
+    ],
   },
 ];
 
