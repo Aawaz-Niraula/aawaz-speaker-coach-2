@@ -1,17 +1,40 @@
 import { NextRequest } from 'next/server';
 
-import { GuestLimitError, guestLimitResponse, resolveAppUser } from '@/lib/app-user';
+import { GuestLimitError, IdentityError, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
 import { deleteSpeechVoiceSample, replaceSpeechVoiceSample } from '@/lib/db';
+import { requireSameOrigin } from '@/lib/identity';
+import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
 
-function cleanUserId(value: FormDataEntryValue | null) {
-  return typeof value === 'string' ? value.trim().slice(0, 128) : '';
+function errorResponse(error: unknown, fallback: string) {
+  if (error instanceof GuestLimitError) {
+    return guestLimitResponse();
+  }
+  if (error instanceof IdentityError) {
+    return identityErrorResponse();
+  }
+  return Response.json(
+    { error: error instanceof Error ? error.message : fallback },
+    { status: 503 },
+  );
 }
 
 export async function DELETE(req: NextRequest) {
+  const originError = requireSameOrigin(req);
+  if (originError) return originError;
+
   try {
-    const body = await req.json().catch(() => ({}));
-    const providedUserId = typeof body?.userId === 'string' ? body.userId.trim().slice(0, 128) : '';
-    const { userId } = await resolveAppUser(req, providedUserId, false);
+    const { userId } = await resolveAppUser(req, false);
+
+    const rateLimit = checkRateLimit(`voice-sample:${getClientKey(req, userId)}`, 20, 10 * 60 * 1000);
+    if (!rateLimit.allowed) {
+      return Response.json(
+        { error: 'Too many voice sample changes. Please wait a moment.' },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
+      );
+    }
+
+    // Deleting the row also clears any stored provider voice id, so a stale
+    // cloned voice can never be reused after the sample is replaced.
     const deleted = await deleteSpeechVoiceSample(userId);
 
     if (!deleted) {
@@ -20,21 +43,16 @@ export async function DELETE(req: NextRequest) {
 
     return Response.json({ ok: true });
   } catch (error) {
-    if (error instanceof GuestLimitError) {
-      return guestLimitResponse();
-    }
-
-    return Response.json(
-      { error: error instanceof Error ? error.message : 'Could not delete the saved voice sample.' },
-      { status: 503 },
-    );
+    return errorResponse(error, 'Could not delete the saved voice sample.');
   }
 }
 
 export async function POST(req: NextRequest) {
+  const originError = requireSameOrigin(req);
+  if (originError) return originError;
+
   try {
     const form = await req.formData();
-    const providedUserId = cleanUserId(form.get('userId'));
     const voiceSample = form.get('voiceSample') as File | null;
 
     if (!voiceSample || voiceSample.size < 3000) {
@@ -45,7 +63,17 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: 'Voice sample is too large. Please record again.' }, { status: 413 });
     }
 
-    const { userId } = await resolveAppUser(req, providedUserId, false);
+    const { userId } = await resolveAppUser(req, false);
+
+    const rateLimit = checkRateLimit(`voice-sample:${getClientKey(req, userId)}`, 20, 10 * 60 * 1000);
+    if (!rateLimit.allowed) {
+      return Response.json(
+        { error: 'Too many voice sample changes. Please wait a moment.' },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
+      );
+    }
+
+    // Replace = delete old row (and provider voice id) + insert fresh sample.
     const saved = await replaceSpeechVoiceSample({
       userId,
       audioData: await voiceSample.arrayBuffer(),
@@ -59,14 +87,7 @@ export async function POST(req: NextRequest) {
 
     return Response.json({ ok: true });
   } catch (error) {
-    if (error instanceof GuestLimitError) {
-      return guestLimitResponse();
-    }
-
-    return Response.json(
-      { error: error instanceof Error ? error.message : 'Could not save the new voice sample.' },
-      { status: 503 },
-    );
+    return errorResponse(error, 'Could not save the new voice sample.');
   }
 }
 

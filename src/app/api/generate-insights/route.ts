@@ -1,9 +1,10 @@
 import { NextRequest } from 'next/server';
 
 import { getProviderErrorMessage, isAbortTimeout, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
-import { GuestLimitError, guestLimitResponse, resolveAppUser } from '@/lib/app-user';
+import { GuestLimitError, IdentityError, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
 import { listRecentSpeechSessions } from '@/lib/db';
 import { fetchWithRetryLimited } from '@/lib/fetch';
+import { requireSameOrigin } from '@/lib/identity';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
 
 const INSIGHT_MODELS = [
@@ -12,15 +13,11 @@ const INSIGHT_MODELS = [
 ] as const;
 
 export async function POST(req: NextRequest) {
+  const originError = requireSameOrigin(req);
+  if (originError) return originError;
+
   try {
-    const body = await req.json().catch(() => null);
-    const providedUserId = typeof body?.userId === 'string' ? body.userId.trim().slice(0, 128) : '';
-
-    if (!providedUserId) {
-      return Response.json({ error: 'Missing userId.' }, { status: 400 });
-    }
-
-    const { userId } = await resolveAppUser(req, providedUserId, true);
+    const { userId } = await resolveAppUser(req, true);
     const rateKey = `generate-insights:${getClientKey(req, userId)}`;
     const rateLimit = checkRateLimit(rateKey, 15, 10 * 60 * 1000);
     if (!rateLimit.allowed) {
@@ -159,6 +156,9 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     if (error instanceof GuestLimitError) {
       return guestLimitResponse();
+    }
+    if (error instanceof IdentityError) {
+      return identityErrorResponse();
     }
 
     return Response.json(

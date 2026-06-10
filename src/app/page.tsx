@@ -1,42 +1,45 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import Image from 'next/image';
+import { useEffect, useRef, useState } from 'react';
 import * as Label from '@radix-ui/react-label';
-import * as Select from '@radix-ui/react-select';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   BarChart3,
-  Check,
   ChevronDown,
   Copy,
-  Download,
   LogOut,
   MessageCircleMore,
-  Plus,
-  Play,
-  Volume2,
-  Menu,
   Mic,
-  MicOff,
+  Plus,
   RefreshCw,
   Sparkles,
+  Square,
   Trash2,
   TrendingUp,
   Trophy,
   User,
+  Volume2,
   WandSparkles,
   X,
 } from 'lucide-react';
-import { CircularProgressbar, buildStyles } from 'react-circular-progressbar';
-import 'react-circular-progressbar/dist/styles.css';
 import { toast, Toaster } from 'sonner';
 
+import { AudioPlayer } from '@/components/audio-player';
+import { FeedbackReport, CollapsibleSection } from '@/components/feedback-report';
+import { CoachMascot, MascotHint } from '@/components/mascot';
+import { ProgressChart } from '@/components/progress-chart';
+import { LiveWaveform, SkeletonLines, ThinkingDots } from '@/components/recorder-visuals';
+import { TemplatePicker } from '@/components/template-picker';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog, type ConfirmRequest } from '@/components/ui/confirm-dialog';
+import { Eyebrow, Shell } from '@/components/ui/shell';
 import { authClient } from '@/lib/auth-client';
-import { SPEECH_TEMPLATES, type SpeechTemplateId } from '@/lib/speech-config';
+import { formatClock, formatHistoryDate, scoreColor } from '@/lib/feedback';
+import { requestJson } from '@/lib/request';
+import { type SpeechTemplateId } from '@/lib/speech-config';
 import { cn } from '@/lib/utils';
 
+/* ── Types ───────────────────────────────────────────────────────── */
 type Tab = 'coach' | 'speech' | 'history' | 'progress' | 'account';
 type NavItem = { id: Tab; label: string; icon: typeof Mic };
 type SpeechHistoryItem = {
@@ -52,22 +55,17 @@ type HistoryResponse = { history?: SpeechHistoryItem[] };
 type AnalyzeResponse = HistoryResponse & { transcript?: string; feedback?: string; voiceSampleSaved?: boolean; isGuest?: boolean; guestRemaining?: number | null };
 type SpeechResponse = { speech?: string; isGuest?: boolean; guestRemaining?: number | null };
 type InsightsResponse = { insights?: string[]; weaknesses?: string[] };
-type AccountProfile = {
-  providerId: string;
-  accountId: string;
-};
-type AuthStatus = {
-  accountAuthEnabled: boolean;
-  googleEnabled: boolean;
-  message?: string;
-};
+type AccountProfile = { providerId: string; accountId: string };
+type AuthStatus = { accountAuthEnabled: boolean; googleEnabled: boolean; message?: string };
 type SpeechAudioMode = 'example' | 'clone';
 type SpeechExampleVoice = 'female' | 'male';
 type SpeechAudioState = {
   example: { url: string; isLoading: boolean };
   clone: { url: string; isLoading: boolean };
 };
+type MicPermission = 'unknown' | 'granted' | 'denied' | 'prompt';
 
+/* ── Constants ───────────────────────────────────────────────────── */
 const navItems: NavItem[] = [
   { id: 'coach', label: 'Speaking Coach', icon: Mic },
   { id: 'speech', label: 'Speech Practice', icon: WandSparkles },
@@ -76,482 +74,147 @@ const navItems: NavItem[] = [
   { id: 'account', label: 'Account', icon: User },
 ];
 
+const TAB_META: Record<Tab, { title: string; subtitle: string }> = {
+  coach: { title: 'Speaking Coach', subtitle: 'Record. Get grilled. Get better.' },
+  speech: { title: 'Speech Practice', subtitle: 'Generate a script, hear it, then own it.' },
+  history: { title: 'Speech History', subtitle: 'Every rep, remembered.' },
+  progress: { title: 'Progress', subtitle: 'Proof that the work is working.' },
+  account: { title: 'Account', subtitle: 'Your voice, saved across devices.' },
+};
+
 const MAX_RECORDING_SECONDS = 300;
 const VOICE_SAMPLE_SECONDS = 15;
 
-function ProgressChart({ history }: { history: SpeechHistoryItem[] }) {
-  const scored = history
-    .filter((h) => h.overall_score !== null)
-    .slice()
-    .reverse();
-  if (scored.length < 1) {
-    return (
-      <div className="flex h-48 items-center justify-center rounded-[24px] border border-dashed border-white/20 bg-white/4 font-mono text-sm text-[#857ca2]">
-        Record at least one speech to see your progress chart.
-      </div>
-    );
-  }
-
-  const scores = scored.map((h) => h.overall_score as number);
-  const minScore = Math.max(0, Math.min(...scores) - 10);
-  const maxScore = Math.min(100, Math.max(...scores) + 10);
-  const range = maxScore - minScore || 1;
-
-  const W = 600;
-  const H = 200;
-  const padX = 42;
-  const padY = 20;
-  const chartW = W - padX * 2;
-  const chartH = H - padY * 2;
-
-  const points = scores.map((s, i) => {
-    const x = padX + (scores.length === 1 ? chartW / 2 : (i / (scores.length - 1)) * chartW);
-    const y = padY + chartH - ((s - minScore) / range) * chartH;
-    return { x, y, score: s, label: scored[i].template_label || 'General' };
-  });
-
-  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
-  const areaPath = `${linePath} L${points[points.length - 1].x},${padY + chartH} L${points[0].x},${padY + chartH} Z`;
-
-  const gridLines = 4;
-  const gridValues = Array.from({ length: gridLines + 1 }, (_, i) =>
-    Math.round(minScore + (range / gridLines) * i),
-  );
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" preserveAspectRatio="xMidYMid meet">
-      <defs>
-        <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#a78bfa" stopOpacity="0.28" />
-          <stop offset="100%" stopColor="#a78bfa" stopOpacity="0.02" />
-        </linearGradient>
-        <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#a78bfa" />
-          <stop offset="100%" stopColor="#f9a8d4" />
-        </linearGradient>
-      </defs>
-      {gridValues.map((v) => {
-        const gy = padY + chartH - ((v - minScore) / range) * chartH;
-        return (
-          <g key={v}>
-            <line x1={padX} y1={gy} x2={W - padX} y2={gy} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
-            <text x={padX - 6} y={gy + 4} textAnchor="end" fill="#857ca2" fontSize="10" fontFamily="monospace">{v}</text>
-          </g>
-        );
-      })}
-      <path d={areaPath} fill="url(#areaGrad)" />
-      <path d={linePath} fill="none" stroke="url(#lineGrad)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-      {points.map((p, i) => (
-        <g key={i}>
-          <circle cx={p.x} cy={p.y} r="5" fill="#0b0b12" stroke="#a78bfa" strokeWidth="2" />
-          <circle cx={p.x} cy={p.y} r="2.5" fill="#a78bfa" />
-          <text x={p.x} y={p.y - 10} textAnchor="middle" fill="#ddd6fe" fontSize="10" fontFamily="monospace">{p.score}</text>
-        </g>
-      ))}
-    </svg>
-  );
-}
-
-function usePersistentUserId() {
-  const [userId] = useState(() => {
-    if (typeof window === 'undefined') return '';
-    const key = 'aawaz-user-id';
-    const nextId = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `user-${Date.now()}`;
-
-    try {
-      const existing = window.localStorage.getItem(key);
-      if (existing) return existing;
-      window.localStorage.setItem(key, nextId);
-    } catch {
-      return nextId;
-    }
-
-    return nextId;
-  });
-  return userId;
-}
+const ANALYZE_STAGES = [
+  'Transcribing every word…',
+  'Coach is listening closely…',
+  'Scoring against the rubric…',
+];
 
 function isValidAccountPassword(password: string) {
   return password.length > 5 && /[A-Za-z]/.test(password) && /\d/.test(password);
 }
 
-function extractScore(text: string) {
-  const match = text.match(/overall score[:\s-]*(\d+)\/100/i);
-  return match ? Number(match[1]) : null;
+/* ── Small stable components ─────────────────────────────────────── */
+function ActionBar({
+  text,
+  label,
+  onRegenerate,
+  copyText,
+  speakText,
+}: {
+  text: string;
+  label: string;
+  onRegenerate?: () => void;
+  copyText: (v: string, l: string) => void;
+  speakText: (v: string, l: string) => void;
+}) {
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
+      <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => copyText(text, label)} title={`Copy ${label.toLowerCase()}`}>
+        <Copy className="h-4 w-4" />
+      </Button>
+      <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => speakText(text, label)} title={`Read ${label.toLowerCase()} aloud`}>
+        <Volume2 className="h-4 w-4" />
+      </Button>
+      {onRegenerate ? (
+        <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={onRegenerate} title={`Regenerate ${label.toLowerCase()}`}>
+          <RefreshCw className="h-4 w-4" />
+        </Button>
+      ) : null}
+    </div>
+  );
 }
 
-function formatHistoryDate(value: string) {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+function PopupIconButton({
+  onClick,
+  icon,
+  label,
+  className = '',
+}: {
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex h-9 w-9 items-center justify-center rounded-full border border-[#a78bfa]/30 bg-white/5 text-[#ddd6fe] shadow-[0_0_18px_rgba(167,139,250,0.22)] backdrop-blur-sm transition hover:bg-white/10 hover:text-[#f2efff]',
+        className,
+      )}
+      aria-label={label}
+    >
+      {icon}
+    </button>
+  );
 }
 
-async function requestJson<T>(url: string, init?: RequestInit, timeoutMs = 300000): Promise<T> {
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const res = await fetch(url, { ...init, signal: controller.signal });
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok || data.error) {
-      const errorMsg = typeof data.error === 'string' ? data.error : (typeof data.feedback === 'string' ? data.feedback : 'Request failed.');
-      if (data.authRequired) {
-        const error = new Error(errorMsg);
-        error.name = 'AuthRequiredError';
-        throw error;
-      }
-      throw new Error(errorMsg);
-    }
-
-    return data as T;
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new Error('The request took too long. Please try again.');
-    }
-
-    throw error;
-  } finally {
-    window.clearTimeout(timeout);
-  }
-}
-
-function Shell({ children, className: extra }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn('rounded-[24px] border border-white/10 bg-white/6 p-4 shadow-[0_20px_80px_rgba(2,6,23,0.45)] backdrop-blur-xl sm:rounded-[28px] sm:p-6', extra)}>{children}</div>;
-}
-
-/* ── Animated Score Ring ─────────────────────────────────────────── */
-function AnimatedScore({ value }: { value: number }) {
-  const [displayed, setDisplayed] = useState(0);
-  useEffect(() => {
-    let frame: number;
-    const start = performance.now();
-    const duration = 1200;
-    const tick = (now: number) => {
-      const t = Math.min((now - start) / duration, 1);
-      const ease = 1 - Math.pow(1 - t, 3);
-      setDisplayed(Math.round(ease * value));
-      if (t < 1) frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [value]);
-
-  const color = value >= 70 ? '#a78bfa' : value >= 45 ? '#facc15' : '#f87171';
-
+function PopupPanel({
+  title,
+  children,
+  onClose,
+  align = 'right',
+}: {
+  title: string;
+  children: React.ReactNode;
+  onClose: () => void;
+  align?: 'left' | 'right';
+}) {
   return (
     <motion.div
-      initial={{ scale: 0.8, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      transition={{ type: 'spring', stiffness: 200, damping: 18 }}
-      className="relative mx-auto flex flex-col items-center gap-2"
+      initial={{ opacity: 0, y: 8, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 6, scale: 0.97 }}
+      className={cn(
+        'absolute top-12 z-30 max-h-[60vh] w-[290px] overflow-y-auto rounded-[22px] border border-white/10 bg-[#0d0c16]/95 p-4 shadow-[0_18px_50px_rgba(2,6,23,0.6)] backdrop-blur-xl sm:w-[320px]',
+        align === 'right' ? 'right-0' : 'left-0',
+      )}
     >
-      <div className="h-32 w-32 sm:h-36 sm:w-36">
-        <CircularProgressbar
-          value={displayed}
-          text={`${displayed}`}
-          styles={buildStyles({
-            textSize: '24px',
-            textColor: '#f2efff',
-            pathColor: color,
-            trailColor: 'rgba(255,255,255,0.06)',
-            pathTransitionDuration: 0,
-          })}
-        />
-      </div>
-      <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-[#857ca2]">out of 100</span>
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full border border-[#f87171]/30 bg-[#dc2626]/15 text-[#f87171] hover:bg-[#dc2626]/25"
+        aria-label={`Close ${title}`}
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+      <p className="pr-8 font-mono text-[10px] uppercase tracking-[0.28em] text-[#ddd6fe]">{title}</p>
+      <div className="mt-3 text-sm leading-6 text-[#f2efff]">{children}</div>
     </motion.div>
   );
 }
 
-/* ── Feedback Parser ─────────────────────────────────────────────── */
-type ParsedFeedback = {
-  analysisItems: { label: string; value: string }[];
-  score: number | null;
-  brutalFeedback: string;
-  fixes: string[];
-  rawText: string;
-};
-
-function parseFeedback(text: string): ParsedFeedback {
-  const score = extractScore(text);
-
-  // Extract ANALYSIS section
-  const analysisItems: { label: string; value: string }[] = [];
-  const analysisMatch = text.match(/(?:📊\s*)?ANALYSIS[:\s]*\n([\s\S]*?)(?=\n(?:🔥|BRUTALLY)|$)/i);
-  if (analysisMatch) {
-    const lines = analysisMatch[1].split('\n').map((l) => l.replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean);
-    for (const line of lines) {
-      const colonIdx = line.indexOf(':');
-      if (colonIdx > 0) {
-        const label = line.slice(0, colonIdx).trim();
-        const value = line.slice(colonIdx + 1).trim();
-        if (label.toLowerCase().includes('overall score')) continue; // shown in ring
-        analysisItems.push({ label, value });
-      }
-    }
+function ScoreBadge({ score }: { score: number | null }) {
+  if (score === null) {
+    return <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-[#857ca2]">No score</span>;
   }
-
-  // Extract BRUTALLY HONEST FEEDBACK
-  let brutalFeedback = '';
-  const brutalMatch = text.match(/(?:🔥\s*)?BRUTALLY HONEST FEEDBACK[:\s]*\n([\s\S]*?)(?=\n(?:🛠|3 SPECIFIC|$))/i);
-  if (brutalMatch) brutalFeedback = brutalMatch[1].trim();
-
-  // Extract 3 SPECIFIC FIXES
-  const fixes: string[] = [];
-  const fixesMatch = text.match(/(?:🛠️?\s*)?3 SPECIFIC FIXES[:\s]*\n([\s\S]*?)$/i);
-  if (fixesMatch) {
-    const fixLines = fixesMatch[1].split('\n').map((l) => l.replace(/^\d+\.\s*/, '').trim()).filter(Boolean);
-    fixes.push(...fixLines.slice(0, 3));
-  }
-
-  return { analysisItems, score, brutalFeedback, fixes, rawText: text };
-}
-
-/* ── ELP Explainer Popup ─────────────────────────────────────────── */
-function ELPPopup({ onClose }: { onClose: () => void }) {
+  const color = scoreColor(score);
   return (
-    <>
-      <button
-        type="button"
-        className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
-        aria-label="Close ELP explainer"
-      />
-      <motion.div
-        initial={{ opacity: 0, scale: 0.92, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 10 }}
-        className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto max-h-[80vh] rounded-[24px] border border-white/10 bg-[#0b0b12]/95 p-5 shadow-[0_30px_80px_rgba(2,6,23,0.7)] backdrop-blur-xl sm:rounded-[28px] sm:p-7"
-      >
-        <div className="flex items-start justify-between gap-4">
-          <p className="font-serif text-xl font-medium tracking-tight text-white sm:text-2xl">ELP Framework</p>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#f87171]/30 bg-[#dc2626]/15 text-[#f87171] hover:bg-[#dc2626]/25"
-            aria-label="Close"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-        <p className="mt-2 text-sm leading-relaxed text-[#857ca2]">Ethos · Logos · Pathos — the three pillars of persuasive speaking.</p>
-
-        <div className="mt-5 grid gap-4">
-          <div className="rounded-[18px] border border-white/10 bg-white/4 p-4 sm:rounded-[22px]">
-            <div className="text-sm font-semibold uppercase tracking-[0.18em] text-[#a78bfa]">Ethos — Credibility</div>
-            <p className="mt-2 text-sm leading-relaxed text-[#f2efff]">Establish why the audience should trust you on this topic. Share first-hand experience, qualifications, or deep personal understanding.</p>
-            <p className="mt-2 rounded-2xl border border-white/8 bg-white/4 px-3 py-2.5 text-[13px] italic leading-relaxed text-[#ddd6fe]">&quot;I grew up in a family that lived below the poverty line — I don&apos;t speak about poverty from a textbook, I speak from memory. I know the weight of choosing between food and medicine.&quot;</p>
-          </div>
-          <div className="rounded-[18px] border border-white/10 bg-white/4 p-4 sm:rounded-[22px]">
-            <div className="text-sm font-semibold uppercase tracking-[0.18em] text-[#a78bfa]">Logos — Logic</div>
-            <p className="mt-2 text-sm leading-relaxed text-[#f2efff]">Build your case with facts, statistics, data, and logical reasoning that make the argument intellectually undeniable.</p>
-            <p className="mt-2 rounded-2xl border border-white/8 bg-white/4 px-3 py-2.5 text-[13px] italic leading-relaxed text-[#ddd6fe]">&quot;According to the World Bank, roughly 700 million people still live on less than $2.15 a day. UNICEF reports that 5.2 million children under five died in 2019 — many from preventable causes directly linked to poverty.&quot;</p>
-          </div>
-          <div className="rounded-[18px] border border-white/10 bg-white/4 p-4 sm:rounded-[22px]">
-            <div className="text-sm font-semibold uppercase tracking-[0.18em] text-[#f9a8d4]">Pathos — Emotion</div>
-            <p className="mt-2 text-sm leading-relaxed text-[#f2efff]">Create genuine emotional resonance. Paint vivid, visceral imagery that moves the audience to feel the weight of your message.</p>
-            <p className="mt-2 rounded-2xl border border-white/8 bg-white/4 px-3 py-2.5 text-[13px] italic leading-relaxed text-[#ddd6fe]">&quot;Imagine a mother who loves her child more than life itself — but can do nothing but watch that child perish from a treatable disease, because she cannot afford the medication. That is not a scene from a dystopian film. That is reality for millions, right now, as we speak.&quot;</p>
-          </div>
-        </div>
-      </motion.div>
-    </>
+    <span
+      className="rounded-full border px-2.5 py-1 font-mono text-[11px] font-semibold tabular-nums"
+      style={{ color, borderColor: `${color}40`, backgroundColor: `${color}14` }}
+    >
+      {score} / 100
+    </span>
   );
 }
 
-/* ── Text renderer that makes ELP clickable ──────────────────────── */
-function renderWithELP(text: string, onClickELP: () => void): React.ReactNode {
-  const parts = text.split(/(ELP)/g);
-  if (parts.length === 1) return text;
-  return parts.map((part, i) =>
-    part === 'ELP' ? (
-      <button
-        key={i}
-        type="button"
-        onClick={onClickELP}
-        className="inline font-semibold text-[#a78bfa] underline decoration-[#a78bfa]/40 underline-offset-2 transition hover:text-[#ddd6fe] hover:decoration-[#ddd6fe]/60"
-      >
-        ELP
-      </button>
-    ) : (
-      <span key={i}>{part}</span>
-    ),
-  );
-}
-
-/* ── Feedback Display ────────────────────────────────────────────── */
-function FeedbackDisplay({
-  feedback,
-  copyText,
-  speakText,
-}: {
-  feedback: string;
-  copyText: (v: string, l: string) => void;
-  speakText: (v: string, l: string) => void;
-}) {
-  const parsed = useMemo(() => parseFeedback(feedback), [feedback]);
-  const hasSections = parsed.analysisItems.length > 0 || parsed.brutalFeedback || parsed.fixes.length > 0;
-  const [elpOpen, setElpOpen] = useState(false);
-  const openELP = () => setElpOpen(true);
-
-  if (!hasSections) {
-    // Fallback: render raw text if parsing fails
-    return (
-      <Shell>
-        <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.3em] text-[#857ca2]">Coach Verdict</p>
-        <p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-[#f2efff]">{renderWithELP(feedback, openELP)}</p>
-        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
-          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => copyText(feedback, 'Feedback')}><Copy className="h-4 w-4" /></Button>
-          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => speakText(feedback, 'Feedback')}><Volume2 className="h-4 w-4" /></Button>
-        </div>
-        <AnimatePresence>{elpOpen && <ELPPopup onClose={() => setElpOpen(false)} />}</AnimatePresence>
-      </Shell>
-    );
-  }
-
-  return (
-    <div className="grid gap-5">
-      <AnimatePresence>{elpOpen && <ELPPopup onClose={() => setElpOpen(false)} />}</AnimatePresence>
-
-      {/* ── Score Ring ────────────────────────────────────── */}
-      {parsed.score !== null && (
-        <Shell className="border-[#a78bfa]/20 bg-[linear-gradient(135deg,rgba(167,139,250,0.08),rgba(249,168,212,0.06))]">
-          <p className="mb-4 text-center font-serif text-lg font-medium tracking-tight text-white sm:text-xl">Overall Score</p>
-          <AnimatedScore value={parsed.score} />
-        </Shell>
-      )}
-
-      {/* ── Analysis Metrics ─────────────────────────────── */}
-      {parsed.analysisItems.length > 0 && (
-        <Shell>
-          <p className="mb-4 font-serif text-lg font-medium tracking-tight text-white sm:text-xl">Analysis</p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {parsed.analysisItems.map((item, i) => {
-              const isStructure = item.label.toLowerCase().includes('structure');
-              const structureBullets = isStructure ? item.value.split(/[.;]/).map((s) => s.trim()).filter(Boolean) : [];
-              return (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.08 }}
-                className={cn('rounded-[18px] border border-white/10 bg-[#0b0b12]/50 p-4 sm:rounded-[22px]', isStructure && 'sm:col-span-2')}
-              >
-                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#ddd6fe] sm:text-sm">{item.label}</div>
-                {isStructure && structureBullets.length > 1 ? (
-                  <ul className="mt-3 grid gap-2">
-                    {structureBullets.map((b, bi) => (
-                      <li key={bi} className="flex items-start gap-2.5 text-sm leading-relaxed text-[#f2efff]">
-                        <span className="mt-1 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#a78bfa]"></span>
-                        {renderWithELP(b, openELP)}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div className="mt-2 text-sm font-medium text-[#f2efff] sm:text-base">{renderWithELP(item.value, openELP)}</div>
-                )}
-              </motion.div>
-              );
-            })}
-          </div>
-        </Shell>
-      )}
-
-      {/* ── Brutal Feedback ───────────────────────────────── */}
-      {parsed.brutalFeedback && (
-        <Shell className="border-[#f87171]/15">
-          <p className="mb-3 font-serif text-lg font-medium tracking-tight text-white sm:text-xl">Brutally Honest Feedback</p>
-          <p className="whitespace-pre-wrap break-words text-sm leading-7 text-[#f2efff] sm:leading-8">{renderWithELP(parsed.brutalFeedback, openELP)}</p>
-          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
-            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => copyText(parsed.brutalFeedback, 'Feedback')}><Copy className="h-4 w-4" /></Button>
-            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => speakText(parsed.brutalFeedback, 'Feedback')}><Volume2 className="h-4 w-4" /></Button>
-          </div>
-        </Shell>
-      )}
-
-      {/* ── Specific Fixes ────────────────────────────────── */}
-      {parsed.fixes.length > 0 && (
-        <Shell>
-          <p className="mb-4 font-serif text-lg font-medium tracking-tight text-white sm:text-xl">🛠️ Specific Fixes</p>
-          <div className="grid gap-3">
-            {parsed.fixes.map((fix, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, x: -12 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.1 }}
-                className="flex gap-3 rounded-[18px] border border-white/10 bg-[#0b0b12]/50 p-4 sm:rounded-[22px]"
-              >
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a78bfa,#f9a8d4)] font-mono text-xs font-bold text-[#06060b]">{i + 1}</span>
-                <p className="text-sm leading-6 text-[#f2efff]">{renderWithELP(fix, openELP)}</p>
-              </motion.div>
-            ))}
-          </div>
-          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
-            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => copyText(parsed.fixes.join('\n'), 'Fixes')}><Copy className="h-4 w-4" /></Button>
-            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => speakText(parsed.fixes.join('. '), 'Fixes')}><Volume2 className="h-4 w-4" /></Button>
-          </div>
-        </Shell>
-      )}
-    </div>
-  );
-}
-
-function TemplatePicker({ value, onChange }: { value: SpeechTemplateId | null; onChange: (id: SpeechTemplateId | null) => void }) {
-  const selected = SPEECH_TEMPLATES.find((item) => item.id === value) ?? null;
-  return (
-    <div className="grid gap-4">
-      <Shell>
-        <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.3em] text-[#857ca2]">Speech Format</p>
-        <Label.Root className="mb-2 block text-sm text-[#ddd6fe]">Evaluation rubric</Label.Root>
-        <Select.Root value={value ?? 'general'} onValueChange={(next) => onChange(next === 'general' ? null : (next as SpeechTemplateId))}>
-          <Select.Trigger className="flex h-14 w-full items-center justify-between rounded-[18px] border border-white/12 bg-[#0b0b12]/60 px-4 text-left text-sm text-[#f2efff] sm:rounded-[22px] sm:px-5">
-            <Select.Value placeholder="General evaluation" />
-            <Select.Icon><ChevronDown className="h-4 w-4 text-[#857ca2]" /></Select.Icon>
-          </Select.Trigger>
-          <Select.Portal>
-              <Select.Content position="popper" className="z-50 max-w-[calc(100vw-2rem)] overflow-hidden rounded-3xl border border-white/10 bg-[#0b0b12]/95 p-2 text-[#f2efff]">
-              <Select.Viewport className="grid gap-1">
-                <Select.Item value="general" className="flex cursor-pointer items-center justify-between rounded-2xl px-4 py-3 text-sm outline-none hover:bg-white/10">
-                  <Select.ItemText>General evaluation</Select.ItemText>
-                  <Select.ItemIndicator><Check className="h-4 w-4 text-[#a78bfa]" /></Select.ItemIndicator>
-                </Select.Item>
-                {SPEECH_TEMPLATES.map((template) => (
-                  <Select.Item key={template.id} value={template.id} className="flex cursor-pointer items-center justify-between rounded-2xl px-4 py-3 text-sm outline-none hover:bg-white/10">
-                    <Select.ItemText>{template.label}</Select.ItemText>
-                    <Select.ItemIndicator><Check className="h-4 w-4 text-[#a78bfa]" /></Select.ItemIndicator>
-                  </Select.Item>
-                ))}
-              </Select.Viewport>
-            </Select.Content>
-          </Select.Portal>
-        </Select.Root>
-      </Shell>
-      <AnimatePresence>
-        {selected ? (
-          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="relative overflow-hidden rounded-[24px] border border-white/10 sm:rounded-[28px]">
-            <Button variant="secondary" size="icon" className="absolute right-3 top-3 z-10 sm:right-4 sm:top-4" onClick={() => onChange(null)}>
-              <X className="h-4 w-4" />
-            </Button>
-            <Image src={selected.src} alt={selected.label} width={900} height={600} className="h-auto w-full" />
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-    </div>
-  );
-}
-
+/* ── Main page ───────────────────────────────────────────────────── */
 export default function Home() {
-  const guestUserId = usePersistentUserId();
   const { data: session, isPending: isSessionPending, refetch: refetchSession } = authClient.useSession();
   const accountUser = session?.user ?? null;
-  const userId = accountUser?.id || guestUserId;
+
+  const [identityReady, setIdentityReady] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('coach');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [history, setHistory] = useState<SpeechHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [deletingSessionIds, setDeletingSessionIds] = useState<Set<string>>(new Set());
   const [selectedTemplateId, setSelectedTemplateId] = useState<SpeechTemplateId | null>(null);
   const [topic, setTopic] = useState('');
   const [wordCount, setWordCount] = useState(180);
@@ -565,9 +228,12 @@ export default function Home() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analyzeStage, setAnalyzeStage] = useState(0);
   const [transcript, setTranscript] = useState('');
   const [feedback, setFeedback] = useState('');
   const [seconds, setSeconds] = useState(0);
+  const [micPermission, setMicPermission] = useState<MicPermission>('unknown');
+  const [recordingStream, setRecordingStream] = useState<MediaStream | null>(null);
   const [insights, setInsights] = useState<string[]>([]);
   const [weaknesses, setWeaknesses] = useState<string[]>([]);
   const [isLoadingInsights, setIsLoadingInsights] = useState(false);
@@ -587,6 +253,9 @@ export default function Home() {
   const [isVoiceSampleSaving, setIsVoiceSampleSaving] = useState(false);
   const [isVoiceSampleResetting, setIsVoiceSampleResetting] = useState(false);
   const [voiceSampleSeconds, setVoiceSampleSeconds] = useState(0);
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -595,42 +264,58 @@ export default function Home() {
   const voiceSampleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const feedbackRef = useRef<HTMLDivElement | null>(null);
   const speechAudioRef = useRef(speechAudio);
+  const claimedForRef = useRef<string | null>(null);
 
+  /* ── Identity bootstrap (server-issued guest cookie) ───────────── */
   useEffect(() => {
-    if (!userId) return;
+    let cancelled = false;
+    const bootstrap = async () => {
+      try {
+        await fetch('/api/account/session', { cache: 'no-store' });
+      } catch (err) {
+        console.error('Identity bootstrap failed:', err);
+      }
+      if (!cancelled) setIdentityReady(true);
+    };
+
+    void bootstrap();
+    return () => {
+      cancelled = true;
+    };
+  }, [accountUser?.id]);
+
+  /* ── History load ──────────────────────────────────────────────── */
+  useEffect(() => {
+    if (!identityReady) return;
     let cancelled = false;
 
     const load = async () => {
+      setHistoryLoading(true);
       try {
-        const data = await requestJson<HistoryResponse>(`/api/evaluations/history?userId=${encodeURIComponent(userId)}`, undefined, 300000);
+        const data = await requestJson<HistoryResponse>('/api/evaluations/history', undefined, 300000);
         if (!cancelled) setHistory(data.history || []);
       } catch (err) {
         console.error('Could not load saved history:', err);
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
       }
     };
 
     void load();
     return () => {
       cancelled = true;
-      if (timerRef.current) clearInterval(timerRef.current);
-      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
     };
-  }, [userId]);
+  }, [identityReady, accountUser?.id]);
 
+  /* ── URL params (auth redirects) ───────────────────────────────── */
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const err = params.get('error');
       const mode = params.get('auth') === 'sign-in' ? 'sign-in' : params.get('auth') === 'sign-up' ? 'sign-up' : null;
-      if (err) {
-        toast.error(`Authentication error: ${err}`);
-      }
-      if (mode) {
-        setAuthGreetingMode(mode);
-      }
-      if (err || mode) {
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }
+      if (err) toast.error(`Authentication error: ${err}`);
+      if (mode) setAuthGreetingMode(mode);
+      if (err || mode) window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, []);
 
@@ -638,6 +323,7 @@ export default function Home() {
     speechAudioRef.current = speechAudio;
   }, [speechAudio]);
 
+  /* ── Auth status ───────────────────────────────────────────────── */
   useEffect(() => {
     let cancelled = false;
     const loadAuthStatus = async () => {
@@ -656,28 +342,29 @@ export default function Home() {
     };
   }, []);
 
+  /* ── Guest usage counter ───────────────────────────────────────── */
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const stored = Number(window.localStorage.getItem('aawaz-guest-uses') || '0');
     if (Number.isFinite(stored)) setGuestUses(stored);
   }, []);
 
+  /* ── Claim guest data after sign-in ────────────────────────────── */
   useEffect(() => {
-    if (!accountUser?.id || !guestUserId || accountUser.id === guestUserId) return;
+    if (!accountUser?.id || claimedForRef.current === accountUser.id) return;
+    claimedForRef.current = accountUser.id;
 
     let cancelled = false;
     const claim = async () => {
       try {
-        await requestJson<{ ok?: boolean }>('/api/account/claim-guest', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ guestId: guestUserId }),
-        }, 300000);
+        // Server merges the guest identity from its own signed cookie.
+        await requestJson<{ ok?: boolean }>('/api/account/claim-guest', { method: 'POST' }, 300000);
 
         if (cancelled) return;
+        window.localStorage.removeItem('aawaz-user-id'); // legacy key cleanup
         window.localStorage.setItem('aawaz-guest-uses', '0');
         setGuestUses(0);
-        const data = await requestJson<HistoryResponse>(`/api/evaluations/history?userId=${encodeURIComponent(accountUser.id)}`, undefined, 300000);
+        const data = await requestJson<HistoryResponse>('/api/evaluations/history', undefined, 300000);
         if (!cancelled) setHistory(data.history || []);
       } catch {
         if (!cancelled) toast.error('Signed in, but guest history could not be attached.');
@@ -688,8 +375,9 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [accountUser?.id, guestUserId]);
+  }, [accountUser?.id]);
 
+  /* ── Account profile ───────────────────────────────────────────── */
   useEffect(() => {
     if (!accountUser?.id) {
       setAccountProfile(null);
@@ -713,9 +401,45 @@ export default function Home() {
     };
   }, [accountUser?.id]);
 
+  /* ── Mic permission tracking ───────────────────────────────────── */
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.permissions?.query) return;
+    let status: PermissionStatus | null = null;
+    let cancelled = false;
+
+    navigator.permissions.query({ name: 'microphone' as PermissionName })
+      .then((result) => {
+        if (cancelled) return;
+        status = result;
+        setMicPermission(result.state as MicPermission);
+        result.onchange = () => setMicPermission(result.state as MicPermission);
+      })
+      .catch(() => null);
+
+    return () => {
+      cancelled = true;
+      if (status) status.onchange = null;
+    };
+  }, []);
+
+  /* ── Analyzing stage rotation ──────────────────────────────────── */
+  useEffect(() => {
+    if (!isAnalyzing) {
+      setAnalyzeStage(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setAnalyzeStage((stage) => Math.min(stage + 1, ANALYZE_STAGES.length - 1));
+    }, 7000);
+    return () => clearInterval(interval);
+  }, [isAnalyzing]);
+
+  /* ── Unmount cleanup ───────────────────────────────────────────── */
   useEffect(() => {
     return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
       mediaRecorderRef.current = null;
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
       if (voiceSampleTimerRef.current) clearInterval(voiceSampleTimerRef.current);
       const recorder = voiceSampleRecorderRef.current;
       voiceSampleRecorderRef.current = null;
@@ -729,7 +453,7 @@ export default function Home() {
     };
   }, []);
 
-  // Auto-scroll to feedback after analysis completes
+  /* ── Auto-scroll to feedback ───────────────────────────────────── */
   useEffect(() => {
     if (feedback && feedbackRef.current) {
       const timeout = setTimeout(() => {
@@ -739,9 +463,43 @@ export default function Home() {
     }
   }, [feedback]);
 
+  /* ── Guest gating ──────────────────────────────────────────────── */
+  const trackGuestUse = (remaining?: number | null) => {
+    if (accountUser) return;
+
+    const used = typeof remaining === 'number' ? Math.max(0, 3 - remaining) : guestUses + 1;
+    setGuestUses(used);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('aawaz-guest-uses', String(used));
+    }
+
+    if (used >= 2) {
+      setAuthMode('sign-up');
+      setAuthPromptOpen(true);
+    }
+  };
+
+  const handleSpecialError = (err: unknown) => {
+    if (err instanceof Error && err.name === 'AuthRequiredError') {
+      setAuthMode('sign-up');
+      setAuthPromptOpen(true);
+      toast.error(err.message);
+      return true;
+    }
+
+    if (err instanceof Error && err.name === 'IdentityRequiredError') {
+      void fetch('/api/account/session', { cache: 'no-store' }).catch(() => null);
+      toast.error('Session refreshed — please try that again.');
+      return true;
+    }
+
+    return false;
+  };
+
+  /* ── Recording ─────────────────────────────────────────────────── */
   const startRecording = async () => {
-    if (!userId) {
-      toast.error('User identity is still loading. Please try again.');
+    if (!identityReady) {
+      toast.error('Still warming up. Give it a second and try again.');
       return;
     }
 
@@ -760,9 +518,11 @@ export default function Home() {
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setMicPermission('granted');
       const recorder = new MediaRecorder(stream);
       const chunks: Blob[] = [];
       mediaStreamRef.current = stream;
+      setRecordingStream(stream);
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) chunks.push(event.data);
       };
@@ -774,8 +534,11 @@ export default function Home() {
         mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
         mediaStreamRef.current = null;
         mediaRecorderRef.current = null;
+        setRecordingStream(null);
         const audioType = recorder.mimeType || chunks[0]?.type || 'audio/webm;codecs=opus';
         const blob = new Blob(chunks, { type: audioType });
+        // recorder.start(1000) emits ~1 chunk per second, so the first
+        // VOICE_SAMPLE_SECONDS chunks ≈ the first 15 seconds of audio.
         const sampleBlob = new Blob(chunks.slice(0, VOICE_SAMPLE_SECONDS), { type: audioType });
 
         if (blob.size < 3000) {
@@ -789,7 +552,6 @@ export default function Home() {
         if (sampleBlob.size >= 3000) {
           form.append('voiceSample', sampleBlob, 'voice-sample.webm');
         }
-        form.append('userId', userId);
         if (selectedTemplateId) form.append('templateId', selectedTemplateId);
         try {
           const data = await requestJson<AnalyzeResponse>('/api/transcribe-analyze', { method: 'POST', body: form }, 300000);
@@ -801,9 +563,9 @@ export default function Home() {
             toast.error('Analysis completed, but the voice sample could not be stored for cloning.');
           }
           trackGuestUse(data.guestRemaining);
-          toast.success('Speech analyzed and saved.');
+          toast.success('Report ready. Scroll for the verdict.');
         } catch (err) {
-          if (handleAuthRequired(err)) return;
+          if (handleSpecialError(err)) return;
           toast.error(err instanceof Error ? err.message : 'Failed to analyze speech.');
         } finally {
           setIsAnalyzing(false);
@@ -825,8 +587,9 @@ export default function Home() {
           return next;
         });
       }, 1000);
-      toast.message('Recording started.');
+      toast.message('Recording. The room is yours.');
     } catch {
+      setMicPermission('denied');
       toast.error('Microphone access is required.');
     }
   };
@@ -853,46 +616,20 @@ export default function Home() {
 
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
     mediaStreamRef.current = null;
+    setRecordingStream(null);
     setTranscript('');
     setFeedback('');
     setSeconds(0);
     setSelectedTemplateId(null);
     setIsRecording(false);
     setIsAnalyzing(false);
-    toast.success('Ready for a new speech.');
+    toast.success('Fresh slate. Ready when you are.');
   };
 
-  const trackGuestUse = (remaining?: number | null) => {
-    if (accountUser) return;
-
-    const used = typeof remaining === 'number' ? Math.max(0, 3 - remaining) : guestUses + 1;
-    setGuestUses(used);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('aawaz-guest-uses', String(used));
-    }
-
-    if (used >= 2) {
-      setAuthMode('sign-up');
-      setAuthPromptOpen(true);
-    }
-  };
-
-  const handleAuthRequired = (err: unknown) => {
-    if (err instanceof Error && err.name === 'AuthRequiredError') {
-      setAuthMode('sign-up');
-      setAuthPromptOpen(true);
-      toast.error(err.message);
-      return true;
-    }
-
-    return false;
-  };
-
+  /* ── Auth ──────────────────────────────────────────────────────── */
   const getAuthStatus = async () => {
     try {
-      const data = await requestJson<AuthStatus>('/api/account/auth-status', {
-        cache: 'no-store',
-      }, 300000);
+      const data = await requestJson<AuthStatus>('/api/account/auth-status', { cache: 'no-store' }, 300000);
       setAuthStatus(data);
       return data;
     } catch (err) {
@@ -943,7 +680,7 @@ export default function Home() {
       await refetchSession();
       setAuthGreetingMode(authMode);
       setAuthPromptOpen(false);
-      toast.success(authMode === 'sign-up' ? 'Account created.' : 'Signed in.');
+      toast.success(authMode === 'sign-up' ? 'Account created. Welcome to the stage.' : 'Signed in. Welcome back.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Authentication failed.');
     } finally {
@@ -996,6 +733,7 @@ export default function Home() {
     setIsAuthBusy(true);
     try {
       await authClient.signOut();
+      claimedForRef.current = null;
       await refetchSession();
       setHistory([]);
       setSelectedSessionId(null);
@@ -1009,6 +747,7 @@ export default function Home() {
     }
   };
 
+  /* ── Speech generation ─────────────────────────────────────────── */
   const generateSpeech = async () => {
     if (isGenerating) return;
 
@@ -1030,13 +769,13 @@ export default function Home() {
       const data = await requestJson<SpeechResponse>('/api/generate-speech', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, wordCount, userId }),
+        body: JSON.stringify({ topic, wordCount }),
       }, 300000);
       setSpeech(data.speech || '');
       trackGuestUse(data.guestRemaining);
-      toast.success('Practice speech generated.');
+      toast.success('Script ready. Make it yours.');
     } catch (err) {
-      if (handleAuthRequired(err)) {
+      if (handleSpecialError(err)) {
         setError(err instanceof Error ? err.message : 'Create an account to continue.');
         return;
       }
@@ -1054,12 +793,12 @@ export default function Home() {
       return;
     }
 
-    if (speechAudio[mode].isLoading) return;
+    // Guard against duplicate clicks and racing with sample changes.
+    if (speechAudio[mode].isLoading || isVoiceSampleRecording || isVoiceSampleSaving || isVoiceSampleResetting) return;
 
     const form = new FormData();
     form.append('mode', mode);
     form.append('text', speech);
-    form.append('userId', userId);
     if (mode === 'example') form.append('exampleVoice', exampleVoice);
 
     if (speechAudioRef.current[mode].url) {
@@ -1083,6 +822,16 @@ export default function Home() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
+        if (data.authRequired) {
+          const authError = new Error(typeof data.error === 'string' ? data.error : 'Create an account to continue.');
+          authError.name = 'AuthRequiredError';
+          throw authError;
+        }
+        if (data.identityRequired) {
+          const idError = new Error(typeof data.error === 'string' ? data.error : 'Session expired.');
+          idError.name = 'IdentityRequiredError';
+          throw idError;
+        }
         throw new Error(typeof data.error === 'string' ? data.error : 'Could not generate speech audio.');
       }
 
@@ -1097,9 +846,9 @@ export default function Home() {
         };
       });
       trackGuestUse(null);
-      toast.success(mode === 'clone' ? 'Speech generated in your voice.' : 'Example speech audio generated.');
+      toast.success(mode === 'clone' ? "That's you, polished." : 'Example speech ready.');
     } catch (err) {
-      if (handleAuthRequired(err)) {
+      if (handleSpecialError(err)) {
         setSpeechAudio((current) => ({
           ...current,
           [mode]: { ...current[mode], isLoading: false },
@@ -1122,24 +871,10 @@ export default function Home() {
     }
   };
 
-  const openVoiceSampleRecorder = async () => {
-    setVoiceSampleMenuOpen(false);
-    if (isVoiceSampleResetting) return;
-
-    if (!userId) {
-      toast.error('User identity is still loading. Please try again.');
-      return;
-    }
-
-    if (isRecording || isAnalyzing) {
-      toast.error('Finish the current speech recording first.');
-      return;
-    }
-
-    const confirmed = window.confirm('If you record new sample your previous sample will be deleted, confirm?');
-    if (!confirmed) return;
-
+  /* ── Voice sample lifecycle ────────────────────────────────────── */
+  const resetVoiceSample = async () => {
     setIsVoiceSampleResetting(true);
+    // Drop any audio generated with the old voice so it can't be reused.
     if (speechAudioRef.current.clone.url) {
       URL.revokeObjectURL(speechAudioRef.current.clone.url);
     }
@@ -1149,11 +884,7 @@ export default function Home() {
     }));
 
     try {
-      const res = await fetch('/api/account/voice-sample', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId }),
-      });
+      const res = await fetch('/api/account/voice-sample', { method: 'DELETE' });
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -1162,13 +893,36 @@ export default function Home() {
 
       setVoiceSamplePanelOpen(true);
       setVoiceSampleSeconds(0);
-      toast.message('Previous voice sample deleted.');
+      toast.message('Old sample cleared. Ready for the new you.');
     } catch (err) {
-      if (handleAuthRequired(err)) return;
+      if (handleSpecialError(err)) return;
       toast.error(err instanceof Error ? err.message : 'Could not reset the voice sample.');
     } finally {
       setIsVoiceSampleResetting(false);
     }
+  };
+
+  const openVoiceSampleRecorder = () => {
+    setVoiceSampleMenuOpen(false);
+    if (isVoiceSampleResetting || isVoiceSampleRecording || isVoiceSampleSaving || speechAudio.clone.isLoading) return;
+
+    if (!identityReady) {
+      toast.error('Still warming up. Give it a second and try again.');
+      return;
+    }
+
+    if (isRecording || isAnalyzing) {
+      toast.error('Finish the current speech recording first.');
+      return;
+    }
+
+    setConfirmRequest({
+      title: 'Replace voice sample?',
+      body: 'Your previous sample will be deleted before the new recording starts. Own-voice audio will use the new sample from then on.',
+      confirmLabel: 'Replace it',
+      danger: true,
+      action: resetVoiceSample,
+    });
   };
 
   const saveVoiceSampleBlob = async (blob: Blob) => {
@@ -1180,7 +934,6 @@ export default function Home() {
 
     setIsVoiceSampleSaving(true);
     const form = new FormData();
-    form.append('userId', userId);
     form.append('voiceSample', blob, 'voice-sample.webm');
 
     try {
@@ -1196,9 +949,9 @@ export default function Home() {
 
       setVoiceSamplePanelOpen(false);
       setVoiceSampleSeconds(0);
-      toast.success('New voice sample saved.');
+      toast.success('New voice sample locked in.');
     } catch (err) {
-      if (handleAuthRequired(err)) return;
+      if (handleSpecialError(err)) return;
       toast.error(err instanceof Error ? err.message : 'Could not save the new voice sample.');
     } finally {
       setIsVoiceSampleSaving(false);
@@ -1216,10 +969,7 @@ export default function Home() {
   };
 
   const startVoiceSampleRecording = async () => {
-    if (!userId) {
-      toast.error('User identity is still loading. Please try again.');
-      return;
-    }
+    if (isVoiceSampleRecording || isVoiceSampleSaving) return;
 
     if (!('MediaRecorder' in window) || !navigator.mediaDevices?.getUserMedia) {
       toast.error('Audio recording is not supported in this browser.');
@@ -1236,6 +986,7 @@ export default function Home() {
       voiceSampleStreamRef.current?.getTracks().forEach((track) => track.stop());
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setMicPermission('granted');
       const recorder = new MediaRecorder(stream);
       const chunks: Blob[] = [];
       voiceSampleStreamRef.current = stream;
@@ -1269,8 +1020,9 @@ export default function Home() {
           return Math.min(next, VOICE_SAMPLE_SECONDS);
         });
       }, 1000);
-      toast.message('Voice sample recording started.');
+      toast.message('Recording your voice. Speak naturally.');
     } catch {
+      setMicPermission('denied');
       toast.error('Microphone access is required.');
     }
   };
@@ -1293,23 +1045,36 @@ export default function Home() {
     setVoiceSamplePanelOpen(false);
   };
 
+  /* ── History ───────────────────────────────────────────────────── */
   const deleteSession = async (sessionId: string) => {
+    if (deletingSessionIds.has(sessionId)) return;
+    setDeletingSessionIds((current) => new Set(current).add(sessionId));
+
     try {
       const data = await requestJson<HistoryResponse>('/api/evaluations/history', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, sessionId }),
+        body: JSON.stringify({ sessionId }),
       }, 300000);
       setHistory(data.history || []);
       setSelectedSessionId((current) => (current === sessionId ? null : current));
-      toast.success('Speech session deleted.');
+      toast.success('Session removed.');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete session.');
+      if (!handleSpecialError(err)) {
+        toast.error(err instanceof Error ? err.message : 'Failed to delete session.');
+      }
+    } finally {
+      setDeletingSessionIds((current) => {
+        const next = new Set(current);
+        next.delete(sessionId);
+        return next;
+      });
     }
   };
 
   const selectedSession = history.find((item) => item.id === selectedSessionId) ?? null;
 
+  /* ── Insights ──────────────────────────────────────────────────── */
   const fetchInsights = async () => {
     if (isLoadingInsights) return;
     setIsLoadingInsights(true);
@@ -1319,20 +1084,22 @@ export default function Home() {
       const data = await requestJson<InsightsResponse>('/api/generate-insights', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({}),
       }, 300000);
       setInsights(data.insights || []);
       setWeaknesses(data.weaknesses || []);
       trackGuestUse(null);
-      toast.success('Insights generated.');
+      toast.success('Insights ready.');
     } catch (err) {
-      if (handleAuthRequired(err)) return;
-      toast.error(err instanceof Error ? err.message : 'Failed to generate insights.');
+      if (!handleSpecialError(err)) {
+        toast.error(err instanceof Error ? err.message : 'Failed to generate insights.');
+      }
     } finally {
       setIsLoadingInsights(false);
     }
   };
 
+  /* ── Utilities ─────────────────────────────────────────────────── */
   const copyText = async (value: string, label: string) => {
     try {
       await navigator.clipboard.writeText(value);
@@ -1355,8 +1122,20 @@ export default function Home() {
     toast.success(`Reading ${label.toLowerCase()}.`);
   };
 
-  const AuthControls = ({ compact = false }: { compact?: boolean }) => (
-    <div className={cn('grid gap-4', compact ? 'mt-4' : '')}>
+  const runConfirm = async () => {
+    if (!confirmRequest || confirmBusy) return;
+    setConfirmBusy(true);
+    try {
+      await confirmRequest.action();
+      setConfirmRequest(null);
+    } finally {
+      setConfirmBusy(false);
+    }
+  };
+
+  /* ── Auth controls (shared between Account tab and modal) ──────── */
+  const authControls = (
+    <div className="grid gap-4">
       <div className="inline-flex w-full rounded-full border border-white/10 bg-white/5 p-1">
         {(['sign-up', 'sign-in'] as const).map((mode) => (
           <button
@@ -1379,7 +1158,7 @@ export default function Home() {
           value={authName}
           onChange={(event) => setAuthName(event.target.value)}
           placeholder="Your name"
-          className="h-12 rounded-[18px] border border-white/12 bg-[#0b0b12]/60 px-4 text-sm text-[#f2efff] outline-none placeholder:text-[#857ca2]"
+          className="h-12 rounded-[18px] border border-white/12 bg-[#0b0b12]/60 px-4 text-sm text-[#f2efff] outline-none transition placeholder:text-[#857ca2] focus:border-[#a78bfa]/50"
         />
       ) : null}
       <input
@@ -1387,21 +1166,21 @@ export default function Home() {
         onChange={(event) => setAuthEmail(event.target.value)}
         placeholder="Email"
         type="email"
-        className="h-12 rounded-[18px] border border-white/12 bg-[#0b0b12]/60 px-4 text-sm text-[#f2efff] outline-none placeholder:text-[#857ca2]"
+        className="h-12 rounded-[18px] border border-white/12 bg-[#0b0b12]/60 px-4 text-sm text-[#f2efff] outline-none transition placeholder:text-[#857ca2] focus:border-[#a78bfa]/50"
       />
       <input
         value={authPassword}
         onChange={(event) => setAuthPassword(event.target.value)}
         placeholder="Password"
         type="password"
-        className="h-12 rounded-[18px] border border-white/12 bg-[#0b0b12]/60 px-4 text-sm text-[#f2efff] outline-none placeholder:text-[#857ca2]"
+        className="h-12 rounded-[18px] border border-white/12 bg-[#0b0b12]/60 px-4 text-sm text-[#f2efff] outline-none transition placeholder:text-[#857ca2] focus:border-[#a78bfa]/50"
       />
       {authMode === 'sign-up' ? (
         <p className="font-mono text-[11px] leading-5 text-[#857ca2]">Password must be longer than 5 characters and include letters and numbers.</p>
       ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
         <Button onClick={submitAuth} disabled={isAuthBusy} className="h-12 rounded-[18px] font-mono text-xs uppercase tracking-[0.22em]">
-          {isAuthBusy ? 'Working...' : authMode === 'sign-up' ? 'Create' : 'Login'}
+          {isAuthBusy ? 'Working…' : authMode === 'sign-up' ? 'Create' : 'Login'}
         </Button>
         <Button type="button" variant="secondary" onClick={signInWithGoogle} disabled={isAuthBusy} className="h-12 rounded-[18px] font-mono text-xs uppercase tracking-[0.18em]">
           Google
@@ -1410,7 +1189,8 @@ export default function Home() {
     </div>
   );
 
-  const AccountPanel = () => {
+  /* ── Account panel ─────────────────────────────────────────────── */
+  const renderAccountPanel = () => {
     const createdAt = accountUser ? new Date(accountUser.createdAt) : null;
     const isNew = createdAt ? Date.now() - createdAt.getTime() < 120000 : false;
     const displayName = accountUser?.name || accountUser?.email?.split('@')[0] || 'Aawaz User';
@@ -1424,9 +1204,7 @@ export default function Home() {
     return (
       <Shell>
         {isSessionPending ? (
-          <div className="flex gap-2">
-            {[0, 1, 2].map((i) => <motion.div key={i} animate={{ y: [0, -6, 0], opacity: [0.4, 1, 0.4] }} transition={{ duration: 0.7, repeat: Infinity, delay: i * 0.14 }} className="h-2 w-2 rounded-full bg-[#a78bfa]" />)}
-          </div>
+          <ThinkingDots />
         ) : accountUser ? (
           <div className="grid gap-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
@@ -1434,7 +1212,7 @@ export default function Home() {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={accountUser.image} alt={displayName} className="h-20 w-20 rounded-full border-2 border-white/10 object-cover shadow-[0_16px_40px_rgba(2,6,23,0.35)]" />
               ) : (
-                <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-white/10 bg-white/5 font-serif text-3xl text-white shadow-[0_16px_40px_rgba(2,6,23,0.35)]">
+                <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-white/10 bg-[linear-gradient(135deg,rgba(167,139,250,0.25),rgba(249,168,212,0.18))] font-serif text-3xl text-white shadow-[0_16px_40px_rgba(2,6,23,0.35)]">
                   {displayName.charAt(0).toUpperCase()}
                 </div>
               )}
@@ -1445,22 +1223,17 @@ export default function Home() {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-[18px] border border-white/10 bg-white/4 p-4">
-                <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#857ca2]">User name</div>
-                <div className="mt-1 break-words text-sm text-[#f2efff]">{displayName}</div>
-              </div>
-              <div className="rounded-[18px] border border-white/10 bg-white/4 p-4">
-                <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#857ca2]">User email</div>
-                <div className="mt-1 break-all text-sm text-[#f2efff]">{accountUser.email}</div>
-              </div>
-              <div className="rounded-[18px] border border-white/10 bg-white/4 p-4">
-                <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#857ca2]">Account created</div>
-                <div className="mt-1 text-sm text-[#f2efff]">{createdDate}</div>
-              </div>
-              <div className="rounded-[18px] border border-white/10 bg-white/4 p-4">
-                <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#857ca2]">Login method</div>
-                <div className="mt-1 break-words text-sm capitalize text-[#f2efff]">{accountProfile?.providerId || 'email'}</div>
-              </div>
+              {[
+                { label: 'User name', value: displayName },
+                { label: 'User email', value: accountUser.email },
+                { label: 'Account created', value: createdDate },
+                { label: 'Login method', value: accountProfile?.providerId || 'email' },
+              ].map((item) => (
+                <div key={item.label} className="rounded-[18px] border border-white/10 bg-white/4 p-4">
+                  <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#857ca2]">{item.label}</div>
+                  <div className="mt-1 break-words text-sm capitalize text-[#f2efff]">{item.value}</div>
+                </div>
+              ))}
             </div>
 
             <div className="grid gap-3 border-t border-white/10 pt-5 sm:grid-cols-3">
@@ -1468,36 +1241,53 @@ export default function Home() {
                 <LogOut className="mr-2 h-4 w-4" />
                 Log out
               </Button>
-              <Button variant="secondary" onClick={async () => {
-                if (confirm('Delete all your saved speeches and voice samples? This cannot be undone.')) {
-                  try {
-                    await requestJson('/api/account/delete-data', { method: 'DELETE' });
-                    setHistory([]);
-                    toast.success('Account data deleted.');
-                  } catch (e) {
-                    toast.error(e instanceof Error ? e.message : 'Failed to delete data.');
-                  }
-                }
-              }} className="h-11 rounded-[16px] font-mono text-xs uppercase tracking-[0.1em]">
+              <Button
+                variant="secondary"
+                onClick={() => setConfirmRequest({
+                  title: 'Delete all data?',
+                  body: 'All saved speeches and voice samples will be permanently deleted. This cannot be undone.',
+                  confirmLabel: 'Delete data',
+                  danger: true,
+                  action: async () => {
+                    try {
+                      await requestJson('/api/account/delete-data', { method: 'DELETE' });
+                      setHistory([]);
+                      toast.success('Account data deleted.');
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : 'Failed to delete data.');
+                    }
+                  },
+                })}
+                className="h-11 rounded-[16px] font-mono text-xs uppercase tracking-[0.1em]"
+              >
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete Data
               </Button>
-              <Button variant="danger" onClick={async () => {
-                if (confirm('Delete your entire account? This will log you out and delete all your data. This cannot be undone.')) {
-                  try {
-                    await requestJson('/api/account/delete-account', { method: 'DELETE' });
-                    await authClient.signOut().catch(() => null);
-                    await refetchSession();
-                    setAccountProfile(null);
-                    setAuthGreetingMode(null);
-                    setHistory([]);
-                    setSelectedSessionId(null);
-                    toast.success('Account deleted.');
-                  } catch (e) {
-                    toast.error(e instanceof Error ? e.message : 'Failed to delete account.');
-                  }
-                }
-              }} className="h-11 rounded-[16px] font-mono text-xs uppercase tracking-[0.1em]">
+              <Button
+                variant="danger"
+                onClick={() => setConfirmRequest({
+                  title: 'Delete your account?',
+                  body: 'This logs you out and permanently deletes your account and all data. There is no way back.',
+                  confirmLabel: 'Delete account',
+                  danger: true,
+                  action: async () => {
+                    try {
+                      await requestJson('/api/account/delete-account', { method: 'DELETE' });
+                      await authClient.signOut().catch(() => null);
+                      claimedForRef.current = null;
+                      await refetchSession();
+                      setAccountProfile(null);
+                      setAuthGreetingMode(null);
+                      setHistory([]);
+                      setSelectedSessionId(null);
+                      toast.success('Account deleted.');
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : 'Failed to delete account.');
+                    }
+                  },
+                })}
+                className="h-11 rounded-[16px] font-mono text-xs uppercase tracking-[0.1em]"
+              >
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete Account
               </Button>
@@ -1505,547 +1295,516 @@ export default function Home() {
           </div>
         ) : (
           <div className="grid gap-5">
+            <MascotHint mood="coach" title="Save your progress">
+              Try Aawaz freely first. After a few AI actions, create an account to keep your speech history, insights, and voice sample.
+            </MascotHint>
             <div>
-              <p className="font-serif text-2xl text-white">Save your progress</p>
-              <p className="mt-2 text-sm leading-6 text-[#857ca2]">You can try Aawaz first. After a few AI actions, create an account to continue saving speech history, insights, and your first voice sample.</p>
-              <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.22em] text-[#ddd6fe]">Guest uses: {Math.min(guestUses, 3)} / 3</p>
+              <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#ddd6fe]">Guest uses: {Math.min(guestUses, 3)} / 3</p>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/8">
+                <div
+                  className="h-full rounded-full bg-[linear-gradient(90deg,#a78bfa,#f9a8d4)] transition-all duration-500"
+                  style={{ width: `${Math.min(100, (Math.min(guestUses, 3) / 3) * 100)}%` }}
+                />
+              </div>
             </div>
-            <AuthControls />
+            {authControls}
           </div>
         )}
       </Shell>
     );
   };
 
-  const AuthPromptModal = () => (
-    <AnimatePresence>
-      {authPromptOpen && !accountUser ? (
-        <>
-          <button
-            type="button"
-            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
-            onClick={() => setAuthPromptOpen(false)}
-            aria-label="Close account prompt"
-          />
-          <motion.div
-            initial={{ opacity: 0, scale: 0.94, y: 16 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 10 }}
-            className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[24px] border border-white/10 bg-[#0b0b12]/95 p-5 shadow-[0_30px_80px_rgba(2,6,23,0.7)] backdrop-blur-xl sm:rounded-[28px] sm:p-6"
-          >
-            <div className="mb-4 flex items-start justify-between gap-4">
-              <div>
-                <p className="font-serif text-2xl text-white">Create your account</p>
-                <p className="mt-2 text-sm leading-6 text-[#857ca2]">Keep your saved speeches, progress, and own-voice sample tied to you.</p>
-              </div>
-              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setAuthPromptOpen(false)} aria-label="Close">
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            <AuthControls compact />
-          </motion.div>
-        </>
-      ) : null}
-    </AnimatePresence>
-  );
-
-  const ActionBar = ({
-    text,
-    label,
-    onRegenerate,
-  }: {
-    text: string;
-    label: string;
-    onRegenerate?: () => void;
-  }) => (
-    <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
-      <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => copyText(text, label)} title={`Copy ${label}`}>
-        <Copy className="h-4 w-4" />
-      </Button>
-      <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => speakText(text, label)} title={`Read ${label}`}>
-        <Volume2 className="h-4 w-4" />
-      </Button>
-      {onRegenerate ? (
-        <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={onRegenerate} title={`Regenerate ${label}`}>
-          <RefreshCw className="h-4 w-4" />
-        </Button>
-      ) : null}
-    </div>
-  );
-
-  const SpeechAudioActions = () => {
-    const items: { mode: SpeechAudioMode; label: string; helper: string }[] = [
-      { mode: 'example', label: 'Hear Example Speech', helper: 'Polished public-speaking voice' },
-      { mode: 'clone', label: 'Hear in your own voice', helper: 'Uses your first saved 15s sample' },
-    ];
-
-    const updateExampleVoice = (voice: SpeechExampleVoice) => {
-      if (speechAudio.example.isLoading || exampleVoice === voice) return;
-      if (speechAudioRef.current.example.url) {
-        URL.revokeObjectURL(speechAudioRef.current.example.url);
-      }
-      setExampleVoice(voice);
-      setSpeechAudio((current) => ({
-        ...current,
-        example: { url: '', isLoading: false },
-      }));
-    };
+  /* ── Speech audio actions (example + own-voice) ────────────────── */
+  const renderSpeechAudioActions = () => {
+    const voiceBusy = isVoiceSampleRecording || isVoiceSampleSaving || isVoiceSampleResetting;
 
     return (
-      <div className="mb-5 grid gap-3 md:grid-cols-2">
-        {items.map((item) => {
-          const state = speechAudio[item.mode];
-          const filename = item.mode === 'clone' ? 'aawaz-your-voice-speech.opus' : `aawaz-example-${exampleVoice}-speech.opus`;
-          return (
-            <div key={item.mode} className="rounded-[20px] border border-white/10 bg-[#0b0b12]/55 p-3 sm:rounded-[24px] sm:p-4">
-              {item.mode === 'example' ? (
-                <div className="mb-3 inline-flex rounded-full border border-white/10 bg-white/5 p-1">
-                  {(['female', 'male'] as const).map((voice) => (
-                    <button
-                      key={voice}
-                      type="button"
-                      onClick={() => updateExampleVoice(voice)}
-                      disabled={state.isLoading}
-                      className={cn(
-                        'h-8 rounded-full px-3 font-mono text-[10px] uppercase tracking-[0.18em] transition disabled:pointer-events-none disabled:opacity-60',
-                        exampleVoice === voice
-                          ? 'bg-[#ddd6fe] text-[#06060b]'
-                          : 'text-[#857ca2] hover:bg-white/10 hover:text-[#f2efff]',
-                      )}
-                      aria-pressed={exampleVoice === voice}
-                    >
-                      {voice}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div className="relative flex w-full gap-2 lg:w-auto">
-                  <button
-                    type="button"
-                    onClick={() => generateSpeechAudio(item.mode)}
-                    disabled={state.isLoading || isGenerating || isVoiceSampleRecording || isVoiceSampleSaving || isVoiceSampleResetting}
-                    className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-[16px] border border-[#a78bfa]/25 bg-[linear-gradient(135deg,rgba(167,139,250,0.18),rgba(249,168,212,0.10))] px-4 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#f2efff] transition hover:bg-white/10 disabled:pointer-events-none disabled:opacity-50 sm:rounded-[18px] lg:min-w-[220px] lg:flex-none"
-                  >
-                    <Play className={cn('h-4 w-4 shrink-0', state.isLoading && 'animate-pulse')} />
-                    <span className="min-w-0 break-words">{state.isLoading ? 'Generating...' : item.label}</span>
-                  </button>
-                  {item.mode === 'clone' ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setVoiceSampleMenuOpen((open) => !open)}
-                        disabled={state.isLoading || isGenerating || isVoiceSampleRecording || isVoiceSampleSaving || isVoiceSampleResetting}
-                        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] border border-white/10 bg-white/6 text-[#ddd6fe] transition hover:bg-white/10 disabled:pointer-events-none disabled:opacity-50 sm:rounded-[18px]"
-                        aria-label="Voice sample options"
-                        aria-expanded={voiceSampleMenuOpen}
-                      >
-                        <ChevronDown className={cn('h-4 w-4 transition', voiceSampleMenuOpen && 'rotate-180')} />
-                      </button>
-                      {voiceSampleMenuOpen ? (
-                        <div className="absolute right-0 top-[calc(100%+8px)] z-20 w-56 rounded-[16px] border border-white/10 bg-[#151522] p-1 shadow-[0_20px_60px_rgba(0,0,0,0.35)]">
-                          <button
-                            type="button"
-                            onClick={openVoiceSampleRecorder}
-                            disabled={isVoiceSampleResetting}
-                            className="flex w-full items-center gap-2 rounded-[13px] px-3 py-3 text-left font-mono text-[10px] uppercase tracking-[0.18em] text-[#f2efff] transition hover:bg-white/8"
-                          >
-                            <Mic className="h-4 w-4 text-[#ddd6fe]" />
-                            {isVoiceSampleResetting ? 'Deleting old sample...' : 'Record new sample'}
-                          </button>
-                        </div>
-                      ) : null}
-                    </>
-                  ) : null}
-                </div>
-                {state.url ? (
-                  <a
-                    href={state.url}
-                    download={filename}
-                    className="inline-flex h-11 w-full items-center justify-center rounded-[16px] border border-white/10 bg-white/6 text-[#ddd6fe] transition hover:bg-white/10 lg:w-11 lg:rounded-full"
-                    aria-label={`Download ${item.label.toLowerCase()}`}
-                    title={`Download ${item.label.toLowerCase()}`}
-                  >
-                    <Download className="h-4 w-4" />
-                  </a>
-                ) : null}
-              </div>
-              <div className="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[#857ca2]">{item.helper}</div>
-              {state.url ? (
-                <audio controls src={state.url} className="mt-3 h-10 w-full" preload="metadata" />
-              ) : null}
+      <div className="mb-5 grid gap-3 lg:grid-cols-2">
+        {/* Example voice */}
+        <div className="rounded-[20px] border border-white/10 bg-[#0b0b12]/55 p-3.5 transition-colors hover:border-white/15 sm:rounded-[24px] sm:p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-[#f2efff]">Example speech</p>
+              <p className="mt-0.5 truncate font-mono text-[10px] uppercase tracking-[0.16em] text-[#857ca2]">Polished public-speaking voice</p>
             </div>
-          );
-        })}
-        {voiceSamplePanelOpen ? (
-          <div className="md:col-span-2 rounded-[20px] border border-[#a78bfa]/20 bg-[#0b0b12]/65 p-4 sm:rounded-[24px]">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#ddd6fe]">New voice sample</div>
-                <p className="mt-2 text-sm leading-6 text-[#857ca2]">Speak clearly for 15 seconds. This sample will replace the one used for your own-voice playback.</p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <div className="flex h-11 min-w-16 items-center justify-center rounded-[16px] border border-white/10 bg-white/5 font-mono text-sm text-[#f2efff]">
-                  {voiceSampleSeconds}s
-                </div>
-                <Button
+            <div className="inline-flex shrink-0 rounded-full border border-white/10 bg-white/5 p-1">
+              {(['female', 'male'] as const).map((voice) => (
+                <button
+                  key={voice}
                   type="button"
-                  variant={isVoiceSampleRecording ? 'danger' : 'secondary'}
-                  onClick={isVoiceSampleRecording ? stopVoiceSampleRecording : startVoiceSampleRecording}
-                  disabled={isVoiceSampleSaving}
-                  className="h-11 rounded-[16px] px-4 font-mono text-[10px] uppercase tracking-[0.16em]"
+                  onClick={() => {
+                    if (speechAudio.example.isLoading || exampleVoice === voice) return;
+                    if (speechAudioRef.current.example.url) {
+                      URL.revokeObjectURL(speechAudioRef.current.example.url);
+                    }
+                    setExampleVoice(voice);
+                    setSpeechAudio((current) => ({
+                      ...current,
+                      example: { url: '', isLoading: false },
+                    }));
+                  }}
+                  disabled={speechAudio.example.isLoading}
+                  className={cn(
+                    'h-8 rounded-full px-3 font-mono text-[10px] uppercase tracking-[0.16em] transition disabled:pointer-events-none disabled:opacity-60',
+                    exampleVoice === voice
+                      ? 'bg-[#ddd6fe] text-[#06060b]'
+                      : 'text-[#857ca2] hover:bg-white/10 hover:text-[#f2efff]',
+                  )}
+                  aria-pressed={exampleVoice === voice}
                 >
-                  {isVoiceSampleRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                  {isVoiceSampleSaving ? 'Saving...' : isVoiceSampleRecording ? 'Stop' : 'Record'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={cancelVoiceSampleRecorder}
-                  disabled={isVoiceSampleSaving}
-                  className="h-11 w-11 rounded-[16px]"
-                  aria-label="Close voice sample recorder"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-            <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/8">
-              <div
-                className="h-full rounded-full bg-[linear-gradient(90deg,#a78bfa,#f9a8d4)] transition-all"
-                style={{ width: `${Math.min(100, (voiceSampleSeconds / VOICE_SAMPLE_SECONDS) * 100)}%` }}
-              />
+                  {voice}
+                </button>
+              ))}
             </div>
           </div>
-        ) : null}
+          {speechAudio.example.url ? (
+            <AudioPlayer src={speechAudio.example.url} downloadName={`aawaz-example-${exampleVoice}-speech.opus`} />
+          ) : (
+            <button
+              type="button"
+              onClick={() => generateSpeechAudio('example')}
+              disabled={speechAudio.example.isLoading || isGenerating}
+              className={cn(
+                'inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[16px] border border-[#a78bfa]/25 bg-[linear-gradient(135deg,rgba(167,139,250,0.18),rgba(249,168,212,0.10))] px-4 text-xs font-semibold uppercase tracking-[0.16em] text-[#f2efff] transition hover:border-[#a78bfa]/45 disabled:pointer-events-none disabled:opacity-60 sm:rounded-[18px]',
+                speechAudio.example.isLoading && 'skeleton-shimmer',
+              )}
+            >
+              <Volume2 className={cn('h-4 w-4 shrink-0', speechAudio.example.isLoading && 'animate-pulse')} />
+              {speechAudio.example.isLoading ? 'Synthesizing…' : 'Hear example speech'}
+            </button>
+          )}
+        </div>
+
+        {/* Own voice */}
+        <div className="rounded-[20px] border border-white/10 bg-[#0b0b12]/55 p-3.5 transition-colors hover:border-white/15 sm:rounded-[24px] sm:p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-[#f2efff]">Your own voice</p>
+              <p className="mt-0.5 truncate font-mono text-[10px] uppercase tracking-[0.16em] text-[#857ca2]">Uses your saved 15s sample</p>
+            </div>
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setVoiceSampleMenuOpen((open) => !open)}
+                disabled={speechAudio.clone.isLoading || isGenerating || voiceBusy}
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/6 text-[#ddd6fe] transition hover:bg-white/10 disabled:pointer-events-none disabled:opacity-50"
+                aria-label="Voice sample options"
+                aria-expanded={voiceSampleMenuOpen}
+              >
+                <ChevronDown className={cn('h-4 w-4 transition', voiceSampleMenuOpen && 'rotate-180')} />
+              </button>
+              <AnimatePresence>
+                {voiceSampleMenuOpen ? (
+                  <button
+                    type="button"
+                    className="fixed inset-0 z-10 cursor-default"
+                    onClick={() => setVoiceSampleMenuOpen(false)}
+                    aria-label="Close voice sample options"
+                    tabIndex={-1}
+                  />
+                ) : null}
+                {voiceSampleMenuOpen ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 4, scale: 0.97 }}
+                    className="absolute right-0 top-[calc(100%+8px)] z-20 w-56 rounded-[16px] border border-white/10 bg-[#15131f] p-1 shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
+                  >
+                    <button
+                      type="button"
+                      onClick={openVoiceSampleRecorder}
+                      disabled={isVoiceSampleResetting}
+                      className="flex w-full items-center gap-2 rounded-[13px] px-3 py-3 text-left font-mono text-[10px] uppercase tracking-[0.16em] text-[#f2efff] transition hover:bg-white/8"
+                    >
+                      <Mic className="h-4 w-4 text-[#ddd6fe]" />
+                      {isVoiceSampleResetting ? 'Deleting old sample…' : 'Record new sample'}
+                    </button>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            </div>
+          </div>
+          {speechAudio.clone.url ? (
+            <AudioPlayer src={speechAudio.clone.url} downloadName="aawaz-your-voice-speech.opus" />
+          ) : (
+            <button
+              type="button"
+              onClick={() => generateSpeechAudio('clone')}
+              disabled={speechAudio.clone.isLoading || isGenerating || voiceBusy}
+              className={cn(
+                'inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[16px] border border-[#f9a8d4]/25 bg-[linear-gradient(135deg,rgba(249,168,212,0.16),rgba(167,139,250,0.10))] px-4 text-xs font-semibold uppercase tracking-[0.16em] text-[#f2efff] transition hover:border-[#f9a8d4]/45 disabled:pointer-events-none disabled:opacity-60 sm:rounded-[18px]',
+                speechAudio.clone.isLoading && 'skeleton-shimmer',
+              )}
+            >
+              <Mic className={cn('h-4 w-4 shrink-0', speechAudio.clone.isLoading && 'animate-pulse')} />
+              {speechAudio.clone.isLoading ? 'Cloning your voice…' : 'Hear it in your voice'}
+            </button>
+          )}
+        </div>
+
+        {/* Voice sample recorder panel */}
+        <AnimatePresence>
+          {voiceSamplePanelOpen ? (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              className="rounded-[20px] border border-[#a78bfa]/25 bg-[#0b0b12]/65 p-4 sm:rounded-[24px] sm:p-5 lg:col-span-2"
+            >
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <MascotHint mood="sing" title="New voice sample" size={56} className="min-w-0">
+                  Read anything aloud for 15 seconds — naturally, like you&apos;re talking to a friend. I&apos;ll learn your voice from it.
+                </MascotHint>
+                <div className="flex shrink-0 items-center gap-2">
+                  <div className="flex h-11 min-w-16 items-center justify-center rounded-[16px] border border-white/10 bg-white/5 font-mono text-sm tabular-nums text-[#f2efff]">
+                    {voiceSampleSeconds}s
+                  </div>
+                  <Button
+                    type="button"
+                    variant={isVoiceSampleRecording ? 'danger' : 'secondary'}
+                    onClick={isVoiceSampleRecording ? stopVoiceSampleRecording : startVoiceSampleRecording}
+                    disabled={isVoiceSampleSaving}
+                    className="h-11 rounded-[16px] px-4 font-mono text-[10px] uppercase tracking-[0.16em]"
+                  >
+                    {isVoiceSampleRecording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                    {isVoiceSampleSaving ? 'Saving…' : isVoiceSampleRecording ? 'Stop' : 'Record'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={cancelVoiceSampleRecorder}
+                    disabled={isVoiceSampleSaving}
+                    className="h-11 w-11 rounded-[16px]"
+                    aria-label="Close voice sample recorder"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/8">
+                <div
+                  className="h-full rounded-full bg-[linear-gradient(90deg,#a78bfa,#f9a8d4)] transition-all duration-700"
+                  style={{ width: `${Math.min(100, (voiceSampleSeconds / VOICE_SAMPLE_SECONDS) * 100)}%` }}
+                />
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </div>
     );
   };
 
-  const PopupIconButton = ({
-    onClick,
-    icon,
-    label,
-    className = '',
-  }: {
-    onClick: () => void;
-    icon: React.ReactNode;
-    label: string;
-    className?: string;
-  }) => (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'flex h-9 w-9 items-center justify-center rounded-full border border-[#a78bfa]/30 bg-white/5 text-[#ddd6fe] shadow-[0_0_18px_rgba(167,139,250,0.22)] backdrop-blur-sm transition hover:bg-white/10 hover:text-[#f2efff]',
-        className,
-      )}
-      aria-label={label}
-    >
-      {icon}
-    </button>
+  /* ── Recorder card ─────────────────────────────────────────────── */
+  const recordProgress = Math.min(1, seconds / MAX_RECORDING_SECONDS);
+  const RING_R = 56;
+  const RING_C = 2 * Math.PI * RING_R;
+
+  const renderRecorderCard = () => (
+    <Shell>
+      <div className="grid gap-6 lg:grid-cols-[1fr,auto] lg:items-center">
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className={cn(
+              'inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-colors',
+              isRecording
+                ? 'border-[#f87171]/30 bg-[#dc2626]/10 text-[#fca5a5]'
+                : isAnalyzing
+                  ? 'border-[#a78bfa]/30 bg-[#a78bfa]/10 text-[#ddd6fe]'
+                  : 'border-white/10 bg-white/6 text-[#cfc8e8]',
+            )}>
+              <span className={cn(
+                'block h-2 w-2 rounded-full',
+                isRecording ? 'animate-pulse bg-[#f87171]' : isAnalyzing ? 'animate-pulse bg-[#a78bfa]' : 'bg-[#4ade80]',
+              )} />
+              {isAnalyzing ? 'Analyzing' : isRecording ? 'Recording' : 'Ready'}
+            </div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/6 px-4 py-2 font-mono text-sm tabular-nums text-[#f2efff]">
+              {formatClock(seconds)}
+              <span className="text-[#857ca2]">/ {formatClock(MAX_RECORDING_SECONDS)}</span>
+            </div>
+          </div>
+
+          {micPermission === 'denied' && !isRecording ? (
+            <div className="rounded-[18px] border border-[#facc15]/25 bg-[#facc15]/8 px-4 py-3 text-sm leading-6 text-[#fde68a]">
+              Your microphone is blocked. Allow mic access in the browser&apos;s site settings, then try again.
+            </div>
+          ) : null}
+
+          <AnimatePresence mode="wait">
+            {isRecording ? (
+              <motion.div
+                key="waveform"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="h-16 rounded-[20px] border border-white/10 bg-white/6 px-3 py-2 sm:h-20 sm:rounded-[24px]">
+                  <LiveWaveform stream={recordingStream} />
+                </div>
+              </motion.div>
+            ) : !isAnalyzing && !feedback ? (
+              <motion.div key="hint" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <MascotHint mood="idle" size={58}>
+                  Pick a rubric above, tap the mic, and give it everything. I&apos;ll be brutally honest — that&apos;s the job.
+                </MascotHint>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
+
+        <div className="flex flex-col items-center gap-3">
+          <div className="relative">
+            {isRecording ? (
+              <>
+                <span className="pulse-ring absolute inset-0 rounded-full border-2 border-[#f87171]/50" />
+                <span className="pulse-ring absolute inset-0 rounded-full border-2 border-[#f87171]/30" style={{ animationDelay: '0.6s' }} />
+              </>
+            ) : null}
+            <svg viewBox="0 0 124 124" className="pointer-events-none absolute -inset-2 h-[calc(100%+16px)] w-[calc(100%+16px)]">
+              <circle cx="62" cy="62" r={RING_R} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="3" />
+              {isRecording || seconds > 0 ? (
+                <circle
+                  cx="62"
+                  cy="62"
+                  r={RING_R}
+                  fill="none"
+                  stroke={isRecording ? '#f87171' : '#a78bfa'}
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeDasharray={RING_C}
+                  strokeDashoffset={RING_C * (1 - recordProgress)}
+                  transform="rotate(-90 62 62)"
+                  className="transition-[stroke-dashoffset] duration-1000 ease-linear"
+                />
+              ) : null}
+            </svg>
+            <motion.button
+              whileTap={{ scale: 0.94 }}
+              animate={isRecording ? { scale: [1, 1.04, 1] } : { scale: 1 }}
+              transition={{ duration: 1.8, repeat: isRecording ? Infinity : 0 }}
+              onClick={isRecording ? stopRecording : startRecording}
+              disabled={isAnalyzing}
+              className={cn(
+                'relative flex h-28 w-28 items-center justify-center rounded-full border text-[#f2efff] shadow-[0_24px_60px_rgba(2,6,23,0.45)] transition disabled:opacity-60 sm:h-32 sm:w-32',
+                isRecording
+                  ? 'border-[#f87171]/30 bg-[linear-gradient(135deg,#dc2626,#f87171)]'
+                  : 'border-white/10 bg-[linear-gradient(135deg,#a78bfa,#f9a8d4)] text-[#06060b] hover:shadow-[0_24px_70px_rgba(167,139,250,0.45)]',
+              )}
+              aria-label={isRecording ? 'Stop recording' : 'Start recording'}
+            >
+              {isAnalyzing ? <Sparkles className="h-10 w-10 animate-spin" /> : isRecording ? <Square className="h-9 w-9" /> : <Mic className="h-10 w-10" />}
+            </motion.button>
+          </div>
+          <div className="text-center font-mono text-[10px] uppercase tracking-[0.24em] text-[#857ca2] sm:text-[11px]">
+            {isAnalyzing ? 'Hold tight' : isRecording ? 'Tap to stop' : 'Tap to speak'}
+          </div>
+        </div>
+      </div>
+    </Shell>
   );
 
-  const PopupPanel = ({
-    title,
-    children,
-    onClose,
-    align = 'right',
-  }: {
-    title: string;
-    children: React.ReactNode;
-    onClose: () => void;
-    align?: 'left' | 'right';
-  }) => (
-    <motion.div
-      initial={{ opacity: 0, y: 8, scale: 0.96 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 6, scale: 0.97 }}
-      className={cn(
-        'absolute top-12 z-30 max-h-[60vh] w-[290px] overflow-y-auto rounded-[22px] border border-white/10 bg-[#0b0b12]/95 p-4 shadow-[0_18px_50px_rgba(2,6,23,0.6)] backdrop-blur-sm sm:w-[320px]',
-        align === 'right' ? 'right-0' : 'left-0',
-      )}
-    >
-      <button
-        type="button"
-        onClick={onClose}
-        className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full border border-[#f87171]/30 bg-[#dc2626]/15 text-[#f87171] hover:bg-[#dc2626]/25"
-        aria-label={`Close ${title}`}
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
-      <p className="pr-8 font-mono text-[10px] uppercase tracking-[0.28em] text-[#ddd6fe]">{title}</p>
-      <div className="mt-3 text-sm leading-6 text-[#f2efff]">{children}</div>
-    </motion.div>
+  /* ── Render ────────────────────────────────────────────────────── */
+  const tabMeta = TAB_META[activeTab];
+
+  const helpContent = (
+    <div className="space-y-2">
+      <p>Use <span className="text-[#ddd6fe]">Speaking Coach</span> to record and get feedback.</p>
+      <p>Use <span className="text-[#ddd6fe]">Speech Practice</span> to generate a sample speech.</p>
+      <p>Use <span className="text-[#ddd6fe]">Speech History</span> to review saved sessions.</p>
+      <p>Use <span className="text-[#ddd6fe]">Progress</span> to track your improvement over time.</p>
+      <p>Use <span className="text-[#ddd6fe]">Account</span> to save your work across devices.</p>
+    </div>
+  );
+
+  const creatorContent = (
+    <p>ello boyz and gurls speak your heart out but nabirsa hai AI can make mistakes and very big ones so kei problems aaye ma contact me directly hai! - aawaz</p>
   );
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(167,139,250,0.16),transparent_22%),radial-gradient(circle_at_top_right,rgba(249,168,212,0.16),transparent_28%),linear-gradient(180deg,#06060b_0%,#0b0b12_45%,#11111a_100%)] text-[#f2efff]">
+    <div className="min-h-screen overflow-x-hidden text-[#f2efff]">
       <Toaster position="top-right" richColors theme="dark" />
       <div className="mx-auto flex min-h-screen max-w-[1440px]">
-        {sidebarOpen ? <button aria-label="Close menu overlay" className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm md:hidden" onClick={() => setSidebarOpen(false)} /> : null}
-        <aside className={cn('fixed inset-y-0 left-0 z-40 w-[84vw] max-w-72 border-r border-white/10 bg-[#0b0b12]/90 p-4 backdrop-blur-sm transition md:static md:w-72 md:max-w-none md:translate-x-0 md:p-5 lg:w-80', sidebarOpen ? 'translate-x-0' : '-translate-x-full')}>
-          <div className="rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,rgba(167,139,250,0.16),rgba(249,168,212,0.14))] p-5">
-            <div className="font-serif text-4xl tracking-[-0.04em]">Aawaz</div>
-            <div className="font-mono text-[10px] uppercase tracking-[0.3em] text-[#ddd6fe]">Speaker Coach</div>
+        {/* ── Desktop sidebar ─────────────────────────────── */}
+        <aside className="sticky top-0 hidden h-screen w-72 shrink-0 flex-col border-r border-white/8 p-5 md:flex lg:w-80">
+          <div className="flex items-center gap-3 rounded-[24px] border border-white/10 bg-[linear-gradient(135deg,rgba(167,139,250,0.14),rgba(249,168,212,0.12))] p-4">
+            <CoachMascot mood="idle" size={52} float={false} className="shrink-0" />
+            <div className="min-w-0">
+              <div className="font-serif text-3xl leading-none tracking-[-0.04em]">Aawaz</div>
+              <div className="mt-1 font-mono text-[9px] uppercase tracking-[0.28em] text-[#ddd6fe]">Speaker Coach</div>
+            </div>
           </div>
-          <div className="mt-6 grid gap-2">
-            {navItems.map(({ id, label, icon: Icon }) => (
-              <button key={id} onClick={() => { setActiveTab(id as Tab); setSidebarOpen(false); }} className={cn('flex items-center gap-3 rounded-[20px] px-4 py-4 text-left transition sm:rounded-[24px]', activeTab === id ? 'bg-[linear-gradient(135deg,rgba(167,139,250,0.18),rgba(249,168,212,0.12))]' : 'hover:bg-white/6')}>
-                <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10 text-[#ddd6fe]"><Icon className="h-4 w-4" /></span>
-                <span className="text-sm sm:text-base">{label}</span>
-              </button>
-            ))}
+
+          <nav className="mt-6 grid gap-1.5">
+            {navItems.map(({ id, label, icon: Icon }) => {
+              const active = activeTab === id;
+              return (
+                <button
+                  key={id}
+                  onClick={() => setActiveTab(id)}
+                  className={cn(
+                    'relative flex items-center gap-3 rounded-[18px] px-4 py-3.5 text-left transition',
+                    active ? 'text-white' : 'text-[#a79dc8] hover:bg-white/5 hover:text-[#f2efff]',
+                  )}
+                >
+                  {active ? (
+                    <motion.span
+                      layoutId="nav-active"
+                      className="absolute inset-0 rounded-[18px] border border-[#a78bfa]/25 bg-[linear-gradient(135deg,rgba(167,139,250,0.16),rgba(249,168,212,0.10))]"
+                      transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                    />
+                  ) : null}
+                  <span className={cn(
+                    'relative flex h-9 w-9 items-center justify-center rounded-xl transition',
+                    active ? 'bg-white/12 text-[#ddd6fe]' : 'bg-white/6 text-[#857ca2]',
+                  )}>
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <span className="relative text-sm font-medium">{label}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className="mt-auto rounded-[18px] border border-white/8 bg-white/4 px-4 py-3">
+            {accountUser ? (
+              <div className="flex items-center gap-2.5">
+                <span className="block h-2 w-2 shrink-0 rounded-full bg-[#4ade80]" />
+                <span className="truncate text-xs text-[#cfc8e8]">{accountUser.name || accountUser.email}</span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#857ca2]">Guest mode</span>
+                <span className="font-mono text-[10px] text-[#ddd6fe]">{Math.min(guestUses, 3)}/3 uses</span>
+              </div>
+            )}
           </div>
         </aside>
 
-        <main className="min-w-0 flex-1 px-3 pb-14 pt-16 sm:px-4 md:px-6 md:pt-8 lg:px-8">
-          <div className="mb-5 flex items-center gap-3 sm:gap-4 md:hidden">
-            <Button variant="secondary" size="icon" onClick={() => setSidebarOpen(true)}><Menu className="h-5 w-5" /></Button>
+        {/* ── Main column ─────────────────────────────────── */}
+        <main className="min-w-0 flex-1 px-3 pb-28 pt-5 sm:px-4 md:px-6 md:pb-14 md:pt-8 lg:px-8">
+          {/* Mobile brand bar */}
+          <div className="mb-4 flex items-center justify-between gap-3 md:hidden">
             <div className="flex min-w-0 items-center gap-2">
-              <div className="relative shrink-0">
-                <PopupIconButton onClick={() => { setCreatorOpen((current) => !current); setHelpOpen(false); }} icon={<MessageCircleMore className="h-4 w-4" />} label="Open creator message" />
+              <CoachMascot mood="idle" size={38} float={false} className="shrink-0" />
+              <span className="truncate font-serif text-2xl tracking-[-0.04em]">Aawaz</span>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <div className="relative">
+                <PopupIconButton onClick={() => { setCreatorOpen((c) => !c); setHelpOpen(false); }} icon={<MessageCircleMore className="h-4 w-4" />} label="Open creator message" />
                 <AnimatePresence>
-                  {creatorOpen ? (
-                    <PopupPanel title="Message From The Creator" onClose={() => setCreatorOpen(false)} align="left">
-                      <p>ello boyz and gurls speak your heart out but nabirsa hai AI can make mistakes and very big ones so kei problems aaye ma contact me directly hai! - aawaz</p>
-                    </PopupPanel>
-                  ) : null}
+                  {creatorOpen ? <PopupPanel title="Message From The Creator" onClose={() => setCreatorOpen(false)}>{creatorContent}</PopupPanel> : null}
                 </AnimatePresence>
               </div>
-              <span className="min-w-0 truncate font-serif text-[1.7rem] tracking-[-0.04em] sm:text-3xl">Aawaz Speaker Coach</span>
-              <div className="relative shrink-0">
-                <PopupIconButton onClick={() => { setHelpOpen((current) => !current); setCreatorOpen(false); }} icon={<span className="text-sm font-bold">?</span>} label="Open app help" className="h-8 w-8" />
+              <div className="relative">
+                <PopupIconButton onClick={() => { setHelpOpen((c) => !c); setCreatorOpen(false); }} icon={<span className="text-sm font-bold">?</span>} label="Open app help" />
                 <AnimatePresence>
-                  {helpOpen ? (
-                    <PopupPanel title="Quick Help" onClose={() => setHelpOpen(false)} align="right">
-                      <div className="space-y-2">
-                        <p>Use <span className="text-[#ddd6fe]">Speaking Coach</span> to record and get feedback.</p>
-                        <p>Use <span className="text-[#ddd6fe]">Speech Practice</span> to generate a sample speech.</p>
-                        <p>Use <span className="text-[#ddd6fe]">Speech History</span> to review saved sessions.</p>
-                        <p>Use <span className="text-[#ddd6fe]">Progress</span> to track your improvement over time.</p>
-                        <p>Use <span className="text-[#ddd6fe]">Account</span> to save your work across devices.</p>
-                      </div>
-                    </PopupPanel>
-                  ) : null}
+                  {helpOpen ? <PopupPanel title="Quick Help" onClose={() => setHelpOpen(false)}>{helpContent}</PopupPanel> : null}
                 </AnimatePresence>
               </div>
             </div>
           </div>
 
           <AnimatePresence mode="wait">
-            <motion.div key={activeTab} initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} className="grid gap-5">
-              <div className="relative z-20">
-              <Shell>
-                <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-[#857ca2]">{activeTab}</p>
-                <div className="mt-3 flex items-start justify-between gap-3 sm:gap-4">
-                  <div className="flex min-w-0 flex-1 items-start gap-3">
-                    <div className="relative hidden shrink-0 md:block">
-                      <PopupIconButton onClick={() => { setCreatorOpen((current) => !current); setHelpOpen(false); }} icon={<MessageCircleMore className="h-4 w-4" />} label="Open creator message" />
-                      <AnimatePresence>
-                        {creatorOpen ? (
-                          <PopupPanel title="Message From The Creator" onClose={() => setCreatorOpen(false)} align="left">
-                            <p>ello boyz and gurls speak your heart out but nabirsa hai AI can make mistakes and very big ones so kei problems aaye ma contact me directly hai! - aawaz</p>
-                          </PopupPanel>
-                        ) : null}
-                      </AnimatePresence>
-                    </div>
-                    <h1 className="font-serif text-[clamp(2.1rem,6vw,5rem)] leading-[0.95] tracking-[-0.04em] sm:text-[clamp(2.4rem,6vw,5rem)]">
-                      {activeTab === 'coach' && 'Speaking Coach'}
-                      {activeTab === 'speech' && 'Speech Practice'}
-                      {activeTab === 'history' && 'Speech History'}
-                      {activeTab === 'progress' && 'Progress'}
-                      {activeTab === 'account' && 'Account'}
-                    </h1>
-                    <div className="relative hidden shrink-0 md:block">
-                      <PopupIconButton onClick={() => { setHelpOpen((current) => !current); setCreatorOpen(false); }} icon={<span className="text-sm font-bold">?</span>} label="Open app help" className="mt-1" />
-                      <AnimatePresence>
-                        {helpOpen ? (
-                          <PopupPanel title="Quick Help" onClose={() => setHelpOpen(false)} align="left">
-                            <div className="space-y-2">
-                              <p>Use <span className="text-[#ddd6fe]">Speaking Coach</span> to record and get feedback.</p>
-                              <p>Use <span className="text-[#ddd6fe]">Speech Practice</span> to generate a sample speech.</p>
-                              <p>Use <span className="text-[#ddd6fe]">Speech History</span> to review saved sessions.</p>
-                              <p>Use <span className="text-[#ddd6fe]">Progress</span> to track your improvement over time.</p>
-                              <p>Use <span className="text-[#ddd6fe]">Account</span> to save your work across devices.</p>
-                            </div>
-                          </PopupPanel>
-                        ) : null}
-                      </AnimatePresence>
-                    </div>
-                  </div>
-                  
-                  <div className="flex shrink-0 items-start">
-                    {activeTab === 'coach' && (
-                      <button
-                        type="button"
-                        onClick={resetSpeechRecording}
-                        className="mt-1 flex shrink-0 flex-col items-center gap-1 transition hover:opacity-80"
-                        aria-label="New speech"
-                      >
-                        <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[#a78bfa]/30 bg-[linear-gradient(135deg,rgba(167,139,250,0.18),rgba(249,168,212,0.12))] text-[#a78bfa] shadow-[0_0_16px_rgba(167,139,250,0.18)] sm:h-10 sm:w-10">
-                          <Plus className="h-4 w-4 sm:h-5 sm:w-5" />
-                        </span>
-                        <span className="font-mono text-[8px] uppercase tracking-[0.2em] text-[#857ca2] sm:text-[9px]">New speech</span>
-                      </button>
-                    )}
-                  </div>
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+              className="grid gap-4 sm:gap-5"
+            >
+              {/* ── Header ──────────────────────────────── */}
+              <div className="relative z-20 flex items-end justify-between gap-4 px-1 pt-1">
+                <div className="min-w-0">
+                  <Eyebrow>{activeTab}</Eyebrow>
+                  <h1 className="mt-1.5 font-serif text-[clamp(2rem,4.5vw,3.2rem)] leading-[1] tracking-[-0.035em] text-white">{tabMeta.title}</h1>
+                  <p className="mt-1.5 text-sm text-[#857ca2]">{tabMeta.subtitle}</p>
                 </div>
-                {activeTab === 'coach' && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
-                    className="mt-5 rounded-[20px] border border-white/10 bg-[#0b0b12]/40 p-4 sm:rounded-[24px] sm:p-5"
-                  >
-                    <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2] mb-3">How to use</div>
-                    <ul className="space-y-2.5">
-                      {[
-                        'Choose an evaluation template or use the general rubric',
-                        'Tap the microphone to record your speech',
-                        'Get instant AI-powered feedback with a detailed score',
-                      ].map((tip, i) => (
-                        <motion.li
-                          key={i}
-                          initial={{ opacity: 0, x: -8 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: 0.15 + i * 0.08 }}
-                          className="flex items-start gap-2.5 text-sm leading-relaxed text-[#f2efff]"
-                        >
-                          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a78bfa,#f9a8d4)] font-mono text-[10px] font-bold text-[#06060b]">{i + 1}</span>
-                          {tip}
-                        </motion.li>
-                      ))}
-                    </ul>
-                  </motion.div>
-                )}
-                {activeTab === 'speech' && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
-                    className="mt-5 rounded-[20px] border border-white/10 bg-[#0b0b12]/40 p-4 sm:rounded-[24px] sm:p-5"
-                  >
-                    <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2] mb-3">How to use</div>
-                    <ul className="space-y-2.5">
-                      {[
-                        'Enter any topic and set your desired word count',
-                        'Hit Generate to get an AI-crafted practice speech',
-                        'Read it aloud, then switch to Speaking Coach to record',
-                      ].map((tip, i) => (
-                        <motion.li
-                          key={i}
-                          initial={{ opacity: 0, x: -8 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: 0.15 + i * 0.08 }}
-                          className="flex items-start gap-2.5 text-sm leading-relaxed text-[#f2efff]"
-                        >
-                          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a78bfa,#f9a8d4)] font-mono text-[10px] font-bold text-[#06060b]">{i + 1}</span>
-                          {tip}
-                        </motion.li>
-                      ))}
-                    </ul>
-                  </motion.div>
-                )}
-                {activeTab === 'history' && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
-                    className="mt-5 rounded-[20px] border border-white/10 bg-[#0b0b12]/40 p-4 sm:rounded-[24px] sm:p-5"
-                  >
-                    <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2] mb-3">How to use</div>
-                    <ul className="space-y-2.5">
-                      {[
-                        'Browse your saved sessions and tap to expand details',
-                        'Review transcripts and full coach feedback for each session',
-                        'Delete sessions you no longer need',
-                      ].map((tip, i) => (
-                        <motion.li
-                          key={i}
-                          initial={{ opacity: 0, x: -8 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: 0.15 + i * 0.08 }}
-                          className="flex items-start gap-2.5 text-sm leading-relaxed text-[#f2efff]"
-                        >
-                          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a78bfa,#f9a8d4)] font-mono text-[10px] font-bold text-[#06060b]">{i + 1}</span>
-                          {tip}
-                        </motion.li>
-                      ))}
-                    </ul>
-                  </motion.div>
-                )}
-                {activeTab === 'progress' && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
-                    className="mt-5 rounded-[20px] border border-white/10 bg-[#0b0b12]/40 p-4 sm:rounded-[24px] sm:p-5"
-                  >
-                    <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-[#857ca2] mb-3">How to use</div>
-                    <ul className="space-y-2.5">
-                      {[
-                        'Track your score trend over time in the chart below',
-                        'Generate AI insights to understand your strengths',
-                        'Identify recurring weaknesses and target them in practice',
-                      ].map((tip, i) => (
-                        <motion.li
-                          key={i}
-                          initial={{ opacity: 0, x: -8 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: 0.15 + i * 0.08 }}
-                          className="flex items-start gap-2.5 text-sm leading-relaxed text-[#f2efff]"
-                        >
-                          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a78bfa,#f9a8d4)] font-mono text-[10px] font-bold text-[#06060b]">{i + 1}</span>
-                          {tip}
-                        </motion.li>
-                      ))}
-                    </ul>
-                  </motion.div>
-                )}
-              </Shell>
+                <div className="flex shrink-0 items-center gap-2 pb-1">
+                  <div className="relative hidden md:block">
+                    <PopupIconButton onClick={() => { setCreatorOpen((c) => !c); setHelpOpen(false); }} icon={<MessageCircleMore className="h-4 w-4" />} label="Open creator message" />
+                    <AnimatePresence>
+                      {creatorOpen ? <PopupPanel title="Message From The Creator" onClose={() => setCreatorOpen(false)}>{creatorContent}</PopupPanel> : null}
+                    </AnimatePresence>
+                  </div>
+                  <div className="relative hidden md:block">
+                    <PopupIconButton onClick={() => { setHelpOpen((c) => !c); setCreatorOpen(false); }} icon={<span className="text-sm font-bold">?</span>} label="Open app help" />
+                    <AnimatePresence>
+                      {helpOpen ? <PopupPanel title="Quick Help" onClose={() => setHelpOpen(false)}>{helpContent}</PopupPanel> : null}
+                    </AnimatePresence>
+                  </div>
+                  {activeTab === 'coach' && (transcript || feedback || isRecording || isAnalyzing) ? (
+                    <button
+                      type="button"
+                      onClick={resetSpeechRecording}
+                      className="flex items-center gap-2 rounded-full border border-[#a78bfa]/30 bg-[linear-gradient(135deg,rgba(167,139,250,0.18),rgba(249,168,212,0.12))] px-4 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[#ddd6fe] shadow-[0_0_16px_rgba(167,139,250,0.18)] transition hover:bg-white/10"
+                      aria-label="New speech"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      New speech
+                    </button>
+                  ) : null}
+                </div>
               </div>
 
+              {/* ── Coach tab ───────────────────────────── */}
               {activeTab === 'coach' && (
                 <>
-                  <TemplatePicker value={selectedTemplateId} onChange={setSelectedTemplateId} />
-                  <Shell>
-                    <div className="grid gap-6 lg:grid-cols-[1fr,auto] lg:items-center">
-                      <div className="space-y-4">
-                        <div className="rounded-[20px] border border-white/10 bg-[#0b0b12]/55 p-4 sm:rounded-[24px] sm:p-5">
-                          <div className="flex flex-wrap gap-3">
-                            <div className="rounded-3xl border border-white/10 bg-white/6 px-4 py-3 text-sm">Status: {isAnalyzing ? 'Analyzing' : isRecording ? 'Recording' : 'Ready'}</div>
-                            <div className="rounded-3xl border border-white/10 bg-white/6 px-4 py-3 text-sm">Timer: {seconds}s</div>
+                  <TemplatePicker value={selectedTemplateId} onChange={setSelectedTemplateId} disabled={isRecording || isAnalyzing} />
+                  {renderRecorderCard()}
+
+                  <AnimatePresence>
+                    {isAnalyzing ? (
+                      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
+                        <Shell tone="accent">
+                          <div className="flex items-center gap-4">
+                            <CoachMascot mood="think" size={72} className="shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <AnimatePresence mode="wait">
+                                <motion.p
+                                  key={analyzeStage}
+                                  initial={{ opacity: 0, y: 6 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  exit={{ opacity: 0, y: -6 }}
+                                  className="font-serif text-lg tracking-tight text-white sm:text-xl"
+                                >
+                                  {ANALYZE_STAGES[analyzeStage]}
+                                </motion.p>
+                              </AnimatePresence>
+                              <SkeletonLines lines={3} className="mt-4" />
+                            </div>
                           </div>
-                        </div>
-                        {isRecording && (
-                          <div className="flex h-14 items-center gap-1 overflow-hidden rounded-[20px] border border-white/10 bg-white/6 px-3 sm:h-16 sm:rounded-[24px] sm:px-4">
-                            {Array.from({ length: 30 }).map((_, index) => (
-                              <motion.div key={index} animate={{ scaleY: [0.35, 1, 0.4] }} transition={{ duration: 0.7, repeat: Infinity, delay: index * 0.03 }} className={cn('w-1 rounded-full', index % 3 === 0 ? 'bg-[#f9a8d4]' : 'bg-[#a78bfa]')} style={{ height: 42 }} />
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex flex-col items-center gap-4">
-                        <motion.button whileTap={{ scale: 0.96 }} animate={isRecording ? { scale: [1, 1.05, 1] } : { scale: 1 }} transition={{ duration: 1.8, repeat: isRecording ? Infinity : 0 }} onClick={isRecording ? stopRecording : startRecording} disabled={isAnalyzing} className={cn('flex h-28 w-28 items-center justify-center rounded-full border text-[#f2efff] shadow-[0_24px_60px_rgba(2,6,23,0.45)] sm:h-32 sm:w-32 lg:h-36 lg:w-36', isRecording ? 'border-[#f87171]/30 bg-[linear-gradient(135deg,#dc2626,#f87171)]' : 'border-white/10 bg-[linear-gradient(135deg,#a78bfa,#f9a8d4)] text-[#06060b]')}>
-                          {isAnalyzing ? <Sparkles className="h-10 w-10 animate-spin" /> : isRecording ? <MicOff className="h-10 w-10" /> : <Mic className="h-10 w-10" />}
-                        </motion.button>
-                        <div className="text-center font-mono text-[10px] uppercase tracking-[0.24em] text-[#857ca2] sm:text-[11px] sm:tracking-[0.3em]">{isAnalyzing ? 'Analyzing' : isRecording ? 'Tap to stop' : 'Tap to speak'}</div>
-                      </div>
-                    </div>
-                  </Shell>
-                  {transcript && <Shell><p className="mb-3 font-serif text-lg font-medium tracking-tight text-white sm:text-xl">Transcript</p><p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-[#f2efff]">{transcript}</p><ActionBar text={transcript} label="Transcript" /></Shell>}
-                  {feedback && <div ref={feedbackRef}><FeedbackDisplay feedback={feedback} copyText={copyText} speakText={speakText} /></div>}
+                        </Shell>
+                      </motion.div>
+                    ) : null}
+                  </AnimatePresence>
+
+                  {transcript && (
+                    <CollapsibleSection title="Transcript" defaultOpen={!feedback}>
+                      <p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 text-[#f2efff] sm:leading-8">{transcript}</p>
+                      <ActionBar text={transcript} label="Transcript" copyText={copyText} speakText={speakText} />
+                    </CollapsibleSection>
+                  )}
+                  {feedback && <div ref={feedbackRef}><FeedbackReport feedback={feedback} copyText={copyText} speakText={speakText} /></div>}
                 </>
               )}
 
+              {/* ── Speech tab ──────────────────────────── */}
               {activeTab === 'speech' && (
                 <>
                   <Shell>
                     <Label.Root htmlFor="speech-topic" className="mb-2 block text-sm text-[#ddd6fe]">Speech topic</Label.Root>
                     <div className="grid gap-4 lg:grid-cols-[1fr,auto,auto]">
-                      <input id="speech-topic" value={topic} onChange={(event) => setTopic(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && generateSpeech()} placeholder="e.g. Leadership, climate change, discipline" className="h-14 min-w-0 rounded-[18px] border border-white/12 bg-[#0b0b12]/60 px-4 text-sm text-[#f2efff] outline-none placeholder:text-[#857ca2] sm:rounded-[22px] sm:px-5" />
+                      <input
+                        id="speech-topic"
+                        value={topic}
+                        onChange={(event) => setTopic(event.target.value)}
+                        onKeyDown={(event) => event.key === 'Enter' && generateSpeech()}
+                        placeholder="e.g. Leadership, climate change, discipline"
+                        className="h-14 min-w-0 rounded-[18px] border border-white/12 bg-[#0b0b12]/60 px-4 text-sm text-[#f2efff] outline-none transition placeholder:text-[#857ca2] focus:border-[#a78bfa]/50 sm:rounded-[22px] sm:px-5"
+                      />
                       <div className="flex h-14 items-center justify-between gap-3 rounded-[18px] border border-white/12 bg-[#0b0b12]/60 px-3 text-[#f2efff] sm:rounded-[22px] lg:w-[260px]">
                         <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#ddd6fe]">Words</span>
                         <div className="flex items-center gap-2">
@@ -2064,107 +1823,289 @@ export default function Home() {
                           <button type="button" onClick={() => setWordCount((current) => Math.min(500, current + 25))} className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/6 text-[#ddd6fe] transition hover:bg-white/10" aria-label="Increase word count">+</button>
                         </div>
                       </div>
-                      <Button onClick={generateSpeech} disabled={isGenerating || !topic.trim()} className="h-14 w-full rounded-[18px] px-6 font-mono text-xs uppercase tracking-[0.22em] sm:rounded-[22px] md:w-auto md:tracking-[0.28em]">
+                      <Button onClick={generateSpeech} disabled={isGenerating || !topic.trim()} className="h-14 w-full rounded-[18px] px-6 font-mono text-xs uppercase tracking-[0.22em] sm:rounded-[22px] md:w-auto">
                         <Sparkles className={cn('h-4 w-4', isGenerating && 'animate-spin')} />
-                        {isGenerating ? 'Writing...' : 'Generate'}
+                        {isGenerating ? 'Writing…' : 'Generate'}
                       </Button>
                     </div>
                     {error ? <p className="mt-3 font-mono text-xs text-[#f87171]">{error}</p> : null}
                   </Shell>
+
+                  {!speech && !isGenerating ? (
+                    <Shell>
+                      <MascotHint mood="coach" size={60}>
+                        Give me a topic and I&apos;ll draft a speech worth practicing. Then hear it in a pro voice — or in yours.
+                      </MascotHint>
+                    </Shell>
+                  ) : null}
+
                   {(speech || isGenerating) && (
                     <Shell>
                       <div className="mb-4 flex items-center justify-between">
-                        <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-[#857ca2]">Sample Speech</p>
-                        {!isGenerating && <Button variant="ghost" size="icon" onClick={generateSpeech}><RefreshCw className="h-4 w-4" /></Button>}
+                        <Eyebrow>Sample Speech</Eyebrow>
+                        {!isGenerating && <Button variant="ghost" size="icon" onClick={generateSpeech} title="Regenerate speech"><RefreshCw className="h-4 w-4" /></Button>}
                       </div>
-                      {isGenerating ? <div className="flex gap-2">{[0, 1, 2].map((i) => <motion.div key={i} animate={{ y: [0, -6, 0], opacity: [0.4, 1, 0.4] }} transition={{ duration: 0.7, repeat: Infinity, delay: i * 0.14 }} className="h-2 w-2 rounded-full bg-[#a78bfa]" />)}</div> : <><SpeechAudioActions /><p className="whitespace-pre-wrap break-words text-[15px] leading-7 sm:leading-8 text-[#f2efff]">{speech}</p><ActionBar text={speech} label="Speech" onRegenerate={generateSpeech} /></>}
+                      {isGenerating ? (
+                        <div className="flex items-start gap-4">
+                          <CoachMascot mood="think" size={62} className="shrink-0" />
+                          <div className="min-w-0 flex-1 pt-2">
+                            <p className="mb-4 font-serif text-lg tracking-tight text-white">Drafting something worth saying…</p>
+                            <SkeletonLines lines={5} />
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          {renderSpeechAudioActions()}
+                          <p className="whitespace-pre-wrap break-words text-[15px] leading-7 text-[#f2efff] sm:leading-8">{speech}</p>
+                          <ActionBar text={speech} label="Speech" onRegenerate={generateSpeech} copyText={copyText} speakText={speakText} />
+                        </>
+                      )}
                     </Shell>
                   )}
                 </>
               )}
 
+              {/* ── History tab ─────────────────────────── */}
               {activeTab === 'history' && (
                 <>
                   <Shell>
-                    <div className="grid gap-3">
-                      {history.length ? history.map((item, index) => (
-                        <motion.button key={item.id} whileHover={{ y: -2 }} onClick={() => setSelectedSessionId(selectedSessionId === item.id ? null : item.id)} className={cn('w-full rounded-[20px] border p-4 text-left sm:rounded-[24px] sm:p-5', selectedSessionId === item.id ? 'border-[#a78bfa]/40 bg-[linear-gradient(135deg,rgba(167,139,250,0.14),rgba(249,168,212,0.10))]' : 'border-white/10 bg-white/4')}>
-                          <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
-                            <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#ddd6fe] sm:text-[11px] sm:tracking-[0.28em]">Session {history.length - index} | {formatHistoryDate(item.created_at)}</div>
-                            <Button variant="danger" size="icon" className="h-8 w-8" onClick={(event) => { event.stopPropagation(); deleteSession(item.id); }}><Trash2 className="h-4 w-4" /></Button>
+                    {historyLoading ? (
+                      <div className="grid gap-3">
+                        {[0, 1, 2].map((i) => (
+                          <div key={i} className="rounded-[20px] border border-white/8 p-4 sm:p-5">
+                            <SkeletonLines lines={2} />
                           </div>
-                          <div className="break-words text-sm sm:text-base">{item.template_label ?? 'General Evaluation'}</div>
-                          <div className="mt-1 break-words font-mono text-xs text-[#857ca2]">{item.overall_score ?? 'No'} / 100 {item.words_per_min ? `| ${item.words_per_min} wpm` : ''}</div>
-                        </motion.button>
-                      )) : <div className="rounded-[24px] border border-dashed border-white/20 bg-white/4 px-5 py-6 font-mono text-sm text-[#857ca2]">Saved speeches will appear here after the first evaluation.</div>}
-                    </div>
+                        ))}
+                      </div>
+                    ) : history.length ? (
+                      <div className="grid gap-3">
+                        {history.map((item, index) => {
+                          const isSelected = selectedSessionId === item.id;
+                          const isDeleting = deletingSessionIds.has(item.id);
+                          return (
+                            <motion.div
+                              key={item.id}
+                              layout="position"
+                              initial={{ opacity: 0, y: 8 }}
+                              animate={{ opacity: isDeleting ? 0.4 : 1, y: 0 }}
+                              transition={{ delay: index * 0.04 }}
+                              className={cn(
+                                'rounded-[20px] border transition-colors sm:rounded-[24px]',
+                                isSelected
+                                  ? 'border-[#a78bfa]/40 bg-[linear-gradient(135deg,rgba(167,139,250,0.12),rgba(249,168,212,0.08))]'
+                                  : 'border-white/10 bg-white/4 hover:border-white/20',
+                              )}
+                            >
+                              <div className="p-4 sm:p-5">
+                                <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                                  <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#ddd6fe] sm:text-[11px]">
+                                    Session {history.length - index} · {formatHistoryDate(item.created_at)}
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <ScoreBadge score={item.overall_score} />
+                                    <Button
+                                      variant="danger"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      disabled={isDeleting}
+                                      aria-label="Delete session"
+                                      onClick={() => {
+                                        setConfirmRequest({
+                                          title: 'Delete this session?',
+                                          body: 'The transcript and coach report for this speech will be gone for good.',
+                                          confirmLabel: 'Delete',
+                                          danger: true,
+                                          action: () => deleteSession(item.id),
+                                        });
+                                      }}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedSessionId(isSelected ? null : item.id)}
+                                  disabled={isDeleting}
+                                  className="flex w-full flex-wrap items-center justify-between gap-2 text-left"
+                                  aria-expanded={isSelected}
+                                >
+                                  <div className="break-words text-sm sm:text-base">{item.template_label ?? 'General Evaluation'}</div>
+                                  <div className="flex items-center gap-2 font-mono text-xs text-[#857ca2]">
+                                    {item.words_per_min ? <span>{item.words_per_min} wpm</span> : null}
+                                    <ChevronDown className={cn('h-4 w-4 transition-transform duration-300', isSelected && 'rotate-180')} />
+                                  </div>
+                                </button>
+                              </div>
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-3 py-8 text-center">
+                        <CoachMascot mood="idle" size={76} />
+                        <p className="font-serif text-xl tracking-tight text-white">No speeches yet</p>
+                        <p className="max-w-xs text-sm leading-6 text-[#857ca2]">Your stage is waiting. Record your first speech in the Speaking Coach and it will show up here.</p>
+                        <Button onClick={() => setActiveTab('coach')} className="mt-2 h-11 rounded-[16px] px-5 font-mono text-xs uppercase tracking-[0.18em]">
+                          <Mic className="h-4 w-4" />
+                          Record a speech
+                        </Button>
+                      </div>
+                    )}
                   </Shell>
                   {selectedSession && (
-                    <>
-                      <Shell><p className="mb-3 font-serif text-lg font-medium tracking-tight text-white sm:text-xl">Transcript</p><p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 sm:leading-8 text-[#f2efff]">{selectedSession.transcript}</p><ActionBar text={selectedSession.transcript} label="Transcript" /></Shell>
-                      <FeedbackDisplay feedback={selectedSession.feedback} copyText={copyText} speakText={speakText} />
-                    </>
+                    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="grid gap-4 sm:gap-5">
+                      <CollapsibleSection title="Transcript" defaultOpen={false}>
+                        <p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 text-[#f2efff] sm:leading-8">{selectedSession.transcript}</p>
+                        <ActionBar text={selectedSession.transcript} label="Transcript" copyText={copyText} speakText={speakText} />
+                      </CollapsibleSection>
+                      <FeedbackReport feedback={selectedSession.feedback} copyText={copyText} speakText={speakText} />
+                    </motion.div>
                   )}
                 </>
               )}
 
+              {/* ── Progress tab ────────────────────────── */}
               {activeTab === 'progress' && (
                 <>
                   <Shell>
-                    <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.3em] text-[#857ca2]">Score Trend</p>
+                    <Eyebrow className="mb-4">Score Trend</Eyebrow>
                     <ProgressChart history={history} />
                   </Shell>
                   <Shell>
                     <div className="flex flex-wrap items-center justify-between gap-3">
-                      <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-[#857ca2]">AI Insights</p>
-                      <Button onClick={fetchInsights} disabled={isLoadingInsights || history.length === 0} className="h-11 rounded-[18px] px-5 font-mono text-xs uppercase tracking-[0.22em] sm:rounded-[22px]">
+                      <Eyebrow>AI Insights</Eyebrow>
+                      <Button onClick={fetchInsights} disabled={isLoadingInsights || history.length === 0} className="h-11 rounded-[18px] px-5 font-mono text-xs uppercase tracking-[0.18em] sm:rounded-[22px]">
                         <BarChart3 className={cn('h-4 w-4', isLoadingInsights && 'animate-spin')} />
-                        {isLoadingInsights ? 'Analyzing...' : 'View Insights'}
+                        {isLoadingInsights ? 'Analyzing…' : 'View Insights'}
                       </Button>
                     </div>
                     {isLoadingInsights && (
-                      <div className="mt-5 flex gap-2">
-                        {[0, 1, 2].map((i) => <motion.div key={i} animate={{ y: [0, -6, 0], opacity: [0.4, 1, 0.4] }} transition={{ duration: 0.7, repeat: Infinity, delay: i * 0.14 }} className="h-2 w-2 rounded-full bg-[#a78bfa]" />)}
+                      <div className="mt-5 flex items-center gap-4">
+                        <CoachMascot mood="think" size={54} className="shrink-0" />
+                        <SkeletonLines lines={3} className="flex-1" />
                       </div>
                     )}
                     {insights.length > 0 && !isLoadingInsights && (
                       <div className="mt-5 space-y-3">
                         {insights.map((insight, i) => (
-                          <div key={i} className="rounded-[20px] border border-white/10 bg-[#0b0b12]/55 p-4 sm:rounded-[24px] sm:p-5">
+                          <motion.div
+                            key={i}
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: i * 0.07 }}
+                            className="rounded-[20px] border border-white/10 bg-[#0b0b12]/55 p-4 sm:rounded-[24px] sm:p-5"
+                          >
                             <p className="break-words text-sm leading-6 text-[#f2efff]">{insight}</p>
                             <div className="mt-3 flex gap-2 border-t border-white/10 pt-3">
                               <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => copyText(insight, 'Insight')} title="Copy insight"><Copy className="h-3.5 w-3.5" /></Button>
                               <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => speakText(insight, 'Insight')} title="Read insight"><Volume2 className="h-3.5 w-3.5" /></Button>
                             </div>
-                          </div>
+                          </motion.div>
                         ))}
                       </div>
                     )}
                   </Shell>
                   {weaknesses.length > 0 && !isLoadingInsights && (
-                    <Shell>
-                      <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.3em] text-[#857ca2]">Weaknesses</p>
+                    <Shell tone="danger">
+                      <Eyebrow className="mb-4">Weaknesses</Eyebrow>
                       <div className="space-y-3">
                         {weaknesses.map((weakness, i) => (
-                          <div key={i} className="rounded-[20px] border border-[#f87171]/15 bg-[#dc2626]/5 p-4 sm:rounded-[24px] sm:p-5">
+                          <motion.div
+                            key={i}
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: i * 0.07 }}
+                            className="rounded-[20px] border border-[#f87171]/15 bg-[#dc2626]/5 p-4 sm:rounded-[24px] sm:p-5"
+                          >
                             <p className="break-words text-sm leading-6 text-[#f2efff]">{weakness}</p>
                             <div className="mt-3 flex gap-2 border-t border-white/10 pt-3">
                               <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => copyText(weakness, 'Weakness')} title="Copy weakness"><Copy className="h-3.5 w-3.5" /></Button>
                               <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => speakText(weakness, 'Weakness')} title="Read weakness"><Volume2 className="h-3.5 w-3.5" /></Button>
                             </div>
-                          </div>
+                          </motion.div>
                         ))}
                       </div>
                     </Shell>
                   )}
                 </>
               )}
-              {activeTab === 'account' && <AccountPanel />}
+
+              {/* ── Account tab ─────────────────────────── */}
+              {activeTab === 'account' && renderAccountPanel()}
             </motion.div>
           </AnimatePresence>
         </main>
       </div>
-      <AuthPromptModal />
+
+      {/* ── Mobile bottom nav ───────────────────────────── */}
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-[#09090f]/90 backdrop-blur-xl md:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="mx-auto flex max-w-md items-stretch justify-around px-1 py-1.5">
+          {navItems.map(({ id, label, icon: Icon }) => {
+            const active = activeTab === id;
+            const shortLabel = id === 'coach' ? 'Coach' : id === 'speech' ? 'Practice' : id === 'history' ? 'History' : id === 'progress' ? 'Progress' : 'Account';
+            return (
+              <button
+                key={id}
+                onClick={() => setActiveTab(id)}
+                className="relative flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-1 py-2"
+                aria-label={label}
+                aria-current={active ? 'page' : undefined}
+              >
+                {active ? (
+                  <motion.span layoutId="mobile-nav-active" className="absolute inset-x-1 inset-y-0.5 rounded-2xl bg-white/7" transition={{ type: 'spring', stiffness: 380, damping: 32 }} />
+                ) : null}
+                <Icon className={cn('relative h-5 w-5 transition-colors', active ? 'text-[#ddd6fe]' : 'text-[#6f6691]')} />
+                <span className={cn('relative font-mono text-[8.5px] uppercase tracking-[0.1em] transition-colors', active ? 'text-[#ddd6fe]' : 'text-[#6f6691]')}>{shortLabel}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
+      {/* ── Auth prompt modal ───────────────────────────── */}
+      <AnimatePresence>
+        {authPromptOpen && !accountUser ? (
+          <>
+            <motion.button
+              type="button"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
+              onClick={() => setAuthPromptOpen(false)}
+              aria-label="Close account prompt"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              className="fixed left-1/2 top-1/2 z-50 max-h-[88vh] w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[24px] border border-white/10 bg-[#0d0c16]/95 p-5 shadow-[0_30px_80px_rgba(2,6,23,0.7)] backdrop-blur-xl sm:rounded-[28px] sm:p-6"
+            >
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <CoachMascot mood="cheer" size={56} float={false} className="shrink-0" />
+                  <div>
+                    <p className="font-serif text-2xl text-white">Keep your progress</p>
+                    <p className="mt-1 text-sm leading-6 text-[#857ca2]">Your speeches, scores, and voice sample — saved and waiting for you.</p>
+                  </div>
+                </div>
+                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setAuthPromptOpen(false)} aria-label="Close">
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              {authControls}
+            </motion.div>
+          </>
+        ) : null}
+      </AnimatePresence>
+
+      <ConfirmDialog
+        request={confirmRequest}
+        busy={confirmBusy}
+        onCancel={() => setConfirmRequest(null)}
+        onConfirm={runConfirm}
+      />
     </div>
   );
 }

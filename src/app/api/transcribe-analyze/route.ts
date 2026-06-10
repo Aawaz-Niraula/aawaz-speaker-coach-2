@@ -3,9 +3,10 @@ import { randomUUID } from 'crypto';
 import { after, NextRequest } from 'next/server';
 
 import { getProviderErrorMessage, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
-import { GuestLimitError, guestLimitResponse, resolveAppUser } from '@/lib/app-user';
+import { GuestLimitError, IdentityError, guestLimitResponse, resolveAppUser } from '@/lib/app-user';
 import { getSpeechVoiceSample, insertSpeechSession, listRecentSpeechSessions, upsertSpeechVoiceSample } from '@/lib/db';
 import { fetchWithRetryLimited } from '@/lib/fetch';
+import { requireSameOrigin } from '@/lib/identity';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
 import { GENERAL_RUBRIC, getSpeechTemplate } from '@/lib/speech-config';
 
@@ -74,6 +75,9 @@ Prioritize ruthless technical honesty about structure, pace, wording, control, a
 }
 
 export async function POST(req: NextRequest) {
+  const originError = requireSameOrigin(req);
+  if (originError) return originError;
+
   let formData: FormData;
 
   try {
@@ -87,7 +91,6 @@ export async function POST(req: NextRequest) {
 
   const file = formData.get('file') as File | null;
   const voiceSample = formData.get('voiceSample') as File | null;
-  const providedUserId = String(formData.get('userId') || '').trim().slice(0, 128);
   const selectedTemplateId = String(formData.get('templateId') || '').trim().slice(0, 80) || null;
 
   if (!file || file.size < 3000) {
@@ -120,20 +123,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (!providedUserId) {
-    return Response.json(
-      {
-        transcript: '',
-        feedback: 'User identity is missing. Refresh the page and try again.',
-        history: [],
-      },
-      { status: 400 },
-    );
-  }
-
   let resolvedUser: Awaited<ReturnType<typeof resolveAppUser>>;
   try {
-    resolvedUser = await resolveAppUser(req, providedUserId, true);
+    resolvedUser = await resolveAppUser(req, true);
   } catch (error) {
     if (error instanceof GuestLimitError) {
       return guestLimitResponse();
@@ -142,10 +134,10 @@ export async function POST(req: NextRequest) {
     return Response.json(
       {
         transcript: '',
-        feedback: error instanceof Error ? error.message : 'User identity is missing. Refresh the page and try again.',
+        feedback: error instanceof Error ? error.message : 'Your session could not be verified. Refresh the page and try again.',
         history: [],
       },
-      { status: 400 },
+      { status: error instanceof IdentityError ? 401 : 400 },
     );
   }
 
