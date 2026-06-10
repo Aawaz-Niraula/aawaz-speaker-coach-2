@@ -2,6 +2,7 @@ export type SpeechTemplateId =
   | 'formal-organiser'
   | 'formal-chiefguest'
   | 'debate'
+  | 'monroe-motivated-sequence'
   | 'general-public-speaking';
 
 export type SpeechTemplate = {
@@ -75,6 +76,21 @@ export const SPEECH_TEMPLATES: SpeechTemplate[] = [
 - Delivery must sound assertive, controlled, and strategically paced rather than dramatic without logic.
 - The conclusion must restate the stance forcefully and close the case.
 - Penalize weak logic, unsupported assertions, fuzzy wording, and poor argumentative structure heavily.`,
+  },
+  {
+    id: 'monroe-motivated-sequence',
+    label: "Monroe's Motivated Sequence",
+    src: '/templates/monroe-motivated-sequence.jpeg',
+    rubricTitle: "Persuasive speech using Monroe's Motivated Sequence",
+    rubric: `Evaluate this as a persuasive speech built strictly on Monroe's Motivated Sequence.
+- Judge it against the five Monroe steps in order, not as generic public speaking.
+- Attention: the opening must seize the audience fast with a hook, striking fact, story, or question. Penalize slow, generic, or self-referential openings.
+- Need: the speaker must establish a real, urgent problem with evidence and make the audience feel it applies to them. Penalize vague or unsupported problem statements.
+- Satisfaction: a clear, concrete solution must be proposed and explained well enough to feel credible. Penalize hand-wavy or underdeveloped solutions.
+- Visualization: the speaker must paint a vivid picture of the future with the solution, without it, or both. Penalize speeches that skip straight from solution to closing.
+- Action: the ending must give the audience a specific, immediate, doable call to action. Penalize weak endings like "so think about it" or generic appeals.
+- Penalize missing steps, out-of-order steps, or steps that blur together with no clear transition.
+- Delivery must build persuasive momentum across the sequence rather than staying flat.`,
   },
   {
     id: 'general-public-speaking',

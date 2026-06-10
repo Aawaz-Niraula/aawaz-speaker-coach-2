@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   AudioLines,
@@ -16,11 +16,13 @@ import {
   X,
 } from 'lucide-react';
 
+import { ConfettiBurst } from '@/components/confetti';
 import { CoachMascot } from '@/components/mascot';
 import { ScoreRing } from '@/components/score-ring';
 import { Button } from '@/components/ui/button';
 import { Eyebrow, SectionTitle, Shell } from '@/components/ui/shell';
 import { parseFeedback } from '@/lib/feedback';
+import { sfx } from '@/lib/sound';
 import { cn } from '@/lib/utils';
 
 type TextAction = (value: string, label: string) => void;
@@ -188,10 +190,13 @@ export function FeedbackReport({
   feedback,
   copyText,
   speakText,
+  celebrate = false,
 }: {
   feedback: string;
   copyText: TextAction;
   speakText: TextAction;
+  /** True for a freshly delivered report: plays a chime and bursts confetti on high scores. */
+  celebrate?: boolean;
 }) {
   const parsed = useMemo(() => parseFeedback(feedback), [feedback]);
   const hasSections = parsed.analysisItems.length > 0 || parsed.brutalFeedback || parsed.fixes.length > 0;
@@ -199,6 +204,15 @@ export function FeedbackReport({
   const openELP = () => setElpOpen(true);
 
   const mascotMood = parsed.score === null ? 'coach' : parsed.score >= 70 ? 'cheer' : parsed.score >= 45 ? 'coach' : 'oops';
+
+  const highScore = parsed.score !== null && parsed.score >= 70;
+  const celebrated = useRef(false);
+  useEffect(() => {
+    if (!celebrate || celebrated.current) return;
+    celebrated.current = true;
+    if (highScore) sfx.fanfare();
+    else sfx.success();
+  }, [celebrate, highScore]);
 
   if (!hasSections) {
     return (
@@ -219,7 +233,8 @@ export function FeedbackReport({
 
       {/* ── Score + mascot header ─────────────────────────── */}
       {parsed.score !== null && (
-        <Shell tone="accent">
+        <Shell tone="accent" className="relative">
+          {celebrate && highScore ? <ConfettiBurst /> : null}
           <div className="flex flex-col items-center gap-5 sm:flex-row sm:justify-center sm:gap-10">
             <ScoreRing value={parsed.score} />
             <div className="flex flex-col items-center gap-2 text-center sm:items-start sm:text-left">
