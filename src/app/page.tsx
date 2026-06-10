@@ -29,6 +29,7 @@ import { AawaxCustomizer } from '@/components/aawax-customizer';
 import { AudioPlayer } from '@/components/audio-player';
 import { FeedbackReport, CollapsibleSection } from '@/components/feedback-report';
 import { CoachMascot, MascotHint } from '@/components/mascot';
+import { AvatarCustomizer, ProfileAvatar } from '@/components/profile-avatar';
 import { ProgressChart } from '@/components/progress-chart';
 import { LiveWaveform, SkeletonLines, ThinkingDots } from '@/components/recorder-visuals';
 import { TemplatePicker } from '@/components/template-picker';
@@ -78,11 +79,11 @@ const navItems: NavItem[] = [
 ];
 
 const TAB_META: Record<Tab, { title: string; subtitle: string }> = {
-  coach: { title: 'Speaking Coach', subtitle: 'Record. Get grilled. Get better.' },
-  speech: { title: 'Speech Practice', subtitle: 'Generate a script, hear it, then own it.' },
-  history: { title: 'Speech History', subtitle: 'Every rep, remembered.' },
-  progress: { title: 'Progress', subtitle: 'Proof that the work is working.' },
-  account: { title: 'Account', subtitle: 'Your voice, saved across devices.' },
+  coach: { title: 'Speaking Coach', subtitle: 'Record a speech and get honest feedback on it.' },
+  speech: { title: 'Speech Practice', subtitle: 'Generate a practice speech and hear it read out loud.' },
+  history: { title: 'Speech History', subtitle: 'All of your past speeches and reports in one place.' },
+  progress: { title: 'Progress', subtitle: 'See how your scores have been improving over time.' },
+  account: { title: 'Account', subtitle: 'Sign in to keep your progress safe across devices.' },
 };
 
 const MAX_RECORDING_SECONDS = 300;
@@ -215,6 +216,7 @@ export default function Home() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [avatarCustomizeOpen, setAvatarCustomizeOpen] = useState(false);
 
   const switchTab = (tab: Tab) => {
     if (tab !== activeTab) sfx.tick();
@@ -1229,17 +1231,36 @@ export default function Home() {
         ) : accountUser ? (
           <div className="grid gap-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-              {accountUser.image ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={accountUser.image} alt={displayName} className="h-20 w-20 rounded-full border-2 border-white/10 object-cover shadow-[0_16px_40px_rgba(2,6,23,0.35)]" />
-              ) : (
-                <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-white/10 bg-[linear-gradient(135deg,rgba(167,139,250,0.25),rgba(249,168,212,0.18))] font-serif text-3xl text-white shadow-[0_16px_40px_rgba(2,6,23,0.35)]">
-                  {displayName.charAt(0).toUpperCase()}
-                </div>
-              )}
+              <motion.button
+                type="button"
+                onClick={() => {
+                  sfx.pop();
+                  setAvatarCustomizeOpen(true);
+                }}
+                whileTap={{ scale: 0.94 }}
+                className="group relative h-20 w-20 shrink-0 cursor-pointer rounded-full shadow-[0_16px_40px_rgba(2,6,23,0.35)] outline-none transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:ring-[#a78bfa]/60"
+                aria-label="Customise your avatar"
+                title="Customise your avatar"
+              >
+                <ProfileAvatar size={80} />
+                <span className="absolute -bottom-0.5 -right-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-white/15 bg-[#0d0c16] text-[#ddd6fe] shadow-[0_4px_12px_rgba(0,0,0,0.5)] transition group-hover:bg-[#1a1626]">
+                  <Palette className="h-3.5 w-3.5" />
+                </span>
+              </motion.button>
               <div className="min-w-0">
                 <p className="break-words font-serif text-2xl tracking-tight text-white sm:text-3xl">{greeting}</p>
                 <p className="mt-1 break-all text-sm text-[#ddd6fe]">{accountUser.email}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    sfx.pop();
+                    setAvatarCustomizeOpen(true);
+                  }}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-[#a78bfa]/30 bg-[#a78bfa]/10 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[#ddd6fe] transition hover:border-[#a78bfa]/55 hover:bg-[#a78bfa]/20 hover:text-white"
+                >
+                  <Palette className="h-3 w-3" />
+                  Customise avatar
+                </button>
               </div>
             </div>
 
@@ -2137,6 +2158,7 @@ export default function Home() {
       </AnimatePresence>
 
       <AawaxCustomizer open={customizeOpen} onClose={() => setCustomizeOpen(false)} />
+      <AvatarCustomizer open={avatarCustomizeOpen} onClose={() => setAvatarCustomizeOpen(false)} />
 
       <ConfirmDialog
         request={confirmRequest}

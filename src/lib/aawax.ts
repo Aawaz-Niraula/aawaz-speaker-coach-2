@@ -3,7 +3,7 @@
  * Designs and color palettes the user can pick from, persisted locally.
  */
 
-export type AawaxDesignId = 'classic' | 'puff' | 'boxy' | 'kitty';
+export type AawaxDesignId = 'classic' | 'snake' | 'boxy' | 'kitty';
 export type AawaxColorId = 'aurora' | 'ocean' | 'sunset' | 'meadow' | 'gold';
 
 export type AawaxStyle = {
@@ -23,7 +23,7 @@ export type AawaxPalette = {
 
 export const AAWAX_DESIGNS: { id: AawaxDesignId; label: string; blurb: string }[] = [
   { id: 'classic', label: 'Classic', blurb: 'The original stage presence' },
-  { id: 'puff', label: 'Puff', blurb: 'Extra round, extra huggable' },
+  { id: 'snake', label: 'Snake', blurb: 'A sssmooth talker' },
   { id: 'boxy', label: 'Boxy', blurb: 'Sharp suit energy' },
   { id: 'kitty', label: 'Kitty', blurb: 'Ears. Whiskers. Authority.' },
 ];
@@ -52,7 +52,9 @@ export function loadAawaxStyle(): AawaxStyle {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_AAWAX_STYLE;
-    const parsed = JSON.parse(raw) as Partial<AawaxStyle>;
+    const parsed = JSON.parse(raw) as { design?: string; color?: string; sound?: boolean };
+    // The old "puff" design became the snake.
+    if (parsed.design === 'puff') parsed.design = 'snake';
     return {
       design: AAWAX_DESIGNS.some((d) => d.id === parsed.design) ? (parsed.design as AawaxDesignId) : DEFAULT_AAWAX_STYLE.design,
       color: parsed.color && parsed.color in AAWAX_COLORS ? (parsed.color as AawaxColorId) : DEFAULT_AAWAX_STYLE.color,
