@@ -1,13 +1,16 @@
 'use client';
 
+import { useState } from 'react';
 import * as Label from '@radix-ui/react-label';
 import * as Select from '@radix-ui/react-select';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, ChevronDown, ScrollText, X } from 'lucide-react';
+import { Check, ChevronDown, ImageIcon, ScrollText, X } from 'lucide-react';
 
+import { CoachMascot } from '@/components/mascot';
 import { Button } from '@/components/ui/button';
 import { Eyebrow, Shell } from '@/components/ui/shell';
-import { SPEECH_TEMPLATES, type SpeechTemplateId } from '@/lib/speech-config';
+import { sfx } from '@/lib/sound';
+import { SPEECH_TEMPLATES, type SpeechTemplate, type SpeechTemplateId } from '@/lib/speech-config';
 
 /** Extracts the first few rule bullets from a rubric for a quick preview. */
 function rubricHighlights(rubric: string, count = 4) {
@@ -16,6 +19,72 @@ function rubricHighlights(rubric: string, count = 4) {
     .map((line) => line.replace(/^[-•]\s*/, '').trim())
     .filter((line, index) => index > 0 && line.length > 0)
     .slice(0, count);
+}
+
+/** Full-screen popup showing the hand-designed Canva format image for a rubric. */
+function FormatViewer({ template, onClose }: { template: SpeechTemplate; onClose: () => void }) {
+  const [failed, setFailed] = useState(false);
+
+  return (
+    <>
+      <motion.button
+        type="button"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-md"
+        onClick={onClose}
+        aria-label="Close format preview"
+      />
+      <motion.div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${template.label} format`}
+        initial={{ opacity: 0, scale: 0.94, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 10 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+        className="fixed left-1/2 top-1/2 z-[61] flex max-h-[90vh] w-[94vw] max-w-3xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[24px] border border-white/12 bg-[#0d0c16]/97 shadow-[0_30px_90px_rgba(2,6,23,0.85)] backdrop-blur-xl sm:rounded-[28px]"
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-white/8 px-4 py-3 sm:px-5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#a78bfa]/15 text-[#a78bfa]">
+              <ImageIcon className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate font-serif text-base tracking-tight text-white sm:text-lg">{template.label}</p>
+              <p className="truncate font-mono text-[9px] uppercase tracking-[0.18em] text-[#857ca2]">Speech format · designed for Aawaz</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[#857ca2] transition hover:bg-white/10 hover:text-white"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="overflow-y-auto p-3 sm:p-4">
+          {failed ? (
+            <div className="flex flex-col items-center gap-3 rounded-[18px] border border-dashed border-white/15 bg-white/4 px-6 py-12 text-center">
+              <CoachMascot mood="oops" size={72} />
+              <p className="text-sm text-[#cfc8e8]">This format image isn&apos;t available yet.</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#857ca2]">Expected at {template.src}</p>
+            </div>
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={template.src}
+              alt={`${template.label} speech format`}
+              className="w-full rounded-[16px] border border-white/8"
+              onError={() => setFailed(true)}
+            />
+          )}
+        </div>
+      </motion.div>
+    </>
+  );
 }
 
 export function TemplatePicker({
@@ -28,6 +97,7 @@ export function TemplatePicker({
   disabled?: boolean;
 }) {
   const selected = SPEECH_TEMPLATES.find((item) => item.id === value) ?? null;
+  const [formatOpen, setFormatOpen] = useState(false);
 
   return (
     <div className="grid gap-4">
@@ -64,6 +134,7 @@ export function TemplatePicker({
       <AnimatePresence>
         {selected ? (
           <motion.div
+            key={selected.id}
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
@@ -95,9 +166,25 @@ export function TemplatePicker({
                 </motion.li>
               ))}
             </ul>
-            <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.16em] text-[#857ca2]">The coach judges strictly against this rubric — no mercy mode.</p>
+            <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2.5">
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#857ca2]">The coach judges strictly against this rubric — no mercy mode.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  sfx.pop();
+                  setFormatOpen(true);
+                }}
+                className="group inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#a78bfa]/30 bg-[#a78bfa]/10 px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#ddd6fe] transition hover:border-[#a78bfa]/55 hover:bg-[#a78bfa]/20 hover:text-white"
+              >
+                <ImageIcon className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
+                View format
+              </button>
+            </div>
           </motion.div>
         ) : null}
+      </AnimatePresence>
+      <AnimatePresence>
+        {formatOpen && selected ? <FormatViewer template={selected} onClose={() => setFormatOpen(false)} /> : null}
       </AnimatePresence>
     </div>
   );

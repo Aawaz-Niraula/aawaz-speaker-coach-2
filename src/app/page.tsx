@@ -10,6 +10,7 @@ import {
   LogOut,
   MessageCircleMore,
   Mic,
+  Palette,
   Plus,
   RefreshCw,
   Sparkles,
@@ -24,6 +25,7 @@ import {
 } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 
+import { AawaxCustomizer } from '@/components/aawax-customizer';
 import { AudioPlayer } from '@/components/audio-player';
 import { FeedbackReport, CollapsibleSection } from '@/components/feedback-report';
 import { CoachMascot, MascotHint } from '@/components/mascot';
@@ -36,6 +38,7 @@ import { Eyebrow, Shell } from '@/components/ui/shell';
 import { authClient } from '@/lib/auth-client';
 import { formatClock, formatHistoryDate, scoreColor } from '@/lib/feedback';
 import { requestJson } from '@/lib/request';
+import { sfx } from '@/lib/sound';
 import { type SpeechTemplateId } from '@/lib/speech-config';
 import { cn } from '@/lib/utils';
 
@@ -211,6 +214,17 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('coach');
   const [helpOpen, setHelpOpen] = useState(false);
   const [creatorOpen, setCreatorOpen] = useState(false);
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+
+  const switchTab = (tab: Tab) => {
+    if (tab !== activeTab) sfx.tick();
+    setActiveTab(tab);
+  };
+
+  const openCustomizer = () => {
+    sfx.pop();
+    setCustomizeOpen(true);
+  };
   const [history, setHistory] = useState<SpeechHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -587,9 +601,11 @@ export default function Home() {
           return next;
         });
       }, 1000);
+      sfx.recordStart();
       toast.message('Recording. The room is yours.');
     } catch {
       setMicPermission('denied');
+      sfx.oops();
       toast.error('Microphone access is required.');
     }
   };
@@ -602,6 +618,7 @@ export default function Home() {
     timerRef.current = null;
     setIsRecording(false);
     setIsAnalyzing(true);
+    sfx.recordStop();
   };
 
   const resetSpeechRecording = () => {
@@ -773,6 +790,7 @@ export default function Home() {
       }, 300000);
       setSpeech(data.speech || '');
       trackGuestUse(data.guestRemaining);
+      sfx.success();
       toast.success('Script ready. Make it yours.');
     } catch (err) {
       if (handleSpecialError(err)) {
@@ -846,6 +864,7 @@ export default function Home() {
         };
       });
       trackGuestUse(null);
+      sfx.pop();
       toast.success(mode === 'clone' ? "That's you, polished." : 'Example speech ready.');
     } catch (err) {
       if (handleSpecialError(err)) {
@@ -949,6 +968,7 @@ export default function Home() {
 
       setVoiceSamplePanelOpen(false);
       setVoiceSampleSeconds(0);
+      sfx.success();
       toast.success('New voice sample locked in.');
     } catch (err) {
       if (handleSpecialError(err)) return;
@@ -1089,6 +1109,7 @@ export default function Home() {
       setInsights(data.insights || []);
       setWeaknesses(data.weaknesses || []);
       trackGuestUse(null);
+      sfx.success();
       toast.success('Insights ready.');
     } catch (err) {
       if (!handleSpecialError(err)) {
@@ -1629,7 +1650,7 @@ export default function Home() {
         {/* ── Desktop sidebar ─────────────────────────────── */}
         <aside className="sticky top-0 hidden h-screen w-72 shrink-0 flex-col border-r border-white/8 p-5 md:flex lg:w-80">
           <div className="flex items-center gap-3 rounded-[24px] border border-white/10 bg-[linear-gradient(135deg,rgba(167,139,250,0.14),rgba(249,168,212,0.12))] p-4">
-            <CoachMascot mood="idle" size={52} float={false} className="shrink-0" />
+            <CoachMascot mood="idle" size={52} float={false} interactive className="shrink-0" />
             <div className="min-w-0">
               <div className="font-serif text-3xl leading-none tracking-[-0.04em]">Aawaz</div>
               <div className="mt-1 font-mono text-[9px] uppercase tracking-[0.28em] text-[#ddd6fe]">Speaker Coach</div>
@@ -1642,7 +1663,7 @@ export default function Home() {
               return (
                 <button
                   key={id}
-                  onClick={() => setActiveTab(id)}
+                  onClick={() => switchTab(id)}
                   className={cn(
                     'relative flex items-center gap-3 rounded-[18px] px-4 py-3.5 text-left transition',
                     active ? 'text-white' : 'text-[#a79dc8] hover:bg-white/5 hover:text-[#f2efff]',
@@ -1667,6 +1688,20 @@ export default function Home() {
             })}
           </nav>
 
+          <button
+            type="button"
+            onClick={openCustomizer}
+            className="group mt-2 flex items-center gap-3 rounded-[18px] px-4 py-3.5 text-left text-[#a79dc8] transition hover:bg-white/5 hover:text-[#f2efff]"
+          >
+            <span className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-white/6 text-[#857ca2] transition group-hover:text-[#ddd6fe]">
+              <Palette className="h-4 w-4" />
+              <span className="absolute -right-0.5 -top-0.5 block h-2 w-2 rounded-full bg-[linear-gradient(135deg,#a78bfa,#f9a8d4)]" />
+            </span>
+            <span className="text-sm font-medium">
+              Customise <span className="bg-[linear-gradient(90deg,#a78bfa,#f9a8d4)] bg-clip-text text-transparent">Aawax</span>
+            </span>
+          </button>
+
           <div className="mt-auto rounded-[18px] border border-white/8 bg-white/4 px-4 py-3">
             {accountUser ? (
               <div className="flex items-center gap-2.5">
@@ -1687,10 +1722,11 @@ export default function Home() {
           {/* Mobile brand bar */}
           <div className="mb-4 flex items-center justify-between gap-3 md:hidden">
             <div className="flex min-w-0 items-center gap-2">
-              <CoachMascot mood="idle" size={38} float={false} className="shrink-0" />
+              <CoachMascot mood="idle" size={38} float={false} interactive className="shrink-0" />
               <span className="truncate font-serif text-2xl tracking-[-0.04em]">Aawaz</span>
             </div>
             <div className="flex shrink-0 items-center gap-2">
+              <PopupIconButton onClick={openCustomizer} icon={<Palette className="h-4 w-4" />} label="Customise Aawax" />
               <div className="relative">
                 <PopupIconButton onClick={() => { setCreatorOpen((c) => !c); setHelpOpen(false); }} icon={<MessageCircleMore className="h-4 w-4" />} label="Open creator message" />
                 <AnimatePresence>
@@ -1787,7 +1823,7 @@ export default function Home() {
                       <ActionBar text={transcript} label="Transcript" copyText={copyText} speakText={speakText} />
                     </CollapsibleSection>
                   )}
-                  {feedback && <div ref={feedbackRef}><FeedbackReport feedback={feedback} copyText={copyText} speakText={speakText} /></div>}
+                  {feedback && <div ref={feedbackRef}><FeedbackReport feedback={feedback} copyText={copyText} speakText={speakText} celebrate /></div>}
                 </>
               )}
 
@@ -2047,7 +2083,7 @@ export default function Home() {
             return (
               <button
                 key={id}
-                onClick={() => setActiveTab(id)}
+                onClick={() => switchTab(id)}
                 className="relative flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-1 py-2"
                 aria-label={label}
                 aria-current={active ? 'page' : undefined}
@@ -2099,6 +2135,8 @@ export default function Home() {
           </>
         ) : null}
       </AnimatePresence>
+
+      <AawaxCustomizer open={customizeOpen} onClose={() => setCustomizeOpen(false)} />
 
       <ConfirmDialog
         request={confirmRequest}
