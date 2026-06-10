@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server';
 
 import { getProviderErrorMessage, isAbortTimeout, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
-import { GuestLimitError, guestLimitResponse, resolveAppUser } from '@/lib/app-user';
+import { GuestLimitError, IdentityError, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
 import { fetchWithRetryLimited } from '@/lib/fetch';
+import { requireSameOrigin } from '@/lib/identity';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
 
 const SPEECH_MODELS = [
@@ -23,10 +24,12 @@ function formatSpeechGenerationError(status: number, message?: string) {
 }
 
 export async function POST(req: NextRequest) {
+  const originError = requireSameOrigin(req);
+  if (originError) return originError;
+
   try {
     const body = await req.json().catch(() => null);
     const topic = typeof body?.topic === 'string' ? body.topic.trim().slice(0, 180) : '';
-    const providedUserId = typeof body?.userId === 'string' ? body.userId.trim().slice(0, 128) : '';
     const requestedWordCount = Number(body?.wordCount);
     const targetWordCount = Number.isFinite(requestedWordCount) ? Math.min(500, Math.max(80, Math.round(requestedWordCount))) : 180;
     const lowerWordCount = Math.max(70, targetWordCount - 10);
@@ -42,7 +45,7 @@ export async function POST(req: NextRequest) {
       return Response.json({ speech: '', error: 'Server configuration error: missing API key.' }, { status: 500 });
     }
 
-    const { userId, isGuest, guestRemaining } = await resolveAppUser(req, providedUserId, true);
+    const { userId, isGuest, guestRemaining } = await resolveAppUser(req, true);
     const rateKey = `generate-speech:${getClientKey(req, userId)}`;
     const rateLimit = checkRateLimit(rateKey, 20, 10 * 60 * 1000);
     if (!rateLimit.allowed) {
@@ -135,6 +138,9 @@ Requirements:
   } catch (error) {
     if (error instanceof GuestLimitError) {
       return guestLimitResponse();
+    }
+    if (error instanceof IdentityError) {
+      return identityErrorResponse();
     }
 
     return Response.json(

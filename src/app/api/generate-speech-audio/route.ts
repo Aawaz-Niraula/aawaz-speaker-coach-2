@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server';
 
-import { GuestLimitError, guestLimitResponse, resolveAppUser } from '@/lib/app-user';
+import { GuestLimitError, IdentityError, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
 import { getSpeechVoiceSample, setSpeechVoiceSampleProviderVoiceId } from '@/lib/db';
 import { fetchWithRetry, fetchWithRetryLimited } from '@/lib/fetch';
+import { requireSameOrigin } from '@/lib/identity';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
 
 const DEFAULT_TTS_MODEL = 'XiaomiMiMo/MiMo-V2.5-tts';
@@ -191,11 +192,13 @@ async function createVoice(sample: File, userId: string, token: string) {
 }
 
 export async function POST(req: NextRequest) {
+  const originError = requireSameOrigin(req);
+  if (originError) return originError;
+
   try {
     const form = await req.formData();
     const mode = String(form.get('mode') || 'example') as AudioMode;
     const text = cleanText(form.get('text'));
-    const providedUserId = cleanText(form.get('userId')).slice(0, 128);
     const requestedExampleVoice = String(form.get('exampleVoice') || 'female') as ExampleVoice;
 
     if (mode !== 'example' && mode !== 'clone') {
@@ -215,7 +218,7 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: 'Server configuration error: missing API key.' }, { status: 500 });
     }
 
-    const { userId } = await resolveAppUser(req, providedUserId, true);
+    const { userId } = await resolveAppUser(req, true);
     const rateKey = `generate-speech-audio:${mode}:${getClientKey(req, userId)}`;
     const rateLimit = checkRateLimit(rateKey, 8, 10 * 60 * 1000);
     if (!rateLimit.allowed) {
@@ -236,10 +239,6 @@ export async function POST(req: NextRequest) {
     let result: Awaited<ReturnType<typeof readAudioResponse>> | null = null;
 
     if (mode === 'clone') {
-      if (!userId) {
-        return Response.json({ error: 'User identity is missing. Refresh the page and try again.' }, { status: 400 });
-      }
-
       const storedSample = await getSpeechVoiceSample(userId);
       if (!storedSample || storedSample.size_bytes < 3000 || storedSample.audio_data.byteLength < 3000) {
         return Response.json({ error: 'First do a speech analysis and try again.' }, { status: 400 });
@@ -294,6 +293,9 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     if (error instanceof GuestLimitError) {
       return guestLimitResponse();
+    }
+    if (error instanceof IdentityError) {
+      return identityErrorResponse();
     }
 
     return Response.json(

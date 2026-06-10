@@ -1,7 +1,9 @@
 import { auth } from '@/lib/auth';
 import { consumeGuestUsage, ensureAuthSchema } from '@/lib/db';
+import { readVerifiedGuestId } from '@/lib/identity';
 
 const GUEST_LIMIT_MESSAGE = 'Create a free account to keep using Aawaz Speaker Coach.';
+const IDENTITY_MESSAGE = 'Your session could not be verified. Refresh the page and try again.';
 
 export class GuestLimitError extends Error {
   status = 403;
@@ -12,11 +14,28 @@ export class GuestLimitError extends Error {
   }
 }
 
-function cleanGuestId(value: string) {
-  return value.trim().slice(0, 128);
+export class IdentityError extends Error {
+  status = 401;
+
+  constructor() {
+    super(IDENTITY_MESSAGE);
+  }
 }
 
-export async function resolveAppUser(req: Request, providedUserId: string, consumeGuestUse = false) {
+export type ResolvedAppUser = {
+  userId: string;
+  isGuest: boolean;
+  guestRemaining: number | null;
+};
+
+/**
+ * Resolves the caller's identity from server-side state only:
+ * - a Better Auth session cookie for signed-in users, or
+ * - the signed, httpOnly guest cookie for guests.
+ *
+ * Client-provided user ids are never trusted.
+ */
+export async function resolveAppUser(req: Request, consumeGuestUse = false): Promise<ResolvedAppUser> {
   await ensureAuthSchema();
   const session = await auth.api.getSession({ headers: req.headers }).catch((err) => {
     console.error('getSession failed:', err);
@@ -28,20 +47,20 @@ export async function resolveAppUser(req: Request, providedUserId: string, consu
     return {
       userId: authUserId,
       isGuest: false,
-      guestRemaining: null as number | null,
+      guestRemaining: null,
     };
   }
 
-  const guestId = cleanGuestId(providedUserId);
+  const guestId = readVerifiedGuestId(req);
   if (!guestId) {
-    throw new Error('User identity is missing. Refresh the page and try again.');
+    throw new IdentityError();
   }
 
   if (!consumeGuestUse) {
     return {
       userId: guestId,
       isGuest: true,
-      guestRemaining: null as number | null,
+      guestRemaining: null,
     };
   }
 
@@ -61,5 +80,12 @@ export function guestLimitResponse() {
   return Response.json(
     { error: GUEST_LIMIT_MESSAGE, authRequired: true },
     { status: 403 },
+  );
+}
+
+export function identityErrorResponse() {
+  return Response.json(
+    { error: IDENTITY_MESSAGE, identityRequired: true },
+    { status: 401 },
   );
 }

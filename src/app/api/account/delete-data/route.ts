@@ -1,8 +1,13 @@
 import { NextRequest } from 'next/server';
+
 import { auth } from '@/lib/auth';
 import { ensureSpeechSchema } from '@/lib/db';
+import { requireSameOrigin } from '@/lib/identity';
 
 export async function DELETE(req: NextRequest) {
+  const originError = requireSameOrigin(req);
+  if (originError) return originError;
+
   const session = await auth.api.getSession({ headers: req.headers });
   if (!session?.user) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
@@ -20,7 +25,7 @@ export async function DELETE(req: NextRequest) {
     return Response.json({ ok: true });
   } catch (error) {
     console.error('Failed to delete user data', error);
-    return Response.json({ error: 'Failed to delete data' }, { status: 500 });
+    return Response.json({ error: 'Some of your data could not be deleted. Please try again.' }, { status: 500 });
   }
 }
 
