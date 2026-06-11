@@ -4,7 +4,7 @@ import { GuestLimitError, IdentityError, guestLimitResponse, identityErrorRespon
 import { getSpeechVoiceSample, setSpeechVoiceSampleProviderVoiceId } from '@/lib/db';
 import { fetchWithRetry, fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
-import { deleteProviderVoice, deleteUserProviderVoices, providerVoiceName } from '@/lib/provider-voice';
+import { deleteProviderVoice, deleteUserProviderVoices, findNewestProviderVoiceIdByName, providerVoiceName } from '@/lib/provider-voice';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
 
 const DEFAULT_TTS_MODEL = 'XiaomiMiMo/MiMo-V2.5-tts';
@@ -170,6 +170,27 @@ async function synthesizeDirect(modelId: string, text: string, token: string, vo
   return readAudioResponse(res);
 }
 
+async function synthesizeCloneWhenReady(voiceId: string, text: string, token: string) {
+  let lastError: unknown;
+  const delays = [0, 2500, 5000, 8000, 12000];
+
+  for (const delay of delays) {
+    if (delay) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+
+    try {
+      return await synthesizeWithVoice(voiceId, text, VOICE_CLONE_MODEL, token);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('The voice service could not prepare your cloned voice.');
+}
+
 function extractVoiceId(data: unknown): string {
   if (!data || typeof data !== 'object') return '';
   const record = data as Record<string, unknown>;
@@ -203,9 +224,9 @@ function appendVoiceFile(form: FormData, sample: File, uploadShape: string) {
   form.append(uploadShape, sample, filename);
 }
 
-async function addVoiceOnce(sample: File, userId: string, token: string, uploadShape: string): Promise<VoiceAddAttempt> {
+async function addVoiceOnce(sample: File, voiceName: string, token: string, uploadShape: string): Promise<VoiceAddAttempt> {
   const voiceForm = new FormData();
-  voiceForm.append('name', providerVoiceName(userId));
+  voiceForm.append('name', voiceName);
   voiceForm.append('description', 'Short voice sample captured after speech analysis for practice speech playback.');
   appendVoiceFile(voiceForm, sample, uploadShape);
 
@@ -216,15 +237,26 @@ async function addVoiceOnce(sample: File, userId: string, token: string, uploadS
   }, 0, 1000, 120000);
 
   const data = await res.json().catch(() => ({}));
-  return { ok: res.ok, status: res.status, voiceId: extractVoiceId(data), message: providerMessage(data), uploadShape };
+  let voiceId = extractVoiceId(data);
+
+  if (!voiceId && res.status >= 500) {
+    // DeepInfra's voice API can create the voice but still return
+    // {"message":"Internal server error"}. Treat the provider voice list as
+    // source of truth before giving up.
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    voiceId = await findNewestProviderVoiceIdByName(voiceName, token);
+  }
+
+  return { ok: res.ok || !!voiceId, status: res.status, voiceId, message: providerMessage(data), uploadShape };
 }
 
 async function addVoiceWithFallbacks(sample: File, userId: string, token: string) {
   const uploadShapes = ['files', 'files-items', 'audio'];
   const attempts: VoiceAddAttempt[] = [];
+  const voiceName = `${providerVoiceName(userId)} ${Date.now().toString(36)}`;
 
   for (const uploadShape of uploadShapes) {
-    const attempt = await addVoiceOnce(sample, userId, token, uploadShape);
+    const attempt = await addVoiceOnce(sample, voiceName, token, uploadShape);
     attempts.push(attempt);
 
     if (attempt.ok && attempt.voiceId) {
@@ -236,6 +268,10 @@ async function addVoiceWithFallbacks(sample: File, userId: string, token: string
 }
 
 async function createVoice(sample: File, userId: string, token: string) {
+  // Clear old same-name voices first. Besides freeing quota, this makes the
+  // post-500 recovery lookup unambiguous when the provider creates a voice but
+  // fails to return its id in the response body.
+  await deleteUserProviderVoices(userId, token);
   let attempt = await addVoiceWithFallbacks(sample, userId, token);
 
   if (!attempt.ok || !attempt.voiceId) {
@@ -343,15 +379,7 @@ export async function POST(req: NextRequest) {
       if (!voiceId) {
         voiceId = await createVoice(sample, userId, DEEPINFRA_API_KEY);
         await setSpeechVoiceSampleProviderVoiceId(userId, voiceId);
-
-        // A just-created voice can need a moment before it is usable;
-        // retry once after a short pause instead of failing outright.
-        try {
-          result = await synthesizeWithVoice(voiceId, text, VOICE_CLONE_MODEL, DEEPINFRA_API_KEY);
-        } catch {
-          await new Promise((resolve) => setTimeout(resolve, 2500));
-          result = await synthesizeWithVoice(voiceId, text, VOICE_CLONE_MODEL, DEEPINFRA_API_KEY);
-        }
+        result = await synthesizeCloneWhenReady(voiceId, text, DEEPINFRA_API_KEY);
       }
     } else {
       const voiceId = EXAMPLE_VOICES[requestedExampleVoice];
