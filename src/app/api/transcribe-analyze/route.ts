@@ -15,6 +15,13 @@ const ANALYSIS_MODELS = [
   'Qwen/Qwen3-14B',
 ] as const;
 
+// Turbo first: ~8x faster than whisper-large-v3 with near-identical accuracy.
+// The full model stays as a fallback if turbo is unavailable.
+const TRANSCRIPTION_MODELS = [
+  'openai/whisper-large-v3-turbo',
+  'openai/whisper-large-v3',
+] as const;
+
 function formatApiError(prefix: string, status: number, message?: string) {
   if (status === 429) {
     return `${prefix} is temporarily unavailable because today's free AI limit has been reached. Please try again later.`;
@@ -181,19 +188,38 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const previousHistory = await listRecentSpeechSessions(userId, 4);
+  // Fetch history while the audio is being transcribed — no reason to wait.
+  const historyPromise = listRecentSpeechSessions(userId, 4);
+
+  let whisperRes: Response | null = null;
+  let whisperData: { text?: string; duration?: number; error?: { message?: string } } = {};
+
+  for (const transcriptionModel of TRANSCRIPTION_MODELS) {
+    const audioForm = new FormData();
+    audioForm.append('file', file, 'speech.webm');
+    audioForm.append('model', transcriptionModel);
+    audioForm.append('response_format', 'verbose_json');
+
+    whisperRes = await fetchWithRetryLimited('transcription', 'https://api.deepinfra.com/v1/openai/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${DEEPINFRA_API_KEY}` },
+      body: audioForm,
+    }, 0, 0, 55000).catch(() => null);
+
+    if (!whisperRes) continue;
+
+    whisperData = await whisperRes.json().catch(() => ({}));
+
+    // Transient failure (overload / 5xx / 429) — try the fallback model.
+    if ((!whisperRes.ok && (whisperRes.status >= 500 || whisperRes.status === 429)) || (whisperData.error && transcriptionModel !== TRANSCRIPTION_MODELS[TRANSCRIPTION_MODELS.length - 1])) {
+      continue;
+    }
+
+    break;
+  }
+
+  const previousHistory = await historyPromise;
   const historyContext = buildHistoryContext(previousHistory);
-
-  const audioForm = new FormData();
-  audioForm.append('file', file, 'speech.webm');
-  audioForm.append('model', 'openai/whisper-large-v3');
-  audioForm.append('response_format', 'verbose_json');
-
-  const whisperRes = await fetchWithRetryLimited('transcription', 'https://api.deepinfra.com/v1/openai/audio/transcriptions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${DEEPINFRA_API_KEY}` },
-    body: audioForm,
-  }, 1, 1000, 75000).catch(() => null);
 
   if (!whisperRes) {
     return Response.json({
@@ -202,8 +228,6 @@ export async function POST(req: NextRequest) {
       history: previousHistory,
     }, { status: 503 });
   }
-
-  const whisperData = await whisperRes.json().catch(() => ({}));
 
   if (!whisperRes.ok || whisperData.error) {
     return Response.json({
@@ -230,6 +254,28 @@ export async function POST(req: NextRequest) {
   const duration = Number(whisperData.duration || 0);
   const wordCount = transcript.split(/\s+/).filter(Boolean).length;
   const wordsPerMin = duration > 0 ? Math.round((wordCount / duration) * 60) : 0;
+
+  // Store the voice sample concurrently with the analysis call instead of after it.
+  const voiceSamplePromise = (async () => {
+    try {
+      const existingVoiceSample = await getSpeechVoiceSample(userId);
+      const hasUsableVoiceSample = !!existingVoiceSample && existingVoiceSample.size_bytes >= 3000;
+      if (hasUsableVoiceSample) return true;
+
+      if (!voiceSample || voiceSample.size < 3000) return false;
+
+      const sampleBytes = await voiceSample.arrayBuffer();
+      return await upsertSpeechVoiceSample({
+        userId,
+        audioData: sampleBytes,
+        mimeType: voiceSample.type || 'audio/webm;codecs=opus',
+        filename: voiceSample.name || 'voice-sample.webm',
+      });
+    } catch (error) {
+      console.error('Failed to prepare speech voice sample:', error);
+      return false;
+    }
+  })();
 
   let analysisData: ChatCompletionData = {};
   let analysisStatus = 503;
@@ -307,7 +353,7 @@ ${transcript}`,
       max_tokens: 900,
       temperature: 0.3,
     }),
-    }, 0, 0, 75000).catch(() => null);
+    }, 0, 0, 60000).catch(() => null);
 
     if (!analysisRes) {
       analysisStatus = 503;
@@ -366,26 +412,7 @@ ${transcript}`,
   };
 
   const updatedHistory = [newSessionHeader, ...previousHistory].slice(0, 6);
-  const existingVoiceSample = await getSpeechVoiceSample(userId);
-  const hasUsableVoiceSample = !!existingVoiceSample && existingVoiceSample.size_bytes >= 3000;
-  const hasNewUsableVoiceSample = !!voiceSample && voiceSample.size >= 3000;
-  let voiceSampleSaved = hasUsableVoiceSample;
-
-  if (!hasUsableVoiceSample && hasNewUsableVoiceSample) {
-    try {
-      const sampleToStore = voiceSample!;
-      const sampleBytes = await sampleToStore.arrayBuffer();
-      voiceSampleSaved = await upsertSpeechVoiceSample({
-        userId,
-        audioData: sampleBytes,
-        mimeType: sampleToStore.type || 'audio/webm;codecs=opus',
-        filename: sampleToStore.name || 'voice-sample.webm',
-      });
-    } catch (error) {
-      console.error('Failed to prepare speech voice sample:', error);
-      voiceSampleSaved = false;
-    }
-  }
+  const voiceSampleSaved = await voiceSamplePromise;
 
   after(async () => {
     try {

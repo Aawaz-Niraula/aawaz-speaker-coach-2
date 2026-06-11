@@ -32,7 +32,7 @@ import { CoachMascot, MascotHint } from '@/components/mascot';
 import { AvatarCustomizer, ProfileAvatar } from '@/components/profile-avatar';
 import { ProgressChart } from '@/components/progress-chart';
 import { LiveWaveform, SkeletonLines, ThinkingDots } from '@/components/recorder-visuals';
-import { TemplatePicker } from '@/components/template-picker';
+import { FormatSelect, TemplatePicker } from '@/components/template-picker';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog, type ConfirmRequest } from '@/components/ui/confirm-dialog';
 import { Eyebrow, Shell } from '@/components/ui/shell';
@@ -232,6 +232,7 @@ export default function Home() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [deletingSessionIds, setDeletingSessionIds] = useState<Set<string>>(new Set());
   const [selectedTemplateId, setSelectedTemplateId] = useState<SpeechTemplateId | null>(null);
+  const [speechTemplateId, setSpeechTemplateId] = useState<SpeechTemplateId | null>(null);
   const [topic, setTopic] = useState('');
   const [wordCount, setWordCount] = useState(180);
   const [speech, setSpeech] = useState('');
@@ -788,7 +789,7 @@ export default function Home() {
       const data = await requestJson<SpeechResponse>('/api/generate-speech', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, wordCount }),
+        body: JSON.stringify({ topic, wordCount, templateId: speechTemplateId }),
       }, 300000);
       setSpeech(data.speech || '');
       trackGuestUse(data.guestRemaining);
@@ -1364,10 +1365,10 @@ export default function Home() {
       <div className="mb-5 grid gap-3 lg:grid-cols-2">
         {/* Example voice */}
         <div className="rounded-[20px] border border-white/10 bg-[#0b0b12]/55 p-3.5 transition-colors hover:border-white/15 sm:rounded-[24px] sm:p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-[#f2efff]">Example speech</p>
-              <p className="mt-0.5 truncate font-mono text-[10px] uppercase tracking-[0.16em] text-[#857ca2]">Polished public-speaking voice</p>
+              <p className="text-sm font-semibold text-[#f2efff]">Example speech</p>
+              <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] leading-relaxed text-[#857ca2]">Polished public-speaking voice</p>
             </div>
             <div className="inline-flex shrink-0 rounded-full border border-white/10 bg-white/5 p-1">
               {(['female', 'male'] as const).map((voice) => (
@@ -1419,10 +1420,10 @@ export default function Home() {
 
         {/* Own voice */}
         <div className="rounded-[20px] border border-white/10 bg-[#0b0b12]/55 p-3.5 transition-colors hover:border-white/15 sm:rounded-[24px] sm:p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-[#f2efff]">Your own voice</p>
-              <p className="mt-0.5 truncate font-mono text-[10px] uppercase tracking-[0.16em] text-[#857ca2]">Uses your saved 15s sample</p>
+              <p className="text-sm font-semibold text-[#f2efff]">Your own voice</p>
+              <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] leading-relaxed text-[#857ca2]">Uses your saved 15s sample</p>
             </div>
             <div className="relative shrink-0">
               <button
@@ -1884,6 +1885,12 @@ export default function Home() {
                         <Sparkles className={cn('h-4 w-4', isGenerating && 'animate-spin')} />
                         {isGenerating ? 'Writing…' : 'Generate'}
                       </Button>
+                    </div>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,340px)_1fr] sm:items-center">
+                      <FormatSelect value={speechTemplateId} onChange={setSpeechTemplateId} disabled={isGenerating} />
+                      <p className="px-1 font-mono text-[10px] uppercase tracking-[0.14em] leading-relaxed text-[#857ca2]">
+                        {speechTemplateId ? 'The script will follow this format\u2019s structure.' : 'Pick a format and the script will follow its rubric.'}
+                      </p>
                     </div>
                     {error ? <p className="mt-3 font-mono text-xs text-[#f87171]">{error}</p> : null}
                   </Shell>

@@ -139,7 +139,7 @@ export function CollapsibleSection({
       >
         <span className="flex min-w-0 items-center gap-2.5">
           {icon}
-          <SectionTitle className="truncate">{title}</SectionTitle>
+          <SectionTitle className="leading-tight">{title}</SectionTitle>
         </span>
         <ChevronDown className={cn('h-4 w-4 shrink-0 text-[#857ca2] transition-transform duration-300', open && 'rotate-180')} />
       </button>
@@ -271,9 +271,9 @@ export function FeedbackReport({
                     isStructure && 'sm:col-span-2',
                   )}
                 >
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#ddd6fe] sm:text-sm">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#a78bfa]/12 text-[#a78bfa]">{metricIcon(item.label)}</span>
-                    {item.label}
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#ddd6fe] sm:text-sm sm:tracking-[0.18em]">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#a78bfa]/12 text-[#a78bfa]">{metricIcon(item.label)}</span>
+                    <span className="min-w-0 break-words leading-snug">{item.label}</span>
                   </div>
                   {isStructure && structureBullets.length > 1 ? (
                     <ul className="mt-3 grid gap-2">
