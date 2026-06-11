@@ -4,6 +4,7 @@ import { GuestLimitError, IdentityError, guestLimitResponse, identityErrorRespon
 import { getSpeechVoiceSample, setSpeechVoiceSampleProviderVoiceId } from '@/lib/db';
 import { fetchWithRetry, fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
+import { deleteProviderVoice, deleteUserProviderVoices, providerVoiceName } from '@/lib/provider-voice';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
 
 const DEFAULT_TTS_MODEL = 'XiaomiMiMo/MiMo-V2.5-tts';
@@ -169,9 +170,22 @@ async function synthesizeDirect(modelId: string, text: string, token: string, vo
   return readAudioResponse(res);
 }
 
-async function createVoice(sample: File, userId: string, token: string) {
+function extractVoiceId(data: unknown): string {
+  if (!data || typeof data !== 'object') return '';
+  const record = data as Record<string, unknown>;
+  if (typeof record.voice_id === 'string') return record.voice_id;
+  if (record.voice && typeof record.voice === 'object') {
+    const nested = record.voice as Record<string, unknown>;
+    if (typeof nested.voice_id === 'string') return nested.voice_id;
+    if (typeof nested.id === 'string') return nested.id;
+  }
+  if (typeof record.id === 'string') return record.id;
+  return '';
+}
+
+async function addVoiceOnce(sample: File, userId: string, token: string) {
   const voiceForm = new FormData();
-  voiceForm.append('name', `Aawaz voice ${userId.slice(0, 18) || Date.now()}`);
+  voiceForm.append('name', providerVoiceName(userId));
   voiceForm.append('description', 'Short voice sample captured after speech analysis for practice speech playback.');
   voiceForm.append('files', sample, sample.name || 'voice-sample.webm');
 
@@ -182,13 +196,29 @@ async function createVoice(sample: File, userId: string, token: string) {
   }, 0, 1000, 120000);
 
   const data = await res.json().catch(() => ({}));
-  const voiceId = typeof data?.voice_id === 'string' ? data.voice_id : '';
+  return { ok: res.ok, voiceId: extractVoiceId(data), message: providerMessage(data) };
+}
 
-  if (!res.ok || !voiceId) {
-    throw new Error(providerMessage(data) || 'Could not create a cloned voice from the saved speech sample.');
+async function createVoice(sample: File, userId: string, token: string) {
+  let attempt = await addVoiceOnce(sample, userId, token);
+
+  if (!attempt.ok || !attempt.voiceId) {
+    // The most common silent failure here is a full voice quota on the
+    // provider account (old voices from replaced samples pile up). Reclaim
+    // this user's stale voice slots and try once more.
+    await deleteUserProviderVoices(userId, token);
+    attempt = await addVoiceOnce(sample, userId, token);
   }
 
-  return voiceId;
+  if (!attempt.ok || !attempt.voiceId) {
+    const detail = attempt.message?.toLowerCase() ?? '';
+    const friendly = !attempt.message || detail.includes('internal') || detail.includes('server error')
+      ? 'The voice service could not process your sample right now. Please try again in a moment.'
+      : attempt.message;
+    throw new Error(friendly);
+  }
+
+  return attempt.voiceId;
 }
 
 export async function POST(req: NextRequest) {
@@ -260,6 +290,9 @@ export async function POST(req: NextRequest) {
         try {
           result = await synthesizeWithVoice(voiceId, text, VOICE_CLONE_MODEL, DEEPINFRA_API_KEY);
         } catch {
+          // The stored voice is unusable — drop it on the provider too so it
+          // doesn't occupy a voice slot forever.
+          await deleteProviderVoice(voiceId, DEEPINFRA_API_KEY);
           voiceId = '';
         }
       }
@@ -267,7 +300,15 @@ export async function POST(req: NextRequest) {
       if (!voiceId) {
         voiceId = await createVoice(sample, userId, DEEPINFRA_API_KEY);
         await setSpeechVoiceSampleProviderVoiceId(userId, voiceId);
-        result = await synthesizeWithVoice(voiceId, text, VOICE_CLONE_MODEL, DEEPINFRA_API_KEY);
+
+        // A just-created voice can need a moment before it is usable;
+        // retry once after a short pause instead of failing outright.
+        try {
+          result = await synthesizeWithVoice(voiceId, text, VOICE_CLONE_MODEL, DEEPINFRA_API_KEY);
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 2500));
+          result = await synthesizeWithVoice(voiceId, text, VOICE_CLONE_MODEL, DEEPINFRA_API_KEY);
+        }
       }
     } else {
       const voiceId = EXAMPLE_VOICES[requestedExampleVoice];
@@ -298,10 +339,14 @@ export async function POST(req: NextRequest) {
       return identityErrorResponse();
     }
 
-    return Response.json(
-      { error: error instanceof Error ? error.message : 'Speech audio generation failed. Please try again.' },
-      { status: 503 },
-    );
+    const raw = error instanceof Error ? error.message : '';
+    const lower = raw.toLowerCase();
+    // Never surface the provider's raw "Internal Server Error" to the user.
+    const message = !raw || lower.includes('internal') || lower.includes('server error')
+      ? 'The voice service hit a snag. Please try again in a moment.'
+      : raw;
+
+    return Response.json({ error: message }, { status: 503 });
   }
 }
 

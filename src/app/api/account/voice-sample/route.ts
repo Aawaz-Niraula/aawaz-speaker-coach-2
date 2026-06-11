@@ -1,9 +1,20 @@
-import { NextRequest } from 'next/server';
+import { after, NextRequest } from 'next/server';
 
 import { GuestLimitError, IdentityError, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
-import { deleteSpeechVoiceSample, replaceSpeechVoiceSample } from '@/lib/db';
+import { deleteSpeechVoiceSample, getSpeechVoiceSampleProviderVoiceId, replaceSpeechVoiceSample } from '@/lib/db';
 import { requireSameOrigin } from '@/lib/identity';
+import { deleteProviderVoice } from '@/lib/provider-voice';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
+
+/** Best-effort: free the old DeepInfra voice slot once the request is done. */
+function scheduleProviderVoiceCleanup(providerVoiceId: string | null) {
+  const token = process.env.DEEPINFRA_API_KEY;
+  if (!providerVoiceId || !token) return;
+
+  after(async () => {
+    await deleteProviderVoice(providerVoiceId, token);
+  });
+}
 
 function errorResponse(error: unknown, fallback: string) {
   if (error instanceof GuestLimitError) {
@@ -35,11 +46,14 @@ export async function DELETE(req: NextRequest) {
 
     // Deleting the row also clears any stored provider voice id, so a stale
     // cloned voice can never be reused after the sample is replaced.
+    const oldProviderVoiceId = await getSpeechVoiceSampleProviderVoiceId(userId);
     const deleted = await deleteSpeechVoiceSample(userId);
 
     if (!deleted) {
       return Response.json({ error: 'Could not delete the saved voice sample.' }, { status: 503 });
     }
+
+    scheduleProviderVoiceCleanup(oldProviderVoiceId);
 
     return Response.json({ ok: true });
   } catch (error) {
@@ -74,6 +88,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Replace = delete old row (and provider voice id) + insert fresh sample.
+    const oldProviderVoiceId = await getSpeechVoiceSampleProviderVoiceId(userId);
     const saved = await replaceSpeechVoiceSample({
       userId,
       audioData: await voiceSample.arrayBuffer(),
@@ -84,6 +99,8 @@ export async function POST(req: NextRequest) {
     if (!saved) {
       return Response.json({ error: 'Could not save the new voice sample.' }, { status: 503 });
     }
+
+    scheduleProviderVoiceCleanup(oldProviderVoiceId);
 
     return Response.json({ ok: true });
   } catch (error) {
