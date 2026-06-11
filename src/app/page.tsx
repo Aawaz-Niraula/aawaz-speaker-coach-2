@@ -99,6 +99,64 @@ function isValidAccountPassword(password: string) {
   return password.length > 5 && /[A-Za-z]/.test(password) && /\d/.test(password);
 }
 
+function audioBufferToMonoWav(audioBuffer: AudioBuffer) {
+  const { length, numberOfChannels, sampleRate } = audioBuffer;
+  const pcm = new Float32Array(length);
+
+  for (let channel = 0; channel < numberOfChannels; channel += 1) {
+    const channelData = audioBuffer.getChannelData(channel);
+    for (let i = 0; i < length; i += 1) {
+      pcm[i] += channelData[i] / numberOfChannels;
+    }
+  }
+
+  const bytesPerSample = 2;
+  const dataSize = length * bytesPerSample;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+  const writeString = (offset: number, value: string) => {
+    for (let i = 0; i < value.length; i += 1) {
+      view.setUint8(offset + i, value.charCodeAt(i));
+    }
+  };
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * bytesPerSample, true);
+  view.setUint16(32, bytesPerSample, true);
+  view.setUint16(34, 16, true);
+  writeString(36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  let offset = 44;
+  for (let i = 0; i < length; i += 1) {
+    const sample = Math.max(-1, Math.min(1, pcm[i]));
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    offset += 2;
+  }
+
+  return buffer;
+}
+
+async function encodeVoiceSampleAsWav(blob: Blob) {
+  const AudioContextCtor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioContextCtor) return blob;
+
+  const context = new AudioContextCtor();
+  try {
+    const audioBuffer = await context.decodeAudioData(await blob.arrayBuffer());
+    return new Blob([audioBufferToMonoWav(audioBuffer)], { type: 'audio/wav' });
+  } finally {
+    await context.close().catch(() => null);
+  }
+}
+
 /* ── Small stable components ─────────────────────────────────────── */
 function ActionBar({
   text,
@@ -567,7 +625,9 @@ export default function Home() {
         const form = new FormData();
         form.append('file', blob, 'speech.webm');
         if (sampleBlob.size >= 3000) {
-          form.append('voiceSample', sampleBlob, 'voice-sample.webm');
+          const voiceSampleBlob = await encodeVoiceSampleAsWav(sampleBlob).catch(() => sampleBlob);
+          const voiceSampleName = voiceSampleBlob.type === 'audio/wav' ? 'voice-sample.wav' : 'voice-sample.webm';
+          form.append('voiceSample', voiceSampleBlob, voiceSampleName);
         }
         if (selectedTemplateId) form.append('templateId', selectedTemplateId);
         try {
@@ -955,8 +1015,10 @@ export default function Home() {
     }
 
     setIsVoiceSampleSaving(true);
+    const voiceSampleBlob = await encodeVoiceSampleAsWav(blob).catch(() => blob);
+    const voiceSampleName = voiceSampleBlob.type === 'audio/wav' ? 'voice-sample.wav' : 'voice-sample.webm';
     const form = new FormData();
-    form.append('voiceSample', blob, 'voice-sample.webm');
+    form.append('voiceSample', voiceSampleBlob, voiceSampleName);
 
     try {
       const res = await fetch('/api/account/voice-sample', {
