@@ -5,6 +5,7 @@ import { GuestLimitError, IdentityError, guestLimitResponse, identityErrorRespon
 import { fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
+import { getSpeechTemplate } from '@/lib/speech-config';
 
 const SPEECH_MODELS = [
   'mistralai/Mistral-Small-24B-Instruct-2501',
@@ -30,6 +31,8 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => null);
     const topic = typeof body?.topic === 'string' ? body.topic.trim().slice(0, 180) : '';
+    const templateId = typeof body?.templateId === 'string' ? body.templateId.trim().slice(0, 80) : '';
+    const template = getSpeechTemplate(templateId || null);
     const requestedWordCount = Number(body?.wordCount);
     const targetWordCount = Number.isFinite(requestedWordCount) ? Math.min(500, Math.max(80, Math.round(requestedWordCount))) : 180;
     const lowerWordCount = Math.max(70, targetWordCount - 10);
@@ -79,11 +82,24 @@ export async function POST(req: NextRequest) {
           messages: [
             {
               role: 'system',
-              content: 'You are a professional speechwriter. Write clear, engaging, well-structured speeches suitable for students and professionals to practice public speaking.',
+              content: template
+                ? `You are a professional speechwriter. Write clear, engaging, well-structured speeches suitable for students and professionals to practice public speaking. When a speech format is specified, you MUST follow its structure, tone, protocol, and sequencing exactly — the speech will be graded against that format's rubric, so write it to score highly on every rule.`
+                : 'You are a professional speechwriter. Write clear, engaging, well-structured speeches suitable for students and professionals to practice public speaking.',
             },
             {
               role: 'user',
-              content: `Write a public speaking sample speech on the topic: "${topic}".
+              content: template
+                ? `Write a practice speech on the topic: "${topic}" in the "${template.label}" format (${template.rubricTitle}).
+
+The speech will be judged against this exact rubric, so it must satisfy every rule below:
+${template.rubric}
+
+Requirements:
+- Aim for about ${targetWordCount} words. Stay between ${lowerWordCount} and ${upperWordCount} words if possible.
+- Follow the format's structure, sequencing, tone, and protocol precisely from the first line to the last.
+- Natural spoken language appropriate to the format's expected level of formality
+- No stage directions, section labels, or headings — just the speech text itself`
+                : `Write a public speaking sample speech on the topic: "${topic}".
 
 Requirements:
 - Aim for about ${targetWordCount} words. Stay between ${lowerWordCount} and ${upperWordCount} words if possible.

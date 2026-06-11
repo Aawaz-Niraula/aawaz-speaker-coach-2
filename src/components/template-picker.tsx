@@ -79,6 +79,61 @@ function FormatViewer({ template, onClose }: { template: SpeechTemplate; onClose
   );
 }
 
+/**
+ * Compact format dropdown (no rubric card) — used on the Speech Practice tab
+ * so generated scripts can follow a chosen rubric format.
+ */
+export function FormatSelect({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: SpeechTemplateId | null;
+  onChange: (id: SpeechTemplateId | null) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Select.Root
+      value={value ?? 'general'}
+      onValueChange={(next) => {
+        sfx.select();
+        onChange(next === 'general' ? null : (next as SpeechTemplateId));
+      }}
+      disabled={disabled}
+    >
+      <Select.Trigger
+        className={cn(
+          'flex h-12 w-full items-center justify-between gap-2 rounded-[16px] border bg-[#0b0b12]/60 px-4 text-left text-sm text-[#f2efff] transition hover:border-[#a78bfa]/40 disabled:opacity-50 sm:rounded-[18px]',
+          value ? 'border-[#a78bfa]/35 shadow-[0_0_18px_rgba(167,139,250,0.12)]' : 'border-white/12',
+        )}
+        aria-label="Speech format"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <ScrollText className="h-4 w-4 shrink-0 text-[#a78bfa]" />
+          <span className="truncate"><Select.Value placeholder="Free format" /></span>
+        </span>
+        <Select.Icon><ChevronDown className="h-4 w-4 shrink-0 text-[#857ca2]" /></Select.Icon>
+      </Select.Trigger>
+      <Select.Portal>
+        <Select.Content position="popper" className="z-50 max-w-[calc(100vw-2rem)] overflow-hidden rounded-3xl border border-white/10 bg-[#0d0c16]/95 p-2 text-[#f2efff] shadow-[0_20px_60px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+          <Select.Viewport className="grid gap-1">
+            <Select.Item value="general" className="flex cursor-pointer items-center justify-between rounded-2xl px-4 py-3 text-sm outline-none hover:bg-white/10 data-[highlighted]:bg-white/10">
+              <Select.ItemText>Free format</Select.ItemText>
+              <Select.ItemIndicator><Check className="h-4 w-4 text-[#a78bfa]" /></Select.ItemIndicator>
+            </Select.Item>
+            {SPEECH_TEMPLATES.map((template) => (
+              <Select.Item key={template.id} value={template.id} className="flex cursor-pointer items-center justify-between rounded-2xl px-4 py-3 text-sm outline-none hover:bg-white/10 data-[highlighted]:bg-white/10">
+                <Select.ItemText>{template.label}</Select.ItemText>
+                <Select.ItemIndicator><Check className="h-4 w-4 text-[#a78bfa]" /></Select.ItemIndicator>
+              </Select.Item>
+            ))}
+          </Select.Viewport>
+        </Select.Content>
+      </Select.Portal>
+    </Select.Root>
+  );
+}
+
 export function TemplatePicker({
   value,
   onChange,

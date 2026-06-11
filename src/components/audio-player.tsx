@@ -50,7 +50,7 @@ export function AudioPlayer({
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   return (
-    <div className={cn('flex items-center gap-3 rounded-[16px] border border-white/10 bg-[#0b0b12]/60 px-3 py-2.5', className)}>
+    <div className={cn('flex items-center gap-2 rounded-[16px] border border-white/10 bg-[#0b0b12]/60 px-2.5 py-2.5 sm:gap-3 sm:px-3', className)}>
       <audio
         ref={audioRef}
         src={src}
@@ -71,12 +71,12 @@ export function AudioPlayer({
       <button
         type="button"
         onClick={toggle}
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a78bfa,#f9a8d4)] text-[#06060b] shadow-[0_8px_24px_rgba(167,139,250,0.35)] transition hover:scale-105 active:scale-95"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a78bfa,#f9a8d4)] text-[#06060b] shadow-[0_8px_24px_rgba(167,139,250,0.35)] transition hover:scale-105 active:scale-95 sm:h-10 sm:w-10"
         aria-label={playing ? 'Pause' : 'Play'}
       >
         {playing ? <Pause className="h-4 w-4" /> : <Play className="ml-0.5 h-4 w-4" />}
       </button>
-      <span className="font-mono text-[11px] tabular-nums text-[#ddd6fe]">{formatClock(currentTime)}</span>
+      <span className="shrink-0 font-mono text-[11px] tabular-nums text-[#ddd6fe]">{formatClock(currentTime)}</span>
       <div className="relative flex h-8 min-w-0 flex-1 items-center">
         <div className="absolute inset-x-0 h-1.5 overflow-hidden rounded-full bg-white/10">
           <div
@@ -95,7 +95,7 @@ export function AudioPlayer({
           aria-label="Seek audio"
         />
       </div>
-      <span className="font-mono text-[11px] tabular-nums text-[#857ca2]">{duration ? formatClock(duration) : '–:––'}</span>
+      <span className="hidden shrink-0 font-mono text-[11px] tabular-nums text-[#857ca2] min-[400px]:inline">{duration ? formatClock(duration) : '–:––'}</span>
       {downloadName ? (
         <a
           href={src}

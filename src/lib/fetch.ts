@@ -7,11 +7,15 @@ type TrafficPool = {
 
 const trafficPools = new Map<TrafficClass, TrafficPool>();
 
+// The inference provider comfortably handles ~30 concurrent requests, so the
+// per-class caps are generous — users should never queue behind each other in
+// normal use. These exist only as a safety valve against runaway bursts, and
+// can be tuned via AAWAZ_<CLASS>_CONCURRENCY env vars.
 const DEFAULT_TRAFFIC_LIMITS: Record<TrafficClass, number> = {
-  transcription: 4,
-  chat: 8,
-  tts: 4,
-  voice: 2,
+  transcription: 10,
+  chat: 12,
+  tts: 6,
+  voice: 4,
 };
 
 function getTrafficLimit(kind: TrafficClass) {
@@ -19,7 +23,7 @@ function getTrafficLimit(kind: TrafficClass) {
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : DEFAULT_TRAFFIC_LIMITS[kind];
 }
 
-async function acquireTrafficSlot(kind: TrafficClass, waitMs = 10000) {
+async function acquireTrafficSlot(kind: TrafficClass, waitMs = 20000) {
   const pool = trafficPools.get(kind) ?? { active: 0, queue: [] };
   trafficPools.set(kind, pool);
 
