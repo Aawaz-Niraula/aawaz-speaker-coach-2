@@ -433,6 +433,33 @@ export async function replaceSpeechVoiceSample({
   }
 }
 
+/** Reads only the stored provider voice id — no audio blob round-trip. */
+export async function getSpeechVoiceSampleProviderVoiceId(userId: string) {
+  const db = await ensureSpeechSchema();
+
+  if (!db) {
+    return null;
+  }
+
+  try {
+    const result = await db.execute({
+      sql: `
+        SELECT provider_voice_id
+        FROM speech_voice_samples
+        WHERE user_id = ?
+        LIMIT 1
+      `,
+      args: [userId],
+    });
+
+    const row = result.rows[0];
+    return row?.provider_voice_id ? String(row.provider_voice_id) : null;
+  } catch (error) {
+    console.error('Failed to read provider voice id:', error);
+    return null;
+  }
+}
+
 export async function deleteSpeechVoiceSample(userId: string) {
   const db = await ensureSpeechSchema();
 
