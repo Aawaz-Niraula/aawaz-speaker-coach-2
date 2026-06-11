@@ -188,14 +188,26 @@ type VoiceAddAttempt = {
   status: number;
   voiceId: string;
   message: string;
-  fieldName: string;
+  uploadShape: string;
 };
 
-async function addVoiceOnce(sample: File, userId: string, token: string, fieldName: string): Promise<VoiceAddAttempt> {
+function appendVoiceFile(form: FormData, sample: File, uploadShape: string) {
+  const filename = sample.name || 'voice-sample.wav';
+
+  if (uploadShape === 'files-items') {
+    form.append('files', '');
+    form.append('files.items', sample, filename);
+    return;
+  }
+
+  form.append(uploadShape, sample, filename);
+}
+
+async function addVoiceOnce(sample: File, userId: string, token: string, uploadShape: string): Promise<VoiceAddAttempt> {
   const voiceForm = new FormData();
   voiceForm.append('name', providerVoiceName(userId));
   voiceForm.append('description', 'Short voice sample captured after speech analysis for practice speech playback.');
-  voiceForm.append(fieldName, sample, sample.name || 'voice-sample.wav');
+  appendVoiceFile(voiceForm, sample, uploadShape);
 
   const res = await fetchWithRetryLimited('voice', 'https://api.deepinfra.com/v1/voices/add', {
     method: 'POST',
@@ -204,15 +216,15 @@ async function addVoiceOnce(sample: File, userId: string, token: string, fieldNa
   }, 0, 1000, 120000);
 
   const data = await res.json().catch(() => ({}));
-  return { ok: res.ok, status: res.status, voiceId: extractVoiceId(data), message: providerMessage(data), fieldName };
+  return { ok: res.ok, status: res.status, voiceId: extractVoiceId(data), message: providerMessage(data), uploadShape };
 }
 
 async function addVoiceWithFallbacks(sample: File, userId: string, token: string) {
-  const fieldNames = ['audio', 'files', 'files.items'];
+  const uploadShapes = ['files', 'files-items', 'audio'];
   const attempts: VoiceAddAttempt[] = [];
 
-  for (const fieldName of fieldNames) {
-    const attempt = await addVoiceOnce(sample, userId, token, fieldName);
+  for (const uploadShape of uploadShapes) {
+    const attempt = await addVoiceOnce(sample, userId, token, uploadShape);
     attempts.push(attempt);
 
     if (attempt.ok && attempt.voiceId) {
@@ -237,7 +249,7 @@ async function createVoice(sample: File, userId: string, token: string) {
   if (!attempt.ok || !attempt.voiceId) {
     console.error('DeepInfra voice creation failed', {
       status: attempt.status,
-      fieldName: attempt.fieldName,
+      uploadShape: attempt.uploadShape,
       message: attempt.message,
       mimeType: sample.type,
       size: sample.size,
