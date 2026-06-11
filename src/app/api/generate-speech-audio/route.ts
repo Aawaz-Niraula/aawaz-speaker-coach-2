@@ -183,11 +183,19 @@ function extractVoiceId(data: unknown): string {
   return '';
 }
 
-async function addVoiceOnce(sample: File, userId: string, token: string) {
+type VoiceAddAttempt = {
+  ok: boolean;
+  status: number;
+  voiceId: string;
+  message: string;
+  fieldName: string;
+};
+
+async function addVoiceOnce(sample: File, userId: string, token: string, fieldName: string): Promise<VoiceAddAttempt> {
   const voiceForm = new FormData();
   voiceForm.append('name', providerVoiceName(userId));
   voiceForm.append('description', 'Short voice sample captured after speech analysis for practice speech playback.');
-  voiceForm.append('files', sample, sample.name || 'voice-sample.webm');
+  voiceForm.append(fieldName, sample, sample.name || 'voice-sample.wav');
 
   const res = await fetchWithRetryLimited('voice', 'https://api.deepinfra.com/v1/voices/add', {
     method: 'POST',
@@ -196,21 +204,44 @@ async function addVoiceOnce(sample: File, userId: string, token: string) {
   }, 0, 1000, 120000);
 
   const data = await res.json().catch(() => ({}));
-  return { ok: res.ok, voiceId: extractVoiceId(data), message: providerMessage(data) };
+  return { ok: res.ok, status: res.status, voiceId: extractVoiceId(data), message: providerMessage(data), fieldName };
+}
+
+async function addVoiceWithFallbacks(sample: File, userId: string, token: string) {
+  const fieldNames = ['audio', 'files', 'files.items'];
+  const attempts: VoiceAddAttempt[] = [];
+
+  for (const fieldName of fieldNames) {
+    const attempt = await addVoiceOnce(sample, userId, token, fieldName);
+    attempts.push(attempt);
+
+    if (attempt.ok && attempt.voiceId) {
+      return attempt;
+    }
+  }
+
+  return attempts.find((attempt) => attempt.message) ?? attempts[attempts.length - 1];
 }
 
 async function createVoice(sample: File, userId: string, token: string) {
-  let attempt = await addVoiceOnce(sample, userId, token);
+  let attempt = await addVoiceWithFallbacks(sample, userId, token);
 
   if (!attempt.ok || !attempt.voiceId) {
     // The most common silent failure here is a full voice quota on the
     // provider account (old voices from replaced samples pile up). Reclaim
     // this user's stale voice slots and try once more.
     await deleteUserProviderVoices(userId, token);
-    attempt = await addVoiceOnce(sample, userId, token);
+    attempt = await addVoiceWithFallbacks(sample, userId, token);
   }
 
   if (!attempt.ok || !attempt.voiceId) {
+    console.error('DeepInfra voice creation failed', {
+      status: attempt.status,
+      fieldName: attempt.fieldName,
+      message: attempt.message,
+      mimeType: sample.type,
+      size: sample.size,
+    });
     const detail = attempt.message?.toLowerCase() ?? '';
     const friendly = !attempt.message || detail.includes('internal') || detail.includes('server error')
       ? 'The voice service could not process your sample right now. Please try again in a moment.'
