@@ -115,7 +115,7 @@ function positionClass(position: CompanionPosition) {
     case 'center':
       return 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2';
     case 'side':
-      return 'bottom-[calc(5rem+env(safe-area-inset-bottom))] right-3 md:bottom-auto md:right-6 md:top-[8.75rem]';
+      return 'bottom-[calc(5rem+env(safe-area-inset-bottom))] right-3 md:bottom-6 md:right-8';
     case 'bottom-right':
     default:
       return 'bottom-[calc(5rem+env(safe-area-inset-bottom))] right-3 md:bottom-6 md:right-8';
@@ -324,7 +324,7 @@ export function AawaxCompanion({ activeTab, onTabChange, onOpenChat, flags }: Aa
 
   return (
     <>
-      <div className="fixed right-3 top-[8.75rem] z-30 hidden flex-col items-end gap-2 md:flex">
+      <div className="gpu-layer fixed bottom-6 right-8 z-30 hidden flex-col items-end gap-2 md:flex">
         <button
           type="button"
           onClick={openChat}
