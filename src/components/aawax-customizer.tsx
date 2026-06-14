@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Check, Dices, Volume2, VolumeX, X } from 'lucide-react';
 
-import { CoachMascot, useAawax } from '@/components/mascot';
+import { CoachMascot, useAawax, type MascotMood } from '@/components/mascot';
 import { Button } from '@/components/ui/button';
 import {
   AAWAX_COLOR_IDS,
@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils';
 export function AawaxCustomizer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { style, setStyle } = useAawax();
   const [spinKey, setSpinKey] = useState(0);
+  const [previewMood, setPreviewMood] = useState<MascotMood>('cheer');
 
   const pickDesign = (design: AawaxDesignId) => {
     if (design === style.design) return;
@@ -52,6 +53,14 @@ export function AawaxCustomizer({ open, onClose }: { open: boolean; onClose: () 
   };
 
   const selectedDesign = AAWAX_DESIGNS.find((d) => d.id === style.design);
+  const reactions: { mood: MascotMood; label: string }[] = [
+    { mood: 'idle', label: 'Idle' },
+    { mood: 'listen', label: 'Listen' },
+    { mood: 'think', label: 'Think' },
+    { mood: 'cheer', label: 'Cheer' },
+    { mood: 'sing', label: 'Sing' },
+    { mood: 'oops', label: 'Oops' },
+  ];
 
   return (
     <AnimatePresence>
@@ -95,7 +104,7 @@ export function AawaxCustomizer({ open, onClose }: { open: boolean; onClose: () 
             </div>
 
             {/* stage / preview */}
-            <div className="relative mt-4 flex flex-col items-center overflow-hidden rounded-[22px] border border-white/10 bg-[radial-gradient(ellipse_at_50%_120%,rgba(167,139,250,0.18),transparent_70%)] py-6">
+            <div className="relative mt-4 flex flex-col items-center overflow-hidden rounded-[22px] border border-white/10 bg-[radial-gradient(ellipse_at_50%_120%,rgba(167,139,250,0.22),transparent_70%),linear-gradient(180deg,rgba(255,255,255,0.045),transparent)] py-6">
               {/* sparkle backdrop */}
               {[...Array(6)].map((_, i) => (
                 <motion.span
@@ -107,18 +116,43 @@ export function AawaxCustomizer({ open, onClose }: { open: boolean; onClose: () 
                 />
               ))}
               <motion.div
-                key={spinKey}
+                key={`${spinKey}-${previewMood}`}
                 initial={{ scale: 0.7, rotate: -8, opacity: 0.4 }}
                 animate={{ scale: 1, rotate: 0, opacity: 1 }}
                 transition={{ type: 'spring', stiffness: 260, damping: 14 }}
               >
-                <CoachMascot mood="cheer" size={120} interactive float={false} />
+                <CoachMascot mood={previewMood} size={120} interactive float={false} />
               </motion.div>
               {/* pedestal */}
               <div className="mt-1 h-2.5 w-24 rounded-[50%] bg-black/45 blur-[2px]" />
               <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.24em] text-[#857ca2]">
                 {selectedDesign?.blurb ?? 'Looking sharp'} · tap to boop
               </p>
+              <div className="mt-4 flex max-w-[92%] flex-wrap justify-center gap-1.5">
+                {reactions.map((reaction) => {
+                  const active = previewMood === reaction.mood;
+                  return (
+                    <button
+                      key={reaction.mood}
+                      type="button"
+                      onClick={() => {
+                        setPreviewMood(reaction.mood);
+                        setSpinKey((k) => k + 1);
+                        sfx.tick();
+                      }}
+                      className={cn(
+                        'rounded-full border px-2.5 py-1 font-mono text-[8.5px] uppercase tracking-[0.12em] transition',
+                        active
+                          ? 'border-[#a78bfa]/50 bg-[#a78bfa]/18 text-[#f2efff]'
+                          : 'border-white/10 bg-white/5 text-[#857ca2] hover:border-white/20 hover:text-[#ddd6fe]',
+                      )}
+                      aria-pressed={active}
+                    >
+                      {reaction.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* design picker */}

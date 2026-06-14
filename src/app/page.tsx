@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Label from '@radix-ui/react-label';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 
+import { AawaxCompanion } from '@/components/aawax-companion';
 import { AawaxCustomizer } from '@/components/aawax-customizer';
 import { AudioPlayer } from '@/components/audio-player';
 import { FeedbackReport, CollapsibleSection } from '@/components/feedback-report';
@@ -276,10 +277,12 @@ export default function Home() {
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [avatarCustomizeOpen, setAvatarCustomizeOpen] = useState(false);
 
-  const switchTab = (tab: Tab) => {
-    if (tab !== activeTab) sfx.tick();
-    setActiveTab(tab);
-  };
+  const switchTab = useCallback((tab: Tab) => {
+    setActiveTab((currentTab) => {
+      if (tab !== currentTab) sfx.tick();
+      return tab;
+    });
+  }, []);
 
   const openCustomizer = () => {
     sfx.pop();
@@ -2228,6 +2231,23 @@ export default function Home() {
 
       <AawaxCustomizer open={customizeOpen} onClose={() => setCustomizeOpen(false)} />
       <AvatarCustomizer open={avatarCustomizeOpen} onClose={() => setAvatarCustomizeOpen(false)} />
+
+      {!customizeOpen && !avatarCustomizeOpen && !authPromptOpen && !confirmRequest ? (
+        <AawaxCompanion
+          activeTab={activeTab}
+          onTabChange={switchTab}
+          onCustomize={openCustomizer}
+          flags={{
+            isRecording,
+            isAnalyzing,
+            isGenerating,
+            isVoiceBusy: isVoiceSampleRecording || isVoiceSampleSaving || isVoiceSampleResetting || speechAudio.clone.isLoading || speechAudio.example.isLoading,
+            hasFeedback: Boolean(feedback),
+            hasHistory: history.length > 0,
+            hasSpeech: Boolean(speech),
+          }}
+        />
+      ) : null}
 
       <ConfirmDialog
         request={confirmRequest}

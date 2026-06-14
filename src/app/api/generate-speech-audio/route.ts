@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { GuestLimitError, IdentityError, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
-import { getSpeechVoiceSample, setSpeechVoiceSampleProviderVoiceId } from '@/lib/db';
+import { clearSpeechVoiceSampleProviderVoiceId, getSpeechVoiceSample, setSpeechVoiceSampleProviderVoiceId } from '@/lib/db';
 import { fetchWithRetry, fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
 import { deleteProviderVoice, deleteUserProviderVoices, findNewestProviderVoiceIdByName, providerVoiceName } from '@/lib/provider-voice';
@@ -170,6 +170,30 @@ async function synthesizeDirect(modelId: string, text: string, token: string, vo
   return readAudioResponse(res);
 }
 
+async function synthesizeCloneWithVoice(voiceId: string, text: string, token: string) {
+  const res = await fetchWithRetryLimited('tts', `https://api.deepinfra.com/v1/inference/${VOICE_CLONE_MODEL}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      text,
+      voice: voiceId,
+      instruct: STYLE_PROMPT,
+      output_format: 'opus',
+      stream: false,
+    }),
+  }, 1, 1000, 120000);
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(providerMessage(data) || 'Speech audio generation failed.');
+  }
+
+  return readAudioResponse(res);
+}
+
 async function synthesizeCloneWhenReady(voiceId: string, text: string, token: string) {
   let lastError: unknown;
   const delays = [0, 2500, 5000, 8000, 12000];
@@ -180,7 +204,7 @@ async function synthesizeCloneWhenReady(voiceId: string, text: string, token: st
     }
 
     try {
-      return await synthesizeWithVoice(voiceId, text, VOICE_CLONE_MODEL, token);
+      return await synthesizeCloneWithVoice(voiceId, text, token);
     } catch (error) {
       lastError = error;
     }
@@ -367,11 +391,12 @@ export async function POST(req: NextRequest) {
 
       if (voiceId) {
         try {
-          result = await synthesizeWithVoice(voiceId, text, VOICE_CLONE_MODEL, DEEPINFRA_API_KEY);
+          result = await synthesizeCloneWhenReady(voiceId, text, DEEPINFRA_API_KEY);
         } catch {
           // The stored voice is unusable — drop it on the provider too so it
           // doesn't occupy a voice slot forever.
           await deleteProviderVoice(voiceId, DEEPINFRA_API_KEY);
+          await clearSpeechVoiceSampleProviderVoiceId(userId);
           voiceId = '';
         }
       }
