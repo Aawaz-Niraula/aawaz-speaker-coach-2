@@ -550,6 +550,32 @@ export async function setSpeechVoiceSampleProviderVoiceId(userId: string, provid
   }
 }
 
+export async function clearSpeechVoiceSampleProviderVoiceId(userId: string) {
+  const db = await ensureSpeechSchema();
+
+  if (!db) {
+    return false;
+  }
+
+  try {
+    const result = await db.execute({
+      sql: `
+        UPDATE speech_voice_samples
+        SET provider_voice_id = NULL,
+            provider_voice_created_at = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = ?
+      `,
+      args: [userId],
+    });
+
+    return result.rowsAffected > 0;
+  } catch (error) {
+    console.error('Failed to clear speech provider voice id:', error);
+    return false;
+  }
+}
+
 export async function listRecentSpeechSessions(userId: string, limit = 6) {
   const db = await ensureSpeechSchema();
 
