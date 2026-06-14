@@ -1,16 +1,18 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { HelpCircle, Map, Sparkles, X } from 'lucide-react';
+import { Loader2, Map, Send, X } from 'lucide-react';
 
 import { CoachMascot, type MascotMood } from '@/components/mascot';
 import { Button } from '@/components/ui/button';
+import { requestJson } from '@/lib/request';
 import { sfx } from '@/lib/sound';
 import { cn } from '@/lib/utils';
 
 type CompanionTab = 'coach' | 'speech' | 'history' | 'progress' | 'account';
-type CompanionPosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'center';
+type CompanionPosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'center' | 'side';
+type ChatMessage = { role: 'assistant' | 'user'; content: string };
 
 type TourStep = {
   tab: CompanionTab;
@@ -19,6 +21,10 @@ type TourStep = {
   mood: MascotMood;
   position: CompanionPosition;
   targetLabel: string;
+};
+
+type AawaxChatResponse = {
+  answer: string;
 };
 
 const TOUR_STORAGE_KEY = 'aawax-onboarding-v1';
@@ -114,6 +120,8 @@ function positionClass(position: CompanionPosition) {
       return 'right-3 top-24 md:right-8 md:top-28';
     case 'center':
       return 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2';
+    case 'side':
+      return 'bottom-[calc(5rem+env(safe-area-inset-bottom))] right-3 md:bottom-auto md:right-6 md:top-[8.75rem]';
     case 'bottom-right':
     default:
       return 'bottom-[calc(5rem+env(safe-area-inset-bottom))] right-3 md:bottom-6 md:right-8';
@@ -160,7 +168,7 @@ function contextFor(tab: CompanionTab, flags: AawaxCompanionProps['flags']): Tou
       title: flags.hasSpeech ? 'Now perform it' : 'Need a topic?',
       body: flags.hasSpeech
         ? 'Read the draft out loud once, then regenerate only if the structure misses your goal.'
-        : 'Try a specific topic: “why discipline beats motivation” is stronger than just “discipline.”',
+        : 'Try a specific topic: "why discipline beats motivation" is stronger than just "discipline."',
       mood: flags.hasSpeech ? 'cheer' : 'coach',
       position: 'bottom-right',
       targetLabel: 'Speech practice',
@@ -223,10 +231,18 @@ export type AawaxCompanionProps = {
 };
 
 export function AawaxCompanion({ activeTab, onTabChange, onCustomize, flags }: AawaxCompanionProps) {
-  const [mode, setMode] = useState<'closed' | 'tour' | 'context'>('closed');
+  const [mode, setMode] = useState<'closed' | 'tour' | 'chat'>('closed');
   const [stepIndex, setStepIndex] = useState(0);
   const [boopCount, setBoopCount] = useState(0);
   const [tourSeen, setTourSeen] = useState(true);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    {
+      role: 'assistant',
+      content: 'Tap me anytime and ask about the app, public speaking, feedback, progress, or voice tools.',
+    },
+  ]);
 
   useEffect(() => {
     let seen = true;
@@ -246,8 +262,9 @@ export function AawaxCompanion({ activeTab, onTabChange, onCustomize, flags }: A
   }, []);
 
   const activeStep = mode === 'tour' ? TOUR_STEPS[stepIndex] : contextFor(activeTab, flags);
-  const typedBody = useTypewriter(activeStep.body, mode !== 'closed');
+  const typedBody = useTypewriter(activeStep.body, mode === 'tour');
   const isBusy = flags.isRecording || flags.isAnalyzing || flags.isGenerating || flags.isVoiceBusy;
+  const isChatOpen = mode === 'chat';
 
   useEffect(() => {
     if (mode === 'tour') {
@@ -279,9 +296,9 @@ export function AawaxCompanion({ activeTab, onTabChange, onCustomize, flags }: A
     setMode('tour');
   };
 
-  const openContext = () => {
+  const openChat = () => {
     sfx.pop();
-    setMode('context');
+    setMode('chat');
   };
 
   const next = () => {
@@ -298,7 +315,40 @@ export function AawaxCompanion({ activeTab, onTabChange, onCustomize, flags }: A
     setStepIndex((current) => Math.max(0, current - 1));
   };
 
+  const sendChat = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const message = chatInput.trim();
+    if (!message || chatLoading) return;
+
+    setChatInput('');
+    setChatLoading(true);
+    setChatMessages((current) => [...current, { role: 'user', content: message }]);
+
+    try {
+      const data = await requestJson<AawaxChatResponse>('/api/aawax-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, tab: activeTab }),
+      }, 75000);
+
+      setChatMessages((current) => [...current, { role: 'assistant', content: data.answer }]);
+      sfx.success();
+    } catch (error) {
+      setChatMessages((current) => [
+        ...current,
+        {
+          role: 'assistant',
+          content: error instanceof Error ? error.message : 'Aawax could not answer right now. Please try again.',
+        },
+      ]);
+      sfx.oops();
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
   const mascotMood = useMemo<MascotMood>(() => {
+    if (chatLoading) return 'think';
     if (boopCount >= 3) return 'cheer';
     if (isBusy && mode === 'closed') {
       if (flags.isRecording) return 'listen';
@@ -306,7 +356,7 @@ export function AawaxCompanion({ activeTab, onTabChange, onCustomize, flags }: A
       if (flags.isVoiceBusy) return 'sing';
     }
     return activeStep.mood;
-  }, [activeStep.mood, boopCount, flags.isAnalyzing, flags.isGenerating, flags.isRecording, flags.isVoiceBusy, isBusy, mode]);
+  }, [activeStep.mood, boopCount, chatLoading, flags.isAnalyzing, flags.isGenerating, flags.isRecording, flags.isVoiceBusy, isBusy, mode]);
 
   const boop = () => {
     setBoopCount((count) => {
@@ -321,14 +371,15 @@ export function AawaxCompanion({ activeTab, onTabChange, onCustomize, flags }: A
 
   return (
     <>
-      <div className="fixed right-3 top-[5.2rem] z-30 hidden flex-col gap-2 md:flex">
+      <div className="fixed right-3 top-[8.75rem] z-30 hidden flex-col items-end gap-2 md:flex">
         <button
           type="button"
-          onClick={openContext}
-          className="group flex items-center gap-2 rounded-full border border-[#a78bfa]/25 bg-[#0d0c16]/85 px-3 py-2 text-[#ddd6fe] shadow-[0_14px_45px_rgba(2,6,23,0.45)] backdrop-blur-xl transition hover:border-[#a78bfa]/50 hover:bg-white/10"
+          onClick={openChat}
+          className="group flex items-center gap-2 rounded-full border border-[#a78bfa]/25 bg-[#0d0c16]/88 py-2 pl-2 pr-3 text-[#ddd6fe] shadow-[0_18px_55px_rgba(2,6,23,0.52)] backdrop-blur-xl transition hover:border-[#a78bfa]/55 hover:bg-white/10"
+          aria-label="Open Aawax chat"
         >
-          <HelpCircle className="h-4 w-4" />
-          <span className="font-mono text-[10px] uppercase tracking-[0.16em]">Ask Aawax</span>
+          <CoachMascot mood={mascotMood} size={38} float={false} />
+          <span className="font-mono text-[10px] uppercase tracking-[0.16em]">Aawax</span>
         </button>
         <button
           type="button"
@@ -342,22 +393,22 @@ export function AawaxCompanion({ activeTab, onTabChange, onCustomize, flags }: A
 
       <button
         type="button"
-        onClick={openContext}
-        className="fixed bottom-[calc(5.1rem+env(safe-area-inset-bottom))] right-3 z-30 flex h-12 w-12 items-center justify-center rounded-full border border-[#a78bfa]/30 bg-[#0d0c16]/90 text-[#ddd6fe] shadow-[0_16px_45px_rgba(2,6,23,0.5)] backdrop-blur-xl md:hidden"
-        aria-label="Ask Aawax"
+        onClick={openChat}
+        className="fixed bottom-[calc(5.2rem+env(safe-area-inset-bottom))] right-3 z-30 flex h-14 w-14 items-center justify-center rounded-full border border-[#a78bfa]/30 bg-[#0d0c16]/90 text-[#ddd6fe] shadow-[0_16px_45px_rgba(2,6,23,0.5)] backdrop-blur-xl md:hidden"
+        aria-label="Open Aawax chat"
       >
-        <Sparkles className="h-5 w-5" />
+        <CoachMascot mood={mascotMood} size={42} float={false} />
       </button>
 
       <AnimatePresence>
         {mode !== 'closed' ? (
           <motion.div
-            key={`${mode}-${stepIndex}-${activeStep.position}`}
+            key={`${mode}-${stepIndex}-${isChatOpen ? 'chat' : activeStep.position}`}
             initial={{ opacity: 0, scale: 0.92, y: 18 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 10 }}
             transition={{ type: 'spring', stiffness: 280, damping: 24 }}
-            className={cn('fixed z-[70] w-[min(92vw,390px)]', positionClass(activeStep.position))}
+            className={cn('fixed z-[70] w-[min(92vw,390px)]', positionClass(isChatOpen ? 'side' : activeStep.position))}
           >
             {mode === 'tour' ? (
               <motion.div
@@ -377,47 +428,92 @@ export function AawaxCompanion({ activeTab, onTabChange, onCustomize, flags }: A
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-mono text-[9px] uppercase tracking-[0.24em] text-[#857ca2]">
-                        {mode === 'tour' ? `Tour ${stepIndex + 1}/${TOUR_STEPS.length}` : 'Aawax guide'}
+                        {mode === 'tour' ? `Tour ${stepIndex + 1}/${TOUR_STEPS.length}` : 'Aawax chat'}
                       </p>
-                      <p className="mt-1 font-serif text-xl leading-none tracking-tight text-white">{activeStep.title}</p>
+                      <p className="mt-1 font-serif text-xl leading-none tracking-tight text-white">
+                        {isChatOpen ? 'Ask me anything' : activeStep.title}
+                      </p>
                     </div>
                     <button
                       type="button"
                       onClick={close}
                       className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[#857ca2] transition hover:bg-white/10 hover:text-white"
-                      aria-label="Close Aawax guide"
+                      aria-label="Close Aawax panel"
                     >
                       <X className="h-4 w-4" />
                     </button>
                   </div>
-                  <div className="mt-3 min-h-[4.5rem] rounded-2xl rounded-tl-md border border-white/10 bg-white/[0.055] px-4 py-3 text-sm leading-6 text-[#d9d2ef]">
-                    {typedBody}
-                    <motion.span
-                      className="ml-0.5 inline-block h-4 w-1 translate-y-0.5 rounded-full bg-[#f9a8d4]"
-                      animate={{ opacity: [0, 1, 0] }}
-                      transition={{ duration: 0.9, repeat: Infinity }}
-                    />
-                  </div>
-                  <div className="mt-3 flex items-center gap-2">
-                    <span className="rounded-full border border-[#a78bfa]/25 bg-[#a78bfa]/10 px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.14em] text-[#ddd6fe]">
-                      {activeStep.targetLabel}
-                    </span>
-                    {boopCount > 0 ? (
-                      <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#857ca2]">
-                        Boop x{boopCount}
-                      </span>
-                    ) : null}
-                  </div>
+
+                  {isChatOpen ? (
+                    <div className="mt-3">
+                      <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                        {chatMessages.map((message, index) => (
+                          <div
+                            key={`${message.role}-${index}`}
+                            className={cn(
+                              'rounded-2xl border px-3 py-2 text-sm leading-5',
+                              message.role === 'user'
+                                ? 'ml-8 border-[#a78bfa]/25 bg-[#a78bfa]/14 text-[#f2efff]'
+                                : 'mr-6 rounded-tl-md border-white/10 bg-white/[0.055] text-[#d9d2ef]',
+                            )}
+                          >
+                            {message.content}
+                          </div>
+                        ))}
+                        {chatLoading ? (
+                          <div className="mr-6 flex items-center gap-2 rounded-2xl rounded-tl-md border border-white/10 bg-white/[0.055] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[#a79dc8]">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Thinking
+                          </div>
+                        ) : null}
+                      </div>
+                      <form onSubmit={sendChat} className="mt-3 flex items-center gap-2">
+                        <input
+                          value={chatInput}
+                          onChange={(event) => setChatInput(event.target.value)}
+                          placeholder="Ask Aawax..."
+                          className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/[0.055] px-3 py-3 text-sm text-[#f2efff] outline-none transition placeholder:text-[#857ca2] focus:border-[#a78bfa]/45 focus:bg-white/[0.075]"
+                          maxLength={900}
+                        />
+                        <Button type="submit" disabled={chatLoading || chatInput.trim().length < 2} size="icon" className="h-11 w-11 rounded-2xl">
+                          {chatLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                        </Button>
+                      </form>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="mt-3 min-h-[4.5rem] rounded-2xl rounded-tl-md border border-white/10 bg-white/[0.055] px-4 py-3 text-sm leading-6 text-[#d9d2ef]">
+                        {typedBody}
+                        <motion.span
+                          className="ml-0.5 inline-block h-4 w-1 translate-y-0.5 rounded-full bg-[#f9a8d4]"
+                          animate={{ opacity: [0, 1, 0] }}
+                          transition={{ duration: 0.9, repeat: Infinity }}
+                        />
+                      </div>
+                      <div className="mt-3 flex items-center gap-2">
+                        <span className="rounded-full border border-[#a78bfa]/25 bg-[#a78bfa]/10 px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.14em] text-[#ddd6fe]">
+                          {activeStep.targetLabel}
+                        </span>
+                        {boopCount > 0 ? (
+                          <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#857ca2]">
+                            Boop x{boopCount}
+                          </span>
+                        ) : null}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
-              <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/8">
-                <motion.div
-                  className="h-full rounded-full bg-[linear-gradient(90deg,#a78bfa,#f9a8d4)]"
-                  initial={false}
-                  animate={{ width: `${progress}%` }}
-                />
-              </div>
+              {isChatOpen ? null : (
+                <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/8">
+                  <motion.div
+                    className="h-full rounded-full bg-[linear-gradient(90deg,#a78bfa,#f9a8d4)]"
+                    initial={false}
+                    animate={{ width: `${progress}%` }}
+                  />
+                </div>
+              )}
 
               <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
                 {mode === 'tour' ? (
@@ -452,7 +548,7 @@ export function AawaxCompanion({ activeTab, onTabChange, onCustomize, flags }: A
                         Dress-up
                       </Button>
                       <Button onClick={close} className="h-9 rounded-[14px] px-4 font-mono text-[10px] uppercase tracking-[0.14em]">
-                        Got it
+                        Close
                       </Button>
                     </div>
                   </>
