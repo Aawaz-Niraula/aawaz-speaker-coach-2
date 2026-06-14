@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 
+import { AawaxChatPage, AAWAX_CHAT_GREETING, type AawaxChatMessage } from '@/components/aawax-chat-page';
 import { AawaxCompanion } from '@/components/aawax-companion';
 import { AawaxCustomizer } from '@/components/aawax-customizer';
 import { AudioPlayer } from '@/components/audio-player';
@@ -45,7 +46,7 @@ import { type SpeechTemplateId } from '@/lib/speech-config';
 import { cn } from '@/lib/utils';
 
 /* ── Types ───────────────────────────────────────────────────────── */
-type Tab = 'coach' | 'speech' | 'history' | 'progress' | 'account';
+type Tab = 'coach' | 'speech' | 'history' | 'progress' | 'account' | 'aawax';
 type NavItem = { id: Tab; label: string; icon: typeof Mic };
 type SpeechHistoryItem = {
   id: string;
@@ -85,6 +86,7 @@ const TAB_META: Record<Tab, { title: string; subtitle: string }> = {
   history: { title: 'Speech History', subtitle: 'All of your past speeches and reports in one place.' },
   progress: { title: 'Progress', subtitle: 'See how your scores have been improving over time.' },
   account: { title: 'Account', subtitle: 'Sign in to keep your progress safe across devices.' },
+  aawax: { title: 'Ask Aawax', subtitle: 'Your AI speaking companion, here to help.' },
 };
 
 const MAX_RECORDING_SECONDS = 300;
@@ -276,9 +278,12 @@ export default function Home() {
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [avatarCustomizeOpen, setAvatarCustomizeOpen] = useState(false);
+  const [aawaxMessages, setAawaxMessages] = useState<AawaxChatMessage[]>([AAWAX_CHAT_GREETING]);
+  const lastNonAawaxTab = useRef<Tab>('coach');
 
   const switchTab = useCallback((tab: Tab) => {
     setActiveTab((currentTab) => {
+      if (currentTab !== 'aawax') lastNonAawaxTab.current = currentTab;
       if (tab !== currentTab) sfx.tick();
       return tab;
     });
@@ -1839,6 +1844,7 @@ export default function Home() {
               className="grid gap-4 sm:gap-5"
             >
               {/* ── Header ──────────────────────────────── */}
+              {activeTab !== 'aawax' ? (
               <div className="relative z-20 flex items-end justify-between gap-4 px-1 pt-1">
                 <div className="min-w-0">
                   <Eyebrow>{activeTab}</Eyebrow>
@@ -1871,6 +1877,17 @@ export default function Home() {
                   ) : null}
                 </div>
               </div>
+              ) : null}
+
+              {/* ── Aawax chat tab ──────────────────────── */}
+              {activeTab === 'aawax' && (
+                <AawaxChatPage
+                  messages={aawaxMessages}
+                  setMessages={setAawaxMessages}
+                  contextTab={lastNonAawaxTab.current}
+                  onBack={() => switchTab(lastNonAawaxTab.current)}
+                />
+              )}
 
               {/* ── Coach tab ───────────────────────────── */}
               {activeTab === 'coach' && (
@@ -2168,7 +2185,7 @@ export default function Home() {
       </div>
 
       {/* ── Mobile bottom nav ───────────────────────────── */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-[#09090f]/90 backdrop-blur-xl md:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <nav className="gpu-layer fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-[#09090f]/90 backdrop-blur-xl md:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="mx-auto flex max-w-md items-stretch justify-around px-1 py-1.5">
           {navItems.map(({ id, label, icon: Icon }) => {
             const active = activeTab === id;
@@ -2232,11 +2249,11 @@ export default function Home() {
       <AawaxCustomizer open={customizeOpen} onClose={() => setCustomizeOpen(false)} />
       <AvatarCustomizer open={avatarCustomizeOpen} onClose={() => setAvatarCustomizeOpen(false)} />
 
-      {!customizeOpen && !avatarCustomizeOpen && !authPromptOpen && !confirmRequest ? (
+      {!customizeOpen && !avatarCustomizeOpen && !authPromptOpen && !confirmRequest && activeTab !== 'aawax' ? (
         <AawaxCompanion
           activeTab={activeTab}
           onTabChange={switchTab}
-          onCustomize={openCustomizer}
+          onOpenChat={() => switchTab('aawax')}
           flags={{
             isRecording,
             isAnalyzing,

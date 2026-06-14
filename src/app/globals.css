@@ -24,6 +24,9 @@
 
 html {
   scroll-behavior: smooth;
+  /* Stop scroll-chaining between the page and inner scrollers, which is a
+     common source of "stuttering / sudden stop" feel on mobile. */
+  overscroll-behavior-y: none;
 }
 
 body {
@@ -32,6 +35,23 @@ body {
   font-family: var(--font-sans-next, "Manrope"), "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Smooth, contained inner scroll area (chat, lists) with momentum on iOS. */
+.aawax-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+/* Promote persistent fixed/blurred surfaces to their own compositor layer so
+   their backdrop-blur is not repainted across the whole viewport every scroll
+   frame on mobile. */
+.gpu-layer {
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 /* Layered aurora backdrop */
