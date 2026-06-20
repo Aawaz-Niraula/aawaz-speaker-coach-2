@@ -2089,14 +2089,15 @@ export default function Home() {
                             <motion.div
                               key={item.id}
                               layout="position"
-                              initial={{ opacity: 0, y: 8 }}
-                              animate={{ opacity: isDeleting ? 0.4 : 1, y: 0 }}
-                              transition={{ delay: index * 0.04 }}
+                              initial={{ opacity: 0, y: reduceMotion ? 0 : 16, scale: reduceMotion ? 1 : 0.98 }}
+                              animate={{ opacity: isDeleting ? 0.4 : 1, y: 0, scale: 1 }}
+                              transition={{ delay: index * 0.05, type: 'spring', stiffness: 260, damping: 26 }}
+                              whileHover={reduceMotion || isDeleting ? undefined : { y: -3 }}
                               className={cn(
-                                'rounded-[20px] border transition-colors sm:rounded-[24px]',
+                                'glass-edge rounded-[20px] border transition-colors sm:rounded-[24px]',
                                 isSelected
-                                  ? 'border-[#a78bfa]/40 bg-[linear-gradient(135deg,rgba(167,139,250,0.12),rgba(249,168,212,0.08))]'
-                                  : 'border-white/10 bg-white/4 hover:border-white/20',
+                                  ? 'border-[#a78bfa]/40 bg-[linear-gradient(135deg,rgba(167,139,250,0.12),rgba(249,168,212,0.08))] shadow-[0_10px_30px_rgba(167,139,250,0.18)]'
+                                  : 'border-white/10 bg-white/4 hover:border-white/20 hover:shadow-[0_12px_30px_rgba(2,6,23,0.4)]',
                               )}
                             >
                               <div className="p-4 sm:p-5">
@@ -2194,10 +2195,11 @@ export default function Home() {
                         {insights.map((insight, i) => (
                           <motion.div
                             key={i}
-                            initial={{ opacity: 0, y: 8 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: i * 0.07 }}
-                            className="rounded-[20px] border border-white/10 bg-[#0b0b12]/55 p-4 sm:rounded-[24px] sm:p-5"
+                            initial={{ opacity: 0, y: reduceMotion ? 0 : 16, scale: reduceMotion ? 1 : 0.98 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            transition={{ delay: i * 0.07, type: 'spring', stiffness: 260, damping: 26 }}
+                            whileHover={reduceMotion ? undefined : { y: -3 }}
+                            className="glass-edge rounded-[20px] border border-white/10 bg-[#0b0b12]/55 p-4 transition-shadow hover:shadow-[0_12px_30px_rgba(2,6,23,0.4)] sm:rounded-[24px] sm:p-5"
                           >
                             <p className="break-words text-sm leading-6 text-[#f2efff]">{insight}</p>
                             <div className="mt-3 flex gap-2 border-t border-white/10 pt-3">
@@ -2216,10 +2218,11 @@ export default function Home() {
                         {weaknesses.map((weakness, i) => (
                           <motion.div
                             key={i}
-                            initial={{ opacity: 0, y: 8 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: i * 0.07 }}
-                            className="rounded-[20px] border border-[#f87171]/15 bg-[#dc2626]/5 p-4 sm:rounded-[24px] sm:p-5"
+                            initial={{ opacity: 0, y: reduceMotion ? 0 : 16, scale: reduceMotion ? 1 : 0.98 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            transition={{ delay: i * 0.07, type: 'spring', stiffness: 260, damping: 26 }}
+                            whileHover={reduceMotion ? undefined : { y: -3 }}
+                            className="glass-edge rounded-[20px] border border-[#f87171]/15 bg-[#dc2626]/5 p-4 transition-shadow hover:shadow-[0_12px_30px_rgba(220,38,38,0.18)] sm:rounded-[24px] sm:p-5"
                           >
                             <p className="break-words text-sm leading-6 text-[#f2efff]">{weakness}</p>
                             <div className="mt-3 flex gap-2 border-t border-white/10 pt-3">
