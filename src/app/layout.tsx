@@ -42,7 +42,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${serif.variable} ${sans.variable} ${mono.variable}`}>
-      <body>{children}</body>
+      <body>
+        <div className="bg-mesh" aria-hidden="true" />
+        {children}
+      </body>
     </html>
   );
 }
