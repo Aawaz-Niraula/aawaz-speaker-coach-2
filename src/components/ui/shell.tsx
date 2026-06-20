@@ -12,7 +12,7 @@ export function Shell({ children, className, tone = 'default' }: ShellProps) {
   return (
     <div
       className={cn(
-        'relative rounded-[24px] border bg-white/[0.055] p-4 shadow-[0_20px_70px_rgba(2,6,23,0.45),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl sm:rounded-[28px] sm:p-6',
+        'glass-edge relative rounded-[24px] border bg-white/[0.055] p-4 shadow-[0_20px_70px_rgba(2,6,23,0.45),inset_0_1px_0_rgba(255,255,255,0.06)] [backdrop-filter:blur(20px)_saturate(140%)] [-webkit-backdrop-filter:blur(20px)_saturate(140%)] sm:rounded-[28px] sm:p-6',
         tone === 'default' && 'border-white/10',
         tone === 'accent' && 'border-[#a78bfa]/25 bg-[linear-gradient(135deg,rgba(167,139,250,0.09),rgba(249,168,212,0.06))]',
         tone === 'danger' && 'border-[#f87171]/20',
