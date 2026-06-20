@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion, type TargetAndTransition, type Transition } from 'framer-motion';
 import { Map, X } from 'lucide-react';
 
 import { CoachMascot, type MascotMood } from '@/components/mascot';
@@ -322,9 +322,33 @@ export function AawaxCompanion({ activeTab, onTabChange, onOpenChat, flags }: Aa
     });
   };
 
+  /* Trackable, per-action movement for the docked companion. Each state gives
+     Aawax a distinct gait so it feels alive and reacts to what you're doing.
+     Transform-only (GPU-friendly); fully stilled under reduced motion. */
+  const reduceMotion = useReducedMotion();
+  const companionMotion = useMemo<{ animate?: TargetAndTransition; transition?: Transition }>(() => {
+    if (reduceMotion) return { animate: undefined, transition: undefined };
+    switch (mascotMood) {
+      case 'listen': // recording — attentive lean-in bob
+        return { animate: { y: [0, -5, 0], rotate: [0, -2.5, 2.5, 0] }, transition: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' } };
+      case 'think': // analyzing / generating — pacing side to side
+        return { animate: { x: [0, 9, -9, 0] }, transition: { duration: 2, repeat: Infinity, ease: 'easeInOut' } };
+      case 'sing': // voice work — bouncy wobble
+        return { animate: { y: [0, -9, 0], rotate: [-4, 4, -4, 0] }, transition: { duration: 0.8, repeat: Infinity, ease: 'easeInOut' } };
+      case 'cheer': // success — celebratory hops
+        return { animate: { y: [0, -12, 0], scale: [1, 1.06, 1] }, transition: { duration: 0.7, repeat: Infinity, ease: 'easeOut' } };
+      default: // idle — gentle sideways drift
+        return { animate: { x: [0, 7, 0, -7, 0], y: [0, -4, 0, -4, 0] }, transition: { duration: 6.5, repeat: Infinity, ease: 'easeInOut' } };
+    }
+  }, [mascotMood, reduceMotion]);
+
   return (
     <>
-      <div className="gpu-layer fixed bottom-6 right-8 z-30 hidden flex-col items-end gap-2 md:flex">
+      <motion.div
+        className="gpu-layer fixed bottom-6 right-8 z-30 hidden flex-col items-end gap-2 md:flex"
+        animate={companionMotion.animate}
+        transition={companionMotion.transition}
+      >
         <button
           type="button"
           onClick={openChat}
@@ -342,16 +366,19 @@ export function AawaxCompanion({ activeTab, onTabChange, onOpenChat, flags }: Aa
           <Map className="h-4 w-4" />
           <span className="font-mono text-[10px] uppercase tracking-[0.16em]">{tourSeen ? 'Replay tour' : 'Start tour'}</span>
         </button>
-      </div>
+      </motion.div>
 
-      <button
+      <motion.button
         type="button"
         onClick={openChat}
+        animate={companionMotion.animate}
+        transition={companionMotion.transition}
+        whileTap={{ scale: 0.92 }}
         className="gpu-layer fixed bottom-[calc(5.2rem+env(safe-area-inset-bottom))] right-3 z-30 flex h-14 w-14 items-center justify-center rounded-full border border-[#a78bfa]/30 bg-[#0d0c16]/90 text-[#ddd6fe] shadow-[0_16px_45px_rgba(2,6,23,0.5)] backdrop-blur-xl md:hidden"
         aria-label="Open Aawax chat"
       >
         <CoachMascot mood={mascotMood} size={42} float={false} />
-      </button>
+      </motion.button>
 
       <AnimatePresence>
         {mode === 'tour' ? (
