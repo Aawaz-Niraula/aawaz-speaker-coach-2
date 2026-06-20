@@ -2,12 +2,115 @@
 @import "tw-animate-css";
 
 :root {
+  /* ── Core palette ───────────────────────────────────────────── */
   --background: #06060b;
+  --surface-0: #0b0b12;
+  --surface-1: #0d0c16;
+  --surface-2: #15131f;
   --foreground: #f2efff;
   --violet: #a78bfa;
+  --indigo: #7c5cde;
   --pink: #f9a8d4;
   --lavender: #ddd6fe;
   --muted: #857ca2;
+
+  /* ── Glass system ───────────────────────────────────────────── */
+  --glass-bg: rgba(255, 255, 255, 0.055);
+  --glass-bg-strong: rgba(13, 12, 22, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-highlight: rgba(255, 255, 255, 0.14);
+  --glass-blur: 18px;
+  --glass-saturate: 140%;
+
+  /* ── Radii ──────────────────────────────────────────────────── */
+  --r-sm: 12px;
+  --r-md: 18px;
+  --r-lg: 24px;
+  --r-xl: 28px;
+  --r-pill: 999px;
+
+  /* ── Spacing scale (4px base) ───────────────────────────────── */
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.5rem;
+  --sp-6: 2rem;
+  --sp-7: 3rem;
+
+  /* ── Type scale ─────────────────────────────────────────────── */
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.875rem;
+  --fs-base: 1rem;
+  --fs-lg: 1.25rem;
+  --fs-xl: 1.5rem;
+  --fs-2xl: clamp(2rem, 4.5vw, 3.2rem);
+
+  /* ── Layered shadow system ──────────────────────────────────── */
+  --shadow-1: 0 1px 2px rgba(2, 6, 23, 0.4);
+  --shadow-2: 0 8px 24px rgba(2, 6, 23, 0.4);
+  --shadow-3: 0 20px 60px rgba(2, 6, 23, 0.5);
+  --shadow-4: 0 30px 80px rgba(2, 6, 23, 0.7);
+  --shadow-inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --glow-violet: 0 0 40px rgba(167, 139, 250, 0.35);
+  --glow-pink: 0 0 40px rgba(249, 168, 212, 0.32);
+
+  /* ── Motion easing ──────────────────────────────────────────── */
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 160ms;
+  --dur-med: 280ms;
+}
+
+/* ── Reusable glass surface utilities ─────────────────────────── */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-3), var(--shadow-inset-top);
+}
+
+.glass-strong {
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(calc(var(--glass-blur) + 6px)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 6px)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-4), var(--shadow-inset-top);
+}
+
+/* Light edge that makes a glass surface read as a physical pane. */
+.glass-edge {
+  position: relative;
+}
+.glass-edge::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, var(--glass-highlight), transparent 45%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* Fallback for browsers without backdrop-filter — fall back to a solid-ish tint
+   so glass surfaces never turn into unreadable transparent panes. */
+@supports not ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
+  .glass {
+    background: rgba(17, 16, 28, 0.9);
+  }
+  .glass-strong {
+    background: rgba(13, 12, 22, 0.96);
+  }
+}
+
+/* 3D scene wrapper — establishes perspective for translateZ/rotateY children. */
+.scene-3d {
+  perspective: 1200px;
+  perspective-origin: 50% 40%;
 }
 
 @theme inline {
@@ -64,8 +167,68 @@ body::before {
     radial-gradient(ellipse 42% 34% at 18% 8%, rgba(167, 139, 250, 0.16), transparent 70%),
     radial-gradient(ellipse 38% 30% at 85% 6%, rgba(249, 168, 212, 0.13), transparent 70%),
     radial-gradient(ellipse 50% 40% at 50% 110%, rgba(124, 92, 222, 0.10), transparent 70%);
-  z-index: -2;
+  z-index: -3;
   animation: aurora-drift 26s ease-in-out infinite alternate;
+}
+
+/* Soft animated gradient mesh — drifting colour blobs give the dark backdrop
+   real depth so glass surfaces have something to refract. GPU-friendly
+   (transform/opacity only). Rendered via a div in the layout. */
+.bg-mesh {
+  position: fixed;
+  inset: -30%;
+  z-index: -2;
+  pointer-events: none;
+  filter: blur(60px) saturate(125%);
+  opacity: 0.6;
+  background:
+    radial-gradient(38% 32% at 22% 28%, rgba(167, 139, 250, 0.28), transparent 60%),
+    radial-gradient(34% 30% at 80% 22%, rgba(249, 168, 212, 0.22), transparent 60%),
+    radial-gradient(40% 34% at 68% 78%, rgba(124, 92, 222, 0.24), transparent 62%),
+    radial-gradient(30% 26% at 30% 82%, rgba(221, 214, 254, 0.16), transparent 60%);
+  animation: mesh-drift 30s var(--ease-spring) infinite alternate;
+  will-change: transform;
+}
+
+@keyframes mesh-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(-3%, 2%, 0) scale(1.08) rotate(2deg);
+  }
+  100% {
+    transform: translate3d(3%, -2%, 0) scale(1.04) rotate(-2deg);
+  }
+}
+
+/* Hero mic — layered glow halo that breathes. */
+@keyframes mic-glow {
+  0%, 100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.12);
+  }
+}
+
+.mic-glow {
+  animation: mic-glow 3.4s var(--ease-spring) infinite;
+  will-change: transform, opacity;
+}
+
+/* Slowly rotating conic accent used on the recording progress ring. */
+@keyframes conic-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.conic-spin {
+  animation: conic-spin 6s linear infinite;
+  will-change: transform;
 }
 
 /* Fine grain so flat surfaces don't band */
@@ -201,7 +364,10 @@ body::after {
 
 /* Respect motion preferences */
 @media (prefers-reduced-motion: reduce) {
-  body::before {
+  body::before,
+  .bg-mesh,
+  .mic-glow,
+  .conic-spin {
     animation: none;
   }
 
