@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Label from '@radix-ui/react-label';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion, type Variants } from 'framer-motion';
 import {
   BarChart3,
   ChevronDown,
@@ -88,6 +88,9 @@ const TAB_META: Record<Tab, { title: string; subtitle: string }> = {
   account: { title: 'Account', subtitle: 'Sign in to keep your progress safe across devices.' },
   aawax: { title: 'Ask Aawax', subtitle: 'Your AI speaking companion, here to help.' },
 };
+
+/** Left-to-right order of screens — drives the direction of the 3D slide. */
+const TAB_ORDER: Tab[] = ['coach', 'speech', 'history', 'progress', 'account', 'aawax'];
 
 const MAX_RECORDING_SECONDS = 300;
 const VOICE_SAMPLE_SECONDS = 15;
@@ -271,6 +274,7 @@ function ScoreBadge({ score }: { score: number | null }) {
 export default function Home() {
   const { data: session, isPending: isSessionPending, refetch: refetchSession } = authClient.useSession();
   const accountUser = session?.user ?? null;
+  const reduceMotion = useReducedMotion();
 
   const [identityReady, setIdentityReady] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('coach');
@@ -279,14 +283,18 @@ export default function Home() {
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [avatarCustomizeOpen, setAvatarCustomizeOpen] = useState(false);
   const [aawaxMessages, setAawaxMessages] = useState<AawaxChatMessage[]>([AAWAX_CHAT_GREETING]);
+  const [tabDirection, setTabDirection] = useState(1);
   const lastNonAawaxTab = useRef<Tab>('coach');
+  const activeTabRef = useRef<Tab>('coach');
 
   const switchTab = useCallback((tab: Tab) => {
-    setActiveTab((currentTab) => {
-      if (currentTab !== 'aawax') lastNonAawaxTab.current = currentTab;
-      if (tab !== currentTab) sfx.tick();
-      return tab;
-    });
+    const currentTab = activeTabRef.current;
+    if (tab === currentTab) return;
+    if (currentTab !== 'aawax') lastNonAawaxTab.current = currentTab;
+    sfx.tick();
+    // Slide toward the requested screen based on its position in the nav order.
+    setTabDirection(TAB_ORDER.indexOf(tab) >= TAB_ORDER.indexOf(currentTab) ? 1 : -1);
+    setActiveTab(tab);
   }, []);
 
   const openCustomizer = () => {
@@ -405,6 +413,10 @@ export default function Home() {
   useEffect(() => {
     speechAudioRef.current = speechAudio;
   }, [speechAudio]);
+
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
 
   /* ── Auth status ───────────────────────────────────────────────── */
   useEffect(() => {
@@ -1667,47 +1679,76 @@ export default function Home() {
           </AnimatePresence>
         </div>
 
-        <div className="flex flex-col items-center gap-3">
-          <div className="relative">
+        <div className="scene-3d flex flex-col items-center gap-3">
+          <div className="relative grid h-28 w-28 place-items-center sm:h-32 sm:w-32">
+            {/* Breathing glow halo — the hero's light source */}
+            <div
+              aria-hidden
+              className={cn(
+                'mic-glow pointer-events-none absolute h-[160%] w-[160%] rounded-full blur-2xl',
+                isRecording
+                  ? 'bg-[radial-gradient(circle,rgba(248,113,113,0.6),transparent_66%)]'
+                  : 'bg-[radial-gradient(circle,rgba(167,139,250,0.5),rgba(249,168,212,0.3)_45%,transparent_72%)]',
+              )}
+            />
             {isRecording ? (
               <>
                 <span className="pulse-ring absolute inset-0 rounded-full border-2 border-[#f87171]/50" />
                 <span className="pulse-ring absolute inset-0 rounded-full border-2 border-[#f87171]/30" style={{ animationDelay: '0.6s' }} />
               </>
             ) : null}
-            <svg viewBox="0 0 124 124" className="pointer-events-none absolute -inset-2 h-[calc(100%+16px)] w-[calc(100%+16px)]">
-              <circle cx="62" cy="62" r={RING_R} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="3" />
+
+            {/* Progress / timer ring with gradient stroke + glow */}
+            <svg viewBox="0 0 124 124" className="pointer-events-none absolute h-[calc(100%+18px)] w-[calc(100%+18px)]">
+              <defs>
+                <linearGradient id="micRingIdle" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stopColor="#c4b5fd" />
+                  <stop offset="100%" stopColor="#f9a8d4" />
+                </linearGradient>
+                <linearGradient id="micRingRec" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stopColor="#f87171" />
+                  <stop offset="100%" stopColor="#fb7185" />
+                </linearGradient>
+              </defs>
+              <circle cx="62" cy="62" r={RING_R} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="3.5" />
               {isRecording || seconds > 0 ? (
                 <circle
                   cx="62"
                   cy="62"
                   r={RING_R}
                   fill="none"
-                  stroke={isRecording ? '#f87171' : '#a78bfa'}
-                  strokeWidth="3"
+                  stroke={isRecording ? 'url(#micRingRec)' : 'url(#micRingIdle)'}
+                  strokeWidth="3.5"
                   strokeLinecap="round"
                   strokeDasharray={RING_C}
                   strokeDashoffset={RING_C * (1 - recordProgress)}
                   transform="rotate(-90 62 62)"
                   className="transition-[stroke-dashoffset] duration-1000 ease-linear"
+                  style={{ filter: 'drop-shadow(0 0 6px rgba(167,139,250,0.55))' }}
                 />
               ) : null}
             </svg>
+
+            {/* The hero button — layered depth + physical 3D press */}
             <motion.button
-              whileTap={{ scale: 0.94 }}
-              animate={isRecording ? { scale: [1, 1.04, 1] } : { scale: 1 }}
-              transition={{ duration: 1.8, repeat: isRecording ? Infinity : 0 }}
+              whileTap={{ scale: 0.9, rotateX: reduceMotion ? 0 : 12 }}
+              whileHover={!isRecording && !isAnalyzing ? { y: reduceMotion ? 0 : -3, scale: 1.03 } : undefined}
+              animate={isRecording && !reduceMotion ? { scale: [1, 1.045, 1] } : { scale: 1 }}
+              transition={isRecording ? { duration: 1.8, repeat: Infinity } : { type: 'spring', stiffness: 320, damping: 18 }}
+              style={{ transformPerspective: 700 }}
               onClick={isRecording ? stopRecording : startRecording}
               disabled={isAnalyzing}
               className={cn(
-                'relative flex h-28 w-28 items-center justify-center rounded-full border text-[#f2efff] shadow-[0_24px_60px_rgba(2,6,23,0.45)] transition disabled:opacity-60 sm:h-32 sm:w-32',
+                'relative flex h-full w-full items-center justify-center rounded-full border transition-shadow disabled:opacity-60',
                 isRecording
-                  ? 'border-[#f87171]/30 bg-[linear-gradient(135deg,#dc2626,#f87171)]'
-                  : 'border-white/10 bg-[linear-gradient(135deg,#a78bfa,#f9a8d4)] text-[#06060b] hover:shadow-[0_24px_70px_rgba(167,139,250,0.45)]',
+                  ? 'border-[#f87171]/40 bg-[linear-gradient(135deg,#dc2626,#f87171)] text-[#fff5f5] shadow-[0_18px_50px_rgba(220,38,38,0.5),inset_0_2px_4px_rgba(255,255,255,0.25),inset_0_-7px_15px_rgba(0,0,0,0.35)]'
+                  : 'border-white/15 bg-[linear-gradient(140deg,#c4b5fd_0%,#a78bfa_42%,#f9a8d4_100%)] text-[#06060b] shadow-[0_22px_55px_rgba(167,139,250,0.42),inset_0_2px_5px_rgba(255,255,255,0.55),inset_0_-8px_16px_rgba(124,92,222,0.45)] hover:shadow-[0_28px_72px_rgba(167,139,250,0.55),inset_0_2px_5px_rgba(255,255,255,0.6),inset_0_-8px_16px_rgba(124,92,222,0.5)]',
               )}
               aria-label={isRecording ? 'Stop recording' : 'Start recording'}
             >
-              {isAnalyzing ? <Sparkles className="h-10 w-10 animate-spin" /> : isRecording ? <Square className="h-9 w-9" /> : <Mic className="h-10 w-10" />}
+              {/* glossy top reflection */}
+              <span aria-hidden className="pointer-events-none absolute inset-x-3 top-2 h-1/3 rounded-full bg-[linear-gradient(180deg,rgba(255,255,255,0.5),transparent)] opacity-70" />
+              {isAnalyzing ? <Sparkles className="relative h-10 w-10 animate-spin" /> : isRecording ? <Square className="relative h-9 w-9" /> : <Mic className="relative h-10 w-10" />}
             </motion.button>
           </div>
           <div className="text-center font-mono text-[10px] uppercase tracking-[0.24em] text-[#857ca2] sm:text-[11px]">
@@ -1720,6 +1761,20 @@ export default function Home() {
 
   /* ── Render ────────────────────────────────────────────────────── */
   const tabMeta = TAB_META[activeTab];
+
+  /* Horizontal slide with subtle perspective/depth between screens.
+     Softened to a plain crossfade when the user prefers reduced motion. */
+  const tabVariants: Variants = {
+    enter: (dir: number) =>
+      reduceMotion ? { opacity: 0 } : { opacity: 0, x: dir * 56, rotateY: dir * -7, z: -80 },
+    center: reduceMotion
+      ? { opacity: 1, transition: { duration: 0.2 } }
+      : { opacity: 1, x: 0, rotateY: 0, z: 0, transition: { type: 'spring', stiffness: 280, damping: 30, mass: 0.85 } },
+    exit: (dir: number) =>
+      reduceMotion
+        ? { opacity: 0, transition: { duration: 0.15 } }
+        : { opacity: 0, x: dir * -56, rotateY: dir * 7, z: -80, transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] } },
+  };
 
   const helpContent = (
     <div className="space-y-2">
@@ -1834,13 +1889,15 @@ export default function Home() {
             </div>
           </div>
 
-          <AnimatePresence mode="wait">
+          <AnimatePresence mode="wait" custom={tabDirection}>
             <motion.div
               key={activeTab}
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+              custom={tabDirection}
+              variants={tabVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              style={{ transformPerspective: 1200 }}
               className="grid gap-4 sm:gap-5"
             >
               {/* ── Header ──────────────────────────────── */}
@@ -2185,7 +2242,10 @@ export default function Home() {
       </div>
 
       {/* ── Mobile bottom nav ───────────────────────────── */}
-      <nav className="gpu-layer fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-[#09090f]/90 backdrop-blur-xl md:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <nav
+        className="gpu-layer fixed inset-x-0 bottom-0 z-40 border-t border-white/12 bg-[#0b0b14]/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_-22px_55px_rgba(2,6,23,0.55)] backdrop-blur-2xl md:hidden"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)', backdropFilter: 'blur(24px) saturate(140%)', WebkitBackdropFilter: 'blur(24px) saturate(140%)' }}
+      >
         <div className="mx-auto flex max-w-md items-stretch justify-around px-1 py-1.5">
           {navItems.map(({ id, label, icon: Icon }) => {
             const active = activeTab === id;
@@ -2194,15 +2254,25 @@ export default function Home() {
               <button
                 key={id}
                 onClick={() => switchTab(id)}
-                className="relative flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-1 py-2"
+                className="group relative flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-1 py-2 outline-none focus-visible:ring-2 focus-visible:ring-[#a78bfa]/60"
                 aria-label={label}
                 aria-current={active ? 'page' : undefined}
               >
                 {active ? (
-                  <motion.span layoutId="mobile-nav-active" className="absolute inset-x-1 inset-y-0.5 rounded-2xl bg-white/7" transition={{ type: 'spring', stiffness: 380, damping: 32 }} />
+                  <motion.span
+                    layoutId="mobile-nav-active"
+                    className="absolute inset-x-1 inset-y-0.5 rounded-2xl border border-[#a78bfa]/30 bg-[linear-gradient(135deg,rgba(167,139,250,0.24),rgba(249,168,212,0.14))] shadow-[0_6px_20px_rgba(167,139,250,0.28),inset_0_1px_0_rgba(255,255,255,0.14)]"
+                    transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                  />
                 ) : null}
-                <Icon className={cn('relative h-5 w-5 transition-colors', active ? 'text-[#ddd6fe]' : 'text-[#6f6691]')} />
-                <span className={cn('relative font-mono text-[8.5px] uppercase tracking-[0.1em] transition-colors', active ? 'text-[#ddd6fe]' : 'text-[#6f6691]')}>{shortLabel}</span>
+                <motion.span
+                  className="relative"
+                  animate={{ y: active && !reduceMotion ? -2 : 0, scale: active ? 1.1 : 1 }}
+                  transition={{ type: 'spring', stiffness: 420, damping: 24 }}
+                >
+                  <Icon className={cn('h-5 w-5 transition-colors', active ? 'text-[#ddd6fe] drop-shadow-[0_2px_6px_rgba(167,139,250,0.5)]' : 'text-[#6f6691] group-hover:text-[#a79dc8]')} />
+                </motion.span>
+                <span className={cn('relative font-mono text-[8.5px] uppercase tracking-[0.1em] transition-colors', active ? 'text-[#ddd6fe]' : 'text-[#6f6691] group-hover:text-[#a79dc8]')}>{shortLabel}</span>
               </button>
             );
           })}
