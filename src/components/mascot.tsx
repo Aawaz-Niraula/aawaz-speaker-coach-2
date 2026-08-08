@@ -20,7 +20,8 @@ export type MascotMood =
   | 'cheer' // success / high score
   | 'coach' // neutral coaching, mid score
   | 'oops' // error / low score
-  | 'sing'; // voice sample / audio
+  | 'sing' // voice sample / audio
+  | 'talk'; // mid-sentence, mouth moving (tour narration)
 
 /* ── Aawax style store ───────────────────────────────────────────────
  * A tiny external store (instead of context) so every mascot in the app
@@ -261,7 +262,18 @@ export function CoachMascot({
       ) : null}
 
       {/* mouth */}
-      {effectiveMood === 'cheer' ? (
+      {effectiveMood === 'talk' ? (
+        // Mid-sentence: the mouth opens and closes on an uneven rhythm so it
+        // reads as speech rather than a pulsing shape.
+        <motion.ellipse
+          cx="60"
+          cy="78"
+          rx="5.2"
+          fill="#2a2140"
+          animate={{ ry: [1.6, 6.2, 2.6, 5.4, 1.8, 4.8, 2.2] }}
+          transition={{ duration: 1.15, repeat: Infinity, ease: 'easeInOut' }}
+        />
+      ) : effectiveMood === 'cheer' ? (
         <path d="M51 74 Q60 84 69 74 Z" fill="#2a2140" />
       ) : effectiveMood === 'oops' ? (
         <path d="M52 80 Q60 73 68 80" stroke="#2a2140" strokeWidth="3.4" fill="none" strokeLinecap="round" />
