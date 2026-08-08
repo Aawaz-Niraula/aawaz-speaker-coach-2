@@ -84,6 +84,7 @@ export function CoachMascot({
   float = true,
   interactive = false,
   styleOverride,
+  mouthOpen,
   className,
 }: {
   mood?: MascotMood;
@@ -93,6 +94,11 @@ export function CoachMascot({
   interactive?: boolean;
   /** Used by the customizer preview to render a specific look. */
   styleOverride?: Pick<AawaxStyle, 'design' | 'color'>;
+  /**
+   * 0–1 mouth openness, for lip-syncing to real audio. When provided (with
+   * mood 'talk') the mouth follows this value instead of looping on its own.
+   */
+  mouthOpen?: number;
   className?: string;
 }) {
   const { style } = useAawax();
@@ -262,9 +268,21 @@ export function CoachMascot({
       ) : null}
 
       {/* mouth */}
-      {effectiveMood === 'talk' ? (
-        // Mid-sentence: the mouth opens and closes on an uneven rhythm so it
-        // reads as speech rather than a pulsing shape.
+      {effectiveMood === 'talk' && typeof mouthOpen === 'number' ? (
+        /* Lip-sync: driven by the live amplitude of Aawax's narration, so the
+           mouth actually tracks what he is saying. The mouth also widens a
+           little as it opens, the way a real one does, and never fully shuts
+           mid-word. */
+        <ellipse
+          cx="60"
+          cy={78 + mouthOpen * 1.2}
+          rx={4.6 + mouthOpen * 1.9}
+          ry={Math.max(0.9, mouthOpen * 6.4)}
+          fill="#2a2140"
+        />
+      ) : effectiveMood === 'talk' ? (
+        // No audio to follow (muted, or autoplay blocked): fall back to an
+        // uneven loop so he still reads as talking.
         <motion.ellipse
           cx="60"
           cy="78"
