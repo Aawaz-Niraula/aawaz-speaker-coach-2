@@ -32,9 +32,9 @@ Structure guidelines:
 - The body should stay organized around a few clear points with transitions and ideally weave in Ethos, Logos, and Pathos throughout.
 - The ending should land cleanly instead of fading out.
 - Evaluate clarity, pacing, pauses, filler words, vocal energy, confidence, and audience control.
-- Be stricter than a normal coach. Penalize weak structure, vague language, poor transitions, empty intensity, and lazy phrasing hard.
+- Hold a high standard. Weak structure, vague language, poor transitions, empty intensity, and lazy phrasing all cost real points.
 - If the speaker sounds unprepared, disorganized, soft, repetitive, or technically sloppy, say so directly.
-- Prioritize technical reality over encouragement. Do not reward effort when execution is weak.
+- Judge execution, not effort. When execution is genuinely good, name what worked and score it accordingly; a well-structured, well-delivered speech should land in the 70s or above.
 - The feedback should focus on delivery mechanics, structure, control, and audience impact, not feelings.`;
 
 export const SPEECH_TEMPLATES: SpeechTemplate[] = [
@@ -50,7 +50,7 @@ export const SPEECH_TEMPLATES: SpeechTemplate[] = [
 - The body must acknowledge people in a clean order and avoid rambling praise, repeated thanks, or informal filler.
 - Transitions must feel deliberate, ceremonial, and operationally clear, not improvised.
 - The closing must invite the next step, speaker, or stage transition with authority and protocol awareness.
-- Penalize casual tone, weak protocol, messy sequencing, and any loss of formal control heavily.`,
+- Penalize casual tone, weak protocol, messy sequencing, and loss of formal control. If the organiser keeps clean control and protocol throughout, say so and score it well.`,
     hints: [
       'Please take this as the organiser\u2019s speech at a formal event, so keep it composed and respectful.',
       'Greet the respected guests early and get to the purpose of the event quickly.',
@@ -70,7 +70,7 @@ export const SPEECH_TEMPLATES: SpeechTemplate[] = [
 - The body must show clear sequencing: occasion, recognition, significance, and key message.
 - Language must stay polished, precise, and ceremonial rather than vague, repetitive, or flat.
 - The ending must sound ceremonious, intentional, and worthy of the event.
-- Penalize broken protocol, clumsy praise, weak dignity, and language that lowers the status of the occasion.`,
+- Penalize broken protocol, clumsy praise, weak dignity, and language that lowers the status of the occasion. Dignified, well-sequenced ceremony should score well.`,
     hints: [
       'Please take this as a ceremonial chief-guest speech, with warmth balanced by protocol.',
       'Set the tone of respect and occasion right from your opening lines.',
@@ -90,7 +90,7 @@ export const SPEECH_TEMPLATES: SpeechTemplate[] = [
 - Rebuttal quality matters: look for anticipation of counterarguments, direct refutation, clash, and comparative weighing.
 - Delivery must sound assertive, controlled, and strategically paced rather than dramatic without logic.
 - The conclusion must restate the stance forcefully and close the case.
-- Penalize weak logic, unsupported assertions, fuzzy wording, and poor argumentative structure heavily.`,
+- Penalize weak logic, unsupported assertions, fuzzy wording, and poor argumentative structure. A clear stance with well-supported, well-ranked arguments should score well.`,
     hints: [
       'Please take this as a competitive debate speech, not a general talk.',
       'State your stance early and leave no confusion about where you stand.',
@@ -110,8 +110,8 @@ export const SPEECH_TEMPLATES: SpeechTemplate[] = [
 - Satisfaction: a clear, concrete solution must be proposed and explained well enough to feel credible. Penalize hand-wavy or underdeveloped solutions.
 - Visualization: the speaker must paint a vivid picture of the future with the solution, without it, or both. Penalize speeches that skip straight from solution to closing.
 - Action: the ending must give the audience a specific, immediate, doable call to action. Penalize weak endings like "so think about it" or generic appeals.
-- Penalize missing steps, out-of-order steps, or steps that blur together with no clear transition.
-- Delivery must build persuasive momentum across the sequence rather than staying flat.`,
+- Penalize missing steps, out-of-order steps, or steps that blur together with no clear transition. Deduct in proportion to how much of the sequence is actually missing.
+- Delivery must build persuasive momentum across the sequence rather than staying flat. A speech that hits all five steps in order with real momentum should score well.`,
     hints: [
       'Please build this as a persuasive speech that follows Monroe\u2019s five steps in order.',
       'Hook attention fast, then make the problem feel real and urgent for your audience.',
@@ -131,7 +131,7 @@ export const SPEECH_TEMPLATES: SpeechTemplate[] = [
 - Delivery should sound conversational but intentional, not flat, vague, or rushed.
 - The conclusion should summarize the takeaway and finish decisively.
 - Judge whether the speech feels prepared, structured, audience-aware, and intentionally organized.
-- Penalize drifting structure, weak point development, generic examples, and endings that fade out.`,
+- Penalize drifting structure, weak point development, generic examples, and endings that fade out. A prepared speech with clear points and a decisive close should score well.`,
     hints: [
       'Please treat this as a structured, prepared speech rather than a casual talk.',
       'Hook attention early, introduce your topic, and preview where you are going.',

@@ -1310,7 +1310,7 @@ export default function Home() {
             ) : !isAnalyzing && !feedback ? (
               <motion.div key="hint" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <MascotHint mood="idle" size={58}>
-                  Pick a rubric above, tap the mic, and give it everything. I&apos;ll be brutally honest — that&apos;s the job.
+                  Pick a rubric above, tap the mic, and give it everything. I&apos;ll be honest about what works and what doesn&apos;t.
                 </MascotHint>
               </motion.div>
             ) : null}
