@@ -21,7 +21,11 @@ export async function DELETE(req: NextRequest) {
 
   try {
     await db.execute({ sql: 'DELETE FROM speech_sessions WHERE user_id = ?', args: [userId] });
-    await db.execute({ sql: 'DELETE FROM speech_voice_samples WHERE user_id = ?', args: [userId] });
+    // The voice-sample feature is gone, but old rows may still exist on
+    // databases created before it was removed. Ignore a missing table.
+    await db
+      .execute({ sql: 'DELETE FROM speech_voice_samples WHERE user_id = ?', args: [userId] })
+      .catch(() => null);
     return Response.json({ ok: true });
   } catch (error) {
     console.error('Failed to delete user data', error);
