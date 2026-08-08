@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { AnimatePresence, motion, useReducedMotion, type TargetAndTransition, type Transition } from 'framer-motion';
-import { Map, X } from 'lucide-react';
+import { Map, Volume2, VolumeX, X } from 'lucide-react';
 
 import { CoachMascot, type MascotMood } from '@/components/mascot';
 import { Button } from '@/components/ui/button';
@@ -21,83 +21,137 @@ type TourStep = {
   targetLabel: string;
 };
 
+type TourSpot = {
+  x: string;
+  y: string;
+  /** Bubble sits on the left of Aawax (he is near the right edge). */
+  flip: boolean;
+  /** Bubble hangs below Aawax instead of above (he is near the top edge). */
+  below?: boolean;
+};
+
 /**
- * Where Aawax stands for each tour step, in viewport units.
+ * Where Aawax stands for each tour step.
  *
- * The character walks to these spots; the speech bubble is anchored to Aawax
- * and follows. `flip` puts the bubble on the left when Aawax is near the right
- * edge, so it never runs off screen.
+ * He walks to these spots and the bubble is anchored to him, so it travels
+ * with him. `flip` and `below` keep the bubble inside the viewport: without
+ * `below`, a spot near the top pushes the bubble off the top of the screen.
+ *
+ * Desktop spots avoid the top-right corner, which holds both the page's own
+ * header buttons and the fixed Skip control.
  */
-const TOUR_SPOTS: Record<CompanionPosition, { x: string; y: string; flip: boolean }> = {
+const TOUR_SPOTS: Record<CompanionPosition, TourSpot> = {
   'bottom-right': { x: 'calc(100vw - 12rem)', y: 'calc(100vh - 13rem)', flip: true },
-  'bottom-left': { x: '6rem', y: 'calc(100vh - 13rem)', flip: false },
-  'top-right': { x: 'calc(100vw - 12rem)', y: '9rem', flip: true },
+  'bottom-left': { x: '7rem', y: 'calc(100vh - 13rem)', flip: false },
+  'top-right': { x: 'calc(100vw - 13rem)', y: '11rem', flip: true, below: true },
   center: { x: '50vw', y: '52vh', flip: false },
   side: { x: 'calc(100vw - 12rem)', y: '50vh', flip: true },
 };
 
+/**
+ * Mobile spots. Phones are too narrow for a left/right dance, so Aawax stays
+ * horizontally centred and only moves vertically, well clear of the bottom
+ * nav bar and the fixed Skip button.
+ */
+const TOUR_SPOTS_MOBILE: Record<CompanionPosition, TourSpot> = {
+  'bottom-right': { x: '50vw', y: 'calc(100vh - 15rem)', flip: false },
+  'bottom-left': { x: '50vw', y: 'calc(100vh - 15rem)', flip: false },
+  'top-right': { x: '50vw', y: '13rem', flip: false, below: true },
+  center: { x: '50vw', y: '54vh', flip: false },
+  side: { x: '50vw', y: '54vh', flip: false },
+};
+
 const TOUR_STORAGE_KEY = 'aawax-onboarding-v1';
+const TOUR_MUTE_KEY = 'aawax-tour-muted';
 
 const TOUR_STEPS: TourStep[] = [
   {
     tab: 'coach',
-    title: 'Pick your arena',
-    body: 'Start by choosing a rubric. General is fine, but templates make me judge your speech against the exact format.',
+    title: "Hi, I'm Aawax",
+    body: "Pick a format first. General works for any speech, or choose a template and I'll hold you to that exact structure.",
     mood: 'talk',
     position: 'bottom-right',
     targetLabel: 'Speech format',
   },
   {
     tab: 'coach',
-    title: 'Tap the mic',
-    body: 'When you press record, I listen for pacing, clarity, structure, fillers, and whether the speech actually lands.',
+    title: 'Then just talk',
+    body: "Tap the mic and say your piece. I'm listening to your pacing, how clearly you speak, and every um and uh. Sorry in advance.",
     mood: 'talk',
     position: 'center',
     targetLabel: 'Recorder',
   },
   {
     tab: 'coach',
-    title: 'Read the report',
-    body: 'After analysis, scroll into the coach report. The score is useful, but the fixes are where the real improvement hides.',
+    title: 'Your feedback',
+    body: "You'll get a score and a list of fixes. Everyone stares at the score, but the fixes are the part that makes you better.",
     mood: 'talk',
     position: 'bottom-left',
     targetLabel: 'Feedback report',
   },
   {
     tab: 'speech',
-    title: 'Practice studio',
-    body: 'Generate a practice speech, then hear it in an example voice or try your own saved voice sample when the provider is healthy.',
+    title: 'Need something to practise?',
+    body: "Give me a topic and I'll write you a speech. I can read it back too, in four different accents.",
     mood: 'talk',
     position: 'bottom-right',
     targetLabel: 'Speech generator',
   },
   {
     tab: 'history',
-    title: 'Your archive',
-    body: 'Every finished speech appears here. Open old sessions to compare the same mistakes across time.',
+    title: 'Everything you record',
+    body: "It all gets saved here. Open a couple side by side and you'll spot the mistake you keep making. That's the one to fix.",
     mood: 'talk',
     position: 'top-right',
     targetLabel: 'History',
   },
   {
     tab: 'progress',
-    title: 'Progress is the prize',
-    body: 'Use the progress tab for score trends, insights, and recurring weak spots. Small gains still count.',
+    title: 'My favourite page',
+    body: "Your scores over time, and what to work on next. Some days the number barely moves. That still counts.",
     mood: 'talk',
     position: 'bottom-right',
     targetLabel: 'Progress',
   },
   {
     tab: 'account',
-    title: 'Make me yours',
-    body: 'Create an account to keep your history safe, then customise your avatar and my Aawax look whenever you want.',
+    title: "That's everything",
+    body: "Make an account so none of this disappears. And if you don't like how I look, you can change that here too.",
     mood: 'talk',
     position: 'bottom-left',
     targetLabel: 'Account and customisation',
   },
 ];
 
-function useTypewriter(text: string, active: boolean) {
+/**
+ * Tracks the phone breakpoint without a setState-in-effect cascade.
+ * The server snapshot is `false` so SSR renders the desktop layout and
+ * hydration stays clean.
+ */
+const NARROW_QUERY = '(max-width: 767px)';
+
+function subscribeToNarrow(listener: () => void) {
+  const query = window.matchMedia(NARROW_QUERY);
+  query.addEventListener('change', listener);
+  return () => query.removeEventListener('change', listener);
+}
+
+function useIsNarrow() {
+  return useSyncExternalStore(
+    subscribeToNarrow,
+    () => window.matchMedia(NARROW_QUERY).matches,
+    () => false,
+  );
+}
+
+/**
+ * Types the line out character by character.
+ *
+ * `durationMs` lets the caller stretch the typing to match Aawax's narration,
+ * so the words appear roughly as he says them instead of racing ahead and
+ * leaving him talking to already-finished text.
+ */
+function useTypewriter(text: string, active: boolean, durationMs?: number) {
   const reduceMotion = useReducedMotion();
   const [displayed, setDisplayed] = useState('');
 
@@ -106,6 +160,11 @@ function useTypewriter(text: string, active: boolean) {
       return;
     }
 
+    // Leave a tail of silence so the text finishes a beat before he does.
+    const perChar = durationMs && text.length
+      ? Math.max(12, Math.min(90, (durationMs * 0.82) / text.length))
+      : 26;
+
     let index = 0;
     const interval = window.setInterval(() => {
       setDisplayed(text.slice(0, index));
@@ -113,10 +172,10 @@ function useTypewriter(text: string, active: boolean) {
       if (index >= text.length) {
         window.clearInterval(interval);
       }
-    }, 18);
+    }, perChar);
 
     return () => window.clearInterval(interval);
-  }, [active, reduceMotion, text]);
+  }, [active, reduceMotion, text, durationMs]);
 
   return active && !reduceMotion ? displayed : text;
 }
@@ -228,6 +287,28 @@ export function AawaxCompanion({ activeTab, onTabChange, onOpenChat, flags }: Aa
   const [stepIndex, setStepIndex] = useState(0);
   const [boopCount, setBoopCount] = useState(0);
   const [tourSeen, setTourSeen] = useState(true);
+  // Mute is remembered so a user who silenced Aawax stays silenced. Read
+  // lazily rather than in an effect to avoid a hydration-time re-render.
+  const [muted, setMuted] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return window.localStorage.getItem(TOUR_MUTE_KEY) === 'muted';
+    } catch {
+      return false;
+    }
+  });
+  const isNarrow = useIsNarrow();
+  const narrationRef = useRef<HTMLAudioElement | null>(null);
+  /* Drives the typewriter pace and the talking mouth, so both follow the
+     narration rather than running on their own clock. Both are stamped with
+     the step they belong to, so moving to the next step invalidates them
+     without needing an effect to reset state. */
+  const [narration, setNarration] = useState<{ step: number; durationMs?: number; speaking: boolean }>({
+    step: -1,
+    speaking: false,
+  });
+  const lineDuration = narration.step === stepIndex ? narration.durationMs : undefined;
+  const speaking = narration.step === stepIndex && narration.speaking;
 
   useEffect(() => {
     let seen = true;
@@ -246,8 +327,9 @@ export function AawaxCompanion({ activeTab, onTabChange, onOpenChat, flags }: Aa
     };
   }, []);
 
+
   const activeStep = mode === 'tour' ? TOUR_STEPS[stepIndex] : contextFor(activeTab, flags);
-  const typedBody = useTypewriter(activeStep.body, mode === 'tour');
+  const typedBody = useTypewriter(activeStep.body, mode === 'tour', lineDuration);
   const isBusy = flags.isRecording || flags.isAnalyzing || flags.isGenerating || flags.isVoiceBusy;
 
   useEffect(() => {
@@ -256,7 +338,68 @@ export function AawaxCompanion({ activeTab, onTabChange, onOpenChat, flags }: Aa
     }
   }, [activeStep.tab, mode, onTabChange]);
 
-  const spot = TOUR_SPOTS[activeStep.position];
+  const spot = (isNarrow ? TOUR_SPOTS_MOBILE : TOUR_SPOTS)[activeStep.position];
+
+  /* Narration. The tour script is fixed, so the lines are pre-rendered with
+     Aawax's voice and shipped as static files: no API call, no credits, and
+     no wait before he starts talking. */
+  useEffect(() => {
+    if (mode !== 'tour') {
+      narrationRef.current?.pause();
+      narrationRef.current = null;
+      return;
+    }
+
+    narrationRef.current?.pause();
+
+    if (muted) {
+      narrationRef.current = null;
+      return;
+    }
+
+    const step = stepIndex;
+    const audio = new Audio(`/tour/tour-${step + 1}.mp3`);
+    audio.volume = 0.85;
+    narrationRef.current = audio;
+
+    const onPlaying = () => setNarration((n) => ({ ...n, step, speaking: true }));
+    const onMeta = () => {
+      if (Number.isFinite(audio.duration)) {
+        setNarration((n) => ({ ...n, step, durationMs: audio.duration * 1000 }));
+      }
+    };
+    const onEnded = () => setNarration((n) => ({ ...n, step, speaking: false }));
+
+    audio.addEventListener('loadedmetadata', onMeta);
+    audio.addEventListener('playing', onPlaying);
+    audio.addEventListener('ended', onEnded);
+
+    // Autoplay can be blocked until the user interacts with the page; the
+    // tour still reads fine silently, so a rejection is not worth surfacing.
+    void audio.play().catch(() => null);
+
+    return () => {
+      audio.removeEventListener('loadedmetadata', onMeta);
+      audio.removeEventListener('playing', onPlaying);
+      audio.removeEventListener('ended', onEnded);
+      audio.pause();
+    };
+  }, [mode, stepIndex, muted]);
+
+  // Never leave Aawax talking after the tour closes.
+  useEffect(() => () => narrationRef.current?.pause(), []);
+
+  const toggleMute = () => {
+    setMuted((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem(TOUR_MUTE_KEY, next ? 'muted' : 'on');
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  };
 
   const completeTour = useCallback(() => {
     try {
@@ -314,8 +457,12 @@ export function AawaxCompanion({ activeTab, onTabChange, onOpenChat, flags }: Aa
       if (flags.isAnalyzing || flags.isGenerating) return 'think';
       if (flags.isVoiceBusy) return 'sing';
     }
+    // Mouth only moves while he is actually mid-line. Once the audio ends he
+    // settles into a smile instead of chewing on silence. When muted there is
+    // no audio to follow, so the typewriter stands in for the talking.
+    if (mode === 'tour' && !speaking && !muted) return 'idle';
     return activeStep.mood;
-  }, [activeStep.mood, boopCount, flags.isAnalyzing, flags.isGenerating, flags.isRecording, flags.isVoiceBusy, isBusy, mode]);
+  }, [activeStep.mood, boopCount, flags.isAnalyzing, flags.isGenerating, flags.isRecording, flags.isVoiceBusy, isBusy, mode, speaking, muted]);
 
   const boop = () => {
     setBoopCount((count) => {
@@ -402,21 +549,35 @@ export function AawaxCompanion({ activeTab, onTabChange, onOpenChat, flags }: Aa
               aria-hidden
             />
 
-            {/* Always-reachable exit, fixed to the corner so it never moves
-                with Aawax and is available from the very first frame. */}
-            <motion.button
-              key="tour-skip"
-              type="button"
-              onClick={completeTour}
+            {/* Mute and exit, fixed to the corner so they never move with
+                Aawax and are available from the very first frame. */}
+            <motion.div
+              key="tour-controls"
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
-              className="fixed right-4 top-4 z-[80] flex items-center gap-2 rounded-full border border-white/15 bg-[#0d0c16]/90 px-4 py-2.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#ddd6fe] shadow-[0_10px_40px_rgba(2,6,23,0.6)] backdrop-blur-xl transition hover:border-white/30 hover:bg-white/10 hover:text-white"
+              className="fixed right-3 top-3 z-[80] flex items-center gap-2 sm:right-4 sm:top-4"
             >
-              <X className="h-3.5 w-3.5" />
-              Skip tour
-              <span className="hidden text-[#6f668c] sm:inline">Esc</span>
-            </motion.button>
+              <button
+                type="button"
+                onClick={toggleMute}
+                aria-pressed={muted}
+                aria-label={muted ? 'Unmute Aawax' : 'Mute Aawax'}
+                title={muted ? 'Unmute Aawax' : 'Mute Aawax'}
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-[#0d0c16]/90 text-[#ddd6fe] shadow-[0_10px_40px_rgba(2,6,23,0.6)] backdrop-blur-xl transition hover:border-white/30 hover:bg-white/10 hover:text-white"
+              >
+                {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+              </button>
+              <button
+                type="button"
+                onClick={completeTour}
+                className="flex h-10 items-center gap-2 rounded-full border border-white/15 bg-[#0d0c16]/90 px-4 font-mono text-[10px] uppercase tracking-[0.16em] text-[#ddd6fe] shadow-[0_10px_40px_rgba(2,6,23,0.6)] backdrop-blur-xl transition hover:border-white/30 hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-3.5 w-3.5" />
+                Skip
+                <span className="hidden text-[#6f668c] sm:inline">Esc</span>
+              </button>
+            </motion.div>
 
             {/* Aawax himself: a free-standing cutout with no card around him.
                 He walks between spots; the bubble is his child, so it travels
@@ -444,8 +605,13 @@ export function AawaxCompanion({ activeTab, onTabChange, onOpenChat, flags }: Aa
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   transition={{ type: 'spring', stiffness: 320, damping: 22, delay: 0.12 }}
                   className={cn(
-                    'absolute bottom-[calc(100%+0.9rem)] w-[min(78vw,320px)]',
-                    spot.flip ? 'right-0 origin-bottom-right' : 'left-0 origin-bottom-left',
+                    'absolute w-[min(80vw,320px)]',
+                    // Hang below Aawax when he stands near the top, otherwise
+                    // the bubble would be clipped off the viewport.
+                    spot.below ? 'top-[calc(100%+0.9rem)]' : 'bottom-[calc(100%+0.9rem)]',
+                    spot.flip ? 'right-0' : 'left-0',
+                    // On phones Aawax is centred, so centre the bubble on him.
+                    isNarrow && 'left-1/2 right-auto -translate-x-1/2',
                   )}
                 >
                   <div className="relative rounded-[22px] bg-[#f4f1ff] px-4 py-3.5 text-[#25203a] shadow-[0_18px_50px_rgba(2,6,23,0.55)]">
@@ -461,13 +627,41 @@ export function AawaxCompanion({ activeTab, onTabChange, onOpenChat, flags }: Aa
                       />
                     </p>
 
-                    {/* Tail: three shrinking circles, the comic convention for
-                        speech, pointing down at Aawax. */}
-                    <div className={cn('absolute top-full flex flex-col items-center gap-1 pt-1.5', spot.flip ? 'right-7' : 'left-7')}>
+                    {/* Tail: shrinking circles, the comic convention for
+                        speech, pointing back toward Aawax. */}
+                    <div
+                      className={cn(
+                        'absolute flex flex-col items-center gap-1',
+                        spot.below ? 'bottom-full flex-col-reverse pb-1.5' : 'top-full pt-1.5',
+                        isNarrow ? 'left-1/2 -translate-x-1/2' : spot.flip ? 'right-7' : 'left-7',
+                      )}
+                    >
                       <span className="block h-2.5 w-2.5 rounded-full bg-[#f4f1ff]" />
                       <span className="block h-1.5 w-1.5 rounded-full bg-[#f4f1ff]" />
                     </div>
                   </div>
+
+                  {/* With the bubble below Aawax, the controls belong under the
+                      bubble — anchoring them to it keeps them clear whatever
+                      the text length. */}
+                  {spot.below ? (
+                    <div className="mt-3 flex items-center justify-center gap-2">
+                      <Button
+                        variant="secondary"
+                        onClick={previous}
+                        disabled={stepIndex === 0}
+                        className="h-9 rounded-[14px] px-3 font-mono text-[10px] uppercase tracking-[0.14em]"
+                      >
+                        Back
+                      </Button>
+                      <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-[#a79dc8]">
+                        {stepIndex + 1}/{TOUR_STEPS.length}
+                      </span>
+                      <Button onClick={next} className="h-9 rounded-[14px] px-4 font-mono text-[10px] uppercase tracking-[0.14em]">
+                        {stepIndex === TOUR_STEPS.length - 1 ? 'Got it' : 'Next'}
+                      </Button>
+                    </div>
+                  ) : null}
                 </motion.div>
 
                 {/* The cutout. A soft ground shadow sells him as standing on
@@ -483,13 +677,16 @@ export function AawaxCompanion({ activeTab, onTabChange, onOpenChat, flags }: Aa
                     animate={reduceMotion ? undefined : { y: [0, -7, 0] }}
                     transition={reduceMotion ? undefined : { duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
                   >
-                    <CoachMascot mood={mascotMood} size={104} float={false} />
+                    <CoachMascot mood={mascotMood} size={isNarrow ? 84 : 104} float={false} />
                   </motion.div>
-                  <span className="mt-1 block h-2 w-16 rounded-[50%] bg-[#06060b]/45 blur-[3px]" aria-hidden />
+                  <span className="mt-1 block h-2 w-14 rounded-[50%] bg-[#06060b]/45 blur-[3px] sm:w-16" aria-hidden />
                 </div>
 
-                {/* Controls sit under Aawax so he stays the focus. */}
-                <div className="mt-3 flex items-center justify-center gap-2">
+                {/* Controls sit under Aawax so he stays the focus. When the
+                    bubble hangs below him it occupies that space, so the
+                    controls render inside the bubble wrapper instead (see
+                    below) and this row is skipped entirely. */}
+                <div className={cn('flex items-center justify-center gap-2 mt-3', spot.below && 'hidden')}>
                   <Button
                     variant="secondary"
                     onClick={previous}
