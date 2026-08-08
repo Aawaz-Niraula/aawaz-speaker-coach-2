@@ -15,6 +15,12 @@ export const ELEVENLABS_MODEL_ID = 'eleven_v3';
 export const ELEVENLABS_OUTPUT_FORMAT = 'mp3_44100_128';
 
 export type ExampleVoice = 'female' | 'male';
+export type ExampleAccent = 'american' | 'british' | 'australian' | 'indian';
+
+/** Accent options in the order they appear in the UI toggle. */
+export const EXAMPLE_ACCENTS: ExampleAccent[] = ['american', 'british', 'australian', 'indian'];
+
+export const DEFAULT_ACCENT: ExampleAccent = 'american';
 
 type VoiceSettings = {
   stability: number;
@@ -25,47 +31,69 @@ type VoiceSettings = {
 };
 
 /**
- * Voice picks are deliberate, and deliberately NOT the stock voices people
- * instantly recognize as AI (Adam, Rachel, and the George voice ElevenLabs
- * uses in its own quickstart). These two read as performers rather than
- * narrators, which is what a speech needs.
- *
- * v3's own guidance is that the voice matters more than any tag: it has to
- * already be capable of the delivery you're asking for. A soft narration voice
- * flattens the bolder lines no matter what tags you send.
+ * Shared delivery settings.
  *
  * `stability` sits at v3's "Creative" end (below the 0.5 "Natural" midpoint).
- * That is what makes the audio tags actually land — "Robust" stability is
- * steadier but stops responding to directional prompts.
+ * That is what lets the voice respond to direction at all — "Robust" is
+ * steadier but stops reacting to the performance cues in the script.
  */
-export const EXAMPLE_VOICES: Record<ExampleVoice, { voiceId: string; label: string; settings: VoiceSettings }> = {
-  female: {
-    // "Lily — Velvety Actress": British, confident. An actor's voice, so it
-    // carries the theatrical lines instead of evening them out.
-    voiceId: 'pFZP5JQG7iQjIQuC4Bku',
-    label: 'Lily',
-    settings: {
-      stability: 0.35,
-      similarity_boost: 0.8,
-      style: 0.45,
-      use_speaker_boost: true,
-      speed: 0.97,
-    },
+const SPEAKER_SETTINGS: VoiceSettings = {
+  stability: 0.35,
+  similarity_boost: 0.8,
+  style: 0.45,
+  use_speaker_boost: true,
+  speed: 0.97,
+};
+
+/**
+ * Accent × gender voice matrix.
+ *
+ * ElevenLabs has no accent parameter — accent is a property of the voice
+ * itself, so every accent/gender pair needs its own voice id. These are
+ * account-owned voices rather than shared library ones, so they cannot be
+ * delisted underneath us and carry no per-use credit multiplier.
+ *
+ * `null` means "not recorded yet". The UI disables those options instead of
+ * quietly falling back to another accent, which would hand the user audio in
+ * an accent they did not pick.
+ */
+export const EXAMPLE_VOICES: Record<ExampleAccent, Record<ExampleVoice, string | null>> = {
+  american: {
+    male: 'azl4cj8puwHzFuGD57JW',
+    female: 'SVVsD086X2FoKHNXIAvI',
   },
-  male: {
-    // "Eric — Smooth, Trustworthy": American, classy. Magnetic and measured
-    // rather than the blunt announcer tone of the stock male voices.
-    voiceId: 'cjVigY5qzO86Huf0OWal',
-    label: 'Eric',
-    settings: {
-      stability: 0.35,
-      similarity_boost: 0.8,
-      style: 0.42,
-      use_speaker_boost: true,
-      speed: 0.96,
-    },
+  british: {
+    male: 'iDh7bt9IgHCI2d76JKsp',
+    female: 'vzsPZ1iLeI0pbhyfJYXE',
+  },
+  australian: {
+    male: 'jroWqdTlNyDAuhcwemHO',
+    female: 'tW5Oeop9djFjbQFRjCGg',
+  },
+  indian: {
+    male: 'pitY9e4i5hQRcz3XOBs6',
+    female: '6BewuYjAq0BrR4J876uS',
   },
 };
+
+/** Resolves a voice id, or null when that accent/gender pair has no voice yet. */
+export function getVoiceId(accent: ExampleAccent, voice: ExampleVoice): string | null {
+  return EXAMPLE_VOICES[accent]?.[voice] ?? null;
+}
+
+export function getVoiceSettings(): VoiceSettings {
+  return SPEAKER_SETTINGS;
+}
+
+/** Accent/gender pairs that currently have a voice, for the UI to enable. */
+export function getAvailableAccents(): Record<ExampleAccent, { male: boolean; female: boolean; any: boolean }> {
+  return EXAMPLE_ACCENTS.reduce((acc, accent) => {
+    const male = Boolean(EXAMPLE_VOICES[accent].male);
+    const female = Boolean(EXAMPLE_VOICES[accent].female);
+    acc[accent] = { male, female, any: male || female };
+    return acc;
+  }, {} as Record<ExampleAccent, { male: boolean; female: boolean; any: boolean }>);
+}
 
 /**
  * v3 has no `style_instruction` field — delivery is directed by audio tags and

@@ -4,7 +4,17 @@ import { GuestLimitError, IdentityError, guestLimitResponse, identityErrorRespon
 import { fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
-import { EXAMPLE_VOICES, ELEVENLABS_MODEL_ID, ELEVENLABS_OUTPUT_FORMAT, buildPerformanceScript, type ExampleVoice } from '@/lib/elevenlabs';
+import {
+  DEFAULT_ACCENT,
+  ELEVENLABS_MODEL_ID,
+  ELEVENLABS_OUTPUT_FORMAT,
+  EXAMPLE_ACCENTS,
+  buildPerformanceScript,
+  getVoiceId,
+  getVoiceSettings,
+  type ExampleAccent,
+  type ExampleVoice,
+} from '@/lib/elevenlabs';
 
 const ELEVENLABS_TTS_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
 
@@ -40,8 +50,8 @@ function providerMessage(data: unknown) {
   return '';
 }
 
-async function synthesize(voice: ExampleVoice, text: string, apiKey: string) {
-  const { voiceId, settings } = EXAMPLE_VOICES[voice];
+async function synthesize(voiceId: string, text: string, apiKey: string) {
+  const settings = getVoiceSettings();
   const url = `${ELEVENLABS_TTS_URL}/${encodeURIComponent(voiceId)}?output_format=${ELEVENLABS_OUTPUT_FORMAT}`;
 
   const res = await fetchWithRetryLimited('tts', url, {
@@ -80,13 +90,26 @@ export async function POST(req: NextRequest) {
     const form = await req.formData();
     const text = cleanText(form.get('text'));
     const requestedVoice = String(form.get('exampleVoice') || 'female') as ExampleVoice;
+    const requestedAccent = String(form.get('exampleAccent') || DEFAULT_ACCENT) as ExampleAccent;
 
     if (!text) {
       return Response.json({ error: 'First generate a text script.' }, { status: 400 });
     }
 
-    if (!Object.prototype.hasOwnProperty.call(EXAMPLE_VOICES, requestedVoice)) {
+    if (requestedVoice !== 'male' && requestedVoice !== 'female') {
       return Response.json({ error: 'Invalid example voice.' }, { status: 400 });
+    }
+
+    if (!EXAMPLE_ACCENTS.includes(requestedAccent)) {
+      return Response.json({ error: 'Invalid accent.' }, { status: 400 });
+    }
+
+    const voiceId = getVoiceId(requestedAccent, requestedVoice);
+    if (!voiceId) {
+      return Response.json(
+        { error: 'That accent is not available yet. Please pick another one.' },
+        { status: 400 },
+      );
     }
 
     const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
@@ -112,12 +135,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const audio = await synthesize(requestedVoice, text, ELEVENLABS_API_KEY);
+    const audio = await synthesize(voiceId, text, ELEVENLABS_API_KEY);
 
     return new Response(audio, {
       headers: {
         'Content-Type': 'audio/mpeg',
-        'Content-Disposition': `attachment; filename="aawaz-${requestedVoice}-speech.mp3"`,
+        'Content-Disposition': `attachment; filename="aawaz-${requestedAccent}-${requestedVoice}-speech.mp3"`,
         'Cache-Control': 'no-store',
       },
     });

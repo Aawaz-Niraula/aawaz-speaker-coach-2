@@ -42,6 +42,7 @@ import { authClient } from '@/lib/auth-client';
 import { formatClock, formatHistoryDate, scoreColor } from '@/lib/feedback';
 import { requestJson } from '@/lib/request';
 import { sfx } from '@/lib/sound';
+import { DEFAULT_ACCENT, EXAMPLE_ACCENTS, getAvailableAccents, type ExampleAccent } from '@/lib/elevenlabs';
 import { type SpeechTemplateId } from '@/lib/speech-config';
 import { cn } from '@/lib/utils';
 
@@ -249,6 +250,7 @@ export default function Home() {
   const [speech, setSpeech] = useState('');
   const [speechAudio, setSpeechAudio] = useState<SpeechAudioState>({ url: '', isLoading: false });
   const [exampleVoice, setExampleVoice] = useState<SpeechExampleVoice>('female');
+  const [exampleAccent, setExampleAccent] = useState<ExampleAccent>(DEFAULT_ACCENT);
   const [error, setError] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -800,6 +802,7 @@ export default function Home() {
     const form = new FormData();
     form.append('text', speech);
     form.append('exampleVoice', exampleVoice);
+    form.append('exampleAccent', exampleAccent);
 
     if (speechAudioRef.current.url) {
       URL.revokeObjectURL(speechAudioRef.current.url);
@@ -1151,6 +1154,8 @@ export default function Home() {
 
   /* ── Speech audio actions (example voice) ──────────────────────── */
   const renderSpeechAudioActions = () => {
+    const accentAvailability = getAvailableAccents();
+
     return (
       <div className="mb-5 grid gap-3">
         {/* Example voice */}
@@ -1158,7 +1163,7 @@ export default function Home() {
           <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
             <div className="min-w-0">
               <p className="text-sm font-semibold text-[#f2efff]">Example speech</p>
-              <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] leading-relaxed text-[#857ca2]">Polished public-speaking voice</p>
+              <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] leading-relaxed text-[#857ca2]">Pick an accent and voice</p>
             </div>
             <div className="inline-flex shrink-0 rounded-full border border-white/10 bg-white/5 p-1">
               {(['female', 'male'] as const).map((voice) => (
@@ -1171,6 +1176,12 @@ export default function Home() {
                       URL.revokeObjectURL(speechAudioRef.current.url);
                     }
                     setExampleVoice(voice);
+                    // The chosen accent may not have a voice in the new gender.
+                    // Move to one that does rather than leaving a dead selection.
+                    if (!accentAvailability[exampleAccent]?.[voice]) {
+                      const fallback = EXAMPLE_ACCENTS.find((accent) => accentAvailability[accent]?.[voice]);
+                      if (fallback) setExampleAccent(fallback);
+                    }
                     setSpeechAudio({ url: '', isLoading: false });
                   }}
                   disabled={speechAudio.isLoading}
@@ -1187,8 +1198,47 @@ export default function Home() {
               ))}
             </div>
           </div>
+          {/* Accent picker. Accent is a property of the voice itself, so an
+              accent with no voice recorded yet is disabled rather than
+              silently falling back to a different one. */}
+          <div className="mb-3 flex flex-wrap items-center gap-1.5 rounded-[14px] border border-white/8 bg-[#0b0b12]/45 p-1.5">
+            {EXAMPLE_ACCENTS.map((accent) => {
+              const availability = accentAvailability[accent];
+              const ready = availability?.[exampleVoice] ?? false;
+              const active = exampleAccent === accent;
+
+              return (
+                <button
+                  key={accent}
+                  type="button"
+                  onClick={() => {
+                    if (speechAudio.isLoading || active || !ready) return;
+                    if (speechAudioRef.current.url) {
+                      URL.revokeObjectURL(speechAudioRef.current.url);
+                    }
+                    setExampleAccent(accent);
+                    setSpeechAudio({ url: '', isLoading: false });
+                  }}
+                  disabled={speechAudio.isLoading || !ready}
+                  title={ready ? `${accent} accent` : `${accent} ${exampleVoice} voice is coming soon`}
+                  className={cn(
+                    'h-8 flex-1 rounded-[10px] px-2.5 font-mono text-[10px] uppercase tracking-[0.14em] transition',
+                    active
+                      ? 'bg-[#a78bfa]/25 text-[#f2efff] shadow-[0_0_14px_rgba(167,139,250,0.18)]'
+                      : ready
+                        ? 'text-[#857ca2] hover:bg-white/8 hover:text-[#f2efff]'
+                        : 'cursor-not-allowed text-[#4b4560] line-through',
+                    speechAudio.isLoading && 'pointer-events-none opacity-60',
+                  )}
+                  aria-pressed={active}
+                >
+                  {accent}
+                </button>
+              );
+            })}
+          </div>
           {speechAudio.url ? (
-            <AudioPlayer src={speechAudio.url} downloadName={`aawaz-example-${exampleVoice}-speech.mp3`} />
+            <AudioPlayer src={speechAudio.url} downloadName={`aawaz-${exampleAccent}-${exampleVoice}-speech.mp3`} />
           ) : (
             <button
               type="button"
