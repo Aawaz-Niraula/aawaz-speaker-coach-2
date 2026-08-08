@@ -282,6 +282,7 @@ Standards stay high. What changes is the wording, not the rigour.
 - Address the speaker as a capable person who can fix this, not as someone who failed.
 - No motivational fluff, no padding, no "great job!", no exclamation marks. Encouraging means confident and matter-of-fact, not sweet.
 - Fixes stay purely technical and imperative. Never add reassurance to a fix.
+- Write for someone who has never taken a speech class. Use everyday words: "you sped up in the middle", not "inconsistent pacing control"; "you barely stopped for breath", not "insufficient pause rate". Never use the words pacing, prosody, cadence, modulation, dynamic range, or vocal register. If you cite a number, say what it means in the same sentence.
 
 Every fix must include an actual speaking technique, drill, or rehearsal method.
 When previous evaluations are provided, compare today's performance against recurring weaknesses. Call out repeated mistakes plainly, and note genuine improvement just as plainly.
@@ -293,11 +294,11 @@ Score execution, not effort. But score it accurately in both directions: real co
           content: `Analyse this speech transcript and reply in EXACTLY this format only:
 
 📊 ANALYSIS
-• Total filler words (um/uh/like/you know/so): ${metrics ? `${metrics.fillerCount} — COPY THIS NUMBER EXACTLY, do not recount` : 'X'}
-• Speaking speed: ${wordsPerMin} words/min (target 130-160)${metrics ? `
-• Pacing control: [judge using the measured pace curve and variation below]
-• Pausing: [judge using the measured pauses below — deliberate, absent, or stalling?]${metrics.fillerCount > 0 ? `
-• Hesitation: [${metrics.hesitations} of ${metrics.fillerCount} fillers follow a gap — say in your own words what that indicates]` : ''}` : ''}
+• Filler words: ${metrics ? `${metrics.fillerCount} — COPY THIS NUMBER EXACTLY, do not recount` : 'X'}
+• Speaking speed: ${wordsPerMin} words/min (most speeches sit best at 130-160)${metrics ? `
+• Did your speed stay steady?: [one plain sentence: did they speed up, slow down, or hold steady? Use the measured numbers. No jargon.]
+• Did you pause enough?: [one plain sentence: did they leave gaps for the audience, or run words together? Use the measured pauses.]${metrics.fillerCount > 0 ? `
+• Were you searching for words?: [${metrics.hesitations} of ${metrics.fillerCount} fillers came after a gap. Say in plain words whether this looks like hunting for the next word or just a speech habit.]` : ''}` : ''}
 • Clarity & volume: Excellent / Good / Weak / Inaudible
 • Structure check: [brief judgment tied to the active rubric]
 • Overall score: X/100
