@@ -196,17 +196,18 @@ The speaker has already received feedback on their words and structure. This rep
 - No motivational fluff, no padding, no exclamation marks.
 - Fixes stay purely technical and imperative.
 - Never treat an accent or dialect as a delivery flaw. Judge control, not origin.
-- Use the measured numbers exactly as given. Do not invent or contradict them.`,
+- Use the measured numbers exactly as given. Do not invent or contradict them.
+- Write for someone who has never taken a speech class. Use everyday words: "you sped up in the middle", not "inconsistent pacing control"; "you barely stopped for breath", not "insufficient pause rate". Never use the words pacing, prosody, cadence, modulation, dynamic range, or vocal register. If you cite a number, say what it means in the same sentence.`,
             },
             {
               role: 'user',
               content: `Write a delivery report in EXACTLY this format:
 
 🎧 DELIVERY ANALYSIS
-• Pace: [judgement using the measured words/min and the pace curve]
-• Pausing: [judgement using the measured pauses — are they used deliberately, or absent?]${vocal ? `
-• Tone & confidence: [what the voice conveyed]
-• Energy & emphasis: [dynamic range, whether key words landed]` : ''}
+• How fast you spoke: [plain sentence using the measured words/min and how it changed through the speech]
+• Did you pause enough?: [plain sentence: did they leave gaps for the audience, or run words together?]${vocal ? `
+• How you sounded: [warm, flat, tense, engaging? Did you sound sure of yourself?]
+• Did your key points land?: [was there variation in energy, or did everything sound the same?]` : ''}
 • Delivery score: X/100
 
 🎯 WHAT YOUR VOICE DID WELL

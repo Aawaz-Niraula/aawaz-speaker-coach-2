@@ -1686,7 +1686,7 @@ export default function Home() {
                           <Eyebrow className="mb-2">Optional</Eyebrow>
                           <p className="font-serif text-lg tracking-tight text-white">How it sounded</p>
                           <p className="mt-1 max-w-lg text-sm leading-6 text-[#a79dc8]">
-                            The report above read your words. This one listens to your delivery: pace, pauses, tone, and confidence.
+                            The report above read your words. This one listens to how you said them: your speed, your pauses, and how confident you sounded. Takes about half a minute.
                           </p>
                         </div>
                         <Button
@@ -1695,7 +1695,7 @@ export default function Home() {
                           className={cn('h-12 shrink-0 rounded-[16px] px-5 font-mono text-[11px] uppercase tracking-[0.16em]', isGoingDeeper && 'skeleton-shimmer')}
                         >
                           <AudioLines className={cn('h-4 w-4', isGoingDeeper && 'animate-pulse')} />
-                          {isGoingDeeper ? 'Listening…' : 'Analyse my delivery'}
+                          {isGoingDeeper ? 'Listening…' : 'Deeper Analysis'}
                         </Button>
                       </div>
                     </Shell>
