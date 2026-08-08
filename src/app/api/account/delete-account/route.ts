@@ -25,7 +25,11 @@ export async function DELETE(req: NextRequest) {
   // failure instead of pretending the account is gone.
   try {
     await speechDb.execute({ sql: 'DELETE FROM speech_sessions WHERE user_id = ?', args: [userId] });
-    await speechDb.execute({ sql: 'DELETE FROM speech_voice_samples WHERE user_id = ?', args: [userId] });
+    // The voice-sample feature is gone, but old rows may still exist on
+    // databases created before it was removed. Ignore a missing table.
+    await speechDb
+      .execute({ sql: 'DELETE FROM speech_voice_samples WHERE user_id = ?', args: [userId] })
+      .catch(() => null);
   } catch (error) {
     console.error('Failed to delete speech data during account deletion', error);
     return Response.json(
@@ -35,7 +39,17 @@ export async function DELETE(req: NextRequest) {
   }
 
   try {
-    // Cascades to session, account, and verification rows.
+    // session and account declare ON DELETE CASCADE, but SQLite only honours
+    // that when PRAGMA foreign_keys is ON. Delete the children explicitly so
+    // credentials and OAuth tokens can never outlive the account, whatever the
+    // connection default happens to be.
+    await authDb.execute({ sql: 'DELETE FROM session WHERE userId = ?', args: [userId] });
+    await authDb.execute({ sql: 'DELETE FROM account WHERE userId = ?', args: [userId] });
+    // verification rows are keyed by email/identifier, not userId, so they are
+    // never reached by the cascade.
+    if (session.user.email) {
+      await authDb.execute({ sql: 'DELETE FROM verification WHERE identifier = ?', args: [session.user.email] });
+    }
     await authDb.execute({ sql: 'DELETE FROM user WHERE id = ?', args: [userId] });
   } catch (error) {
     console.error('Failed to delete user from auth db', error);
