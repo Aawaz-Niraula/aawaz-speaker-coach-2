@@ -43,6 +43,8 @@ export type SpeechSessionRecord = {
   overall_score: number | null;
   words_per_min: number | null;
   duration_seconds: number | null;
+  /** Delivery report from the optional deep analysis. Null until requested. */
+  deep_analysis: string | null;
   created_at: string;
 };
 
@@ -73,6 +75,10 @@ export async function ensureSpeechSchema() {
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Added after launch: nullable so existing rows and the standard analysis
+    // pipeline are unaffected. Only populated when a user asks to go deeper.
+    await db.execute('ALTER TABLE speech_sessions ADD COLUMN deep_analysis TEXT').catch(() => null);
 
     await db.execute(`
       CREATE INDEX IF NOT EXISTS idx_speech_sessions_user_created
@@ -271,6 +277,31 @@ export async function mergeGuestDataIntoUser(guestId: string, userId: string) {
   }
 }
 
+/**
+ * Attaches a delivery report to an existing session.
+ * Scoped by user_id so a session can only ever be updated by its owner.
+ */
+export async function updateSpeechSessionDeepAnalysis(sessionId: string, userId: string, report: string) {
+  const db = await ensureSpeechSchema();
+  if (!db) return false;
+
+  try {
+    const result = await db.execute({
+      sql: `
+        UPDATE speech_sessions
+        SET deep_analysis = ?
+        WHERE id = ? AND user_id = ?
+      `,
+      args: [report, sessionId, userId],
+    });
+
+    return result.rowsAffected > 0;
+  } catch (error) {
+    console.error('Failed to save deep analysis:', error);
+    return false;
+  }
+}
+
 export async function listRecentSpeechSessions(userId: string, limit = 6) {
   const db = await ensureSpeechSchema();
 
@@ -282,7 +313,7 @@ export async function listRecentSpeechSessions(userId: string, limit = 6) {
     const result = await db.execute({
       sql: `
         SELECT id, user_id, template_id, template_label, rubric_mode, transcript, feedback,
-               overall_score, words_per_min, duration_seconds, created_at
+               overall_score, words_per_min, duration_seconds, deep_analysis, created_at
         FROM speech_sessions
         WHERE user_id = ?
         ORDER BY datetime(created_at) DESC
@@ -302,6 +333,7 @@ export async function listRecentSpeechSessions(userId: string, limit = 6) {
       overall_score: row.overall_score === null ? null : Number(row.overall_score),
       words_per_min: row.words_per_min === null ? null : Number(row.words_per_min),
       duration_seconds: row.duration_seconds === null ? null : Number(row.duration_seconds),
+      deep_analysis: row.deep_analysis ? String(row.deep_analysis) : null,
       created_at: String(row.created_at),
     })) as SpeechSessionRecord[];
   } catch (error) {
@@ -310,7 +342,9 @@ export async function listRecentSpeechSessions(userId: string, limit = 6) {
   }
 }
 
-export async function insertSpeechSession(session: Omit<SpeechSessionRecord, 'created_at'>) {
+// deep_analysis is optional on insert: the standard pipeline never sets it, and
+// it is filled in later only if the user asks for a deeper read.
+export async function insertSpeechSession(session: Omit<SpeechSessionRecord, 'created_at' | 'deep_analysis'> & { deep_analysis?: string | null }) {
   const db = await ensureSpeechSchema();
 
   if (!db) {
