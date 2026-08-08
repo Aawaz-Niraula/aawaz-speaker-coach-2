@@ -23,7 +23,16 @@ import { GENERAL_RUBRIC, getSpeechTemplate } from '@/lib/speech-config';
  */
 
 const ANALYSIS_MODELS = ['google/gemma-4-26B-A4B-it', 'Qwen/Qwen3-14B'] as const;
-const TRANSCRIPTION_MODEL = 'openai/whisper-large-v3-turbo';
+const TRANSCRIPTION_MODELS = ['openai/whisper-large-v3-turbo', 'openai/whisper-large-v3'] as const;
+
+/**
+ * Transcription here is slower than in the standard route: word-level
+ * timestamps cost extra time, and this call shares bandwidth with the Gemini
+ * upload running alongside it. A minute-long recording can legitimately take
+ * well over a minute, so the budget is generous and a fallback model covers
+ * a stalled first attempt.
+ */
+const TRANSCRIBE_TIMEOUT_MS = 110000;
 
 const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
 
@@ -85,32 +94,46 @@ export async function POST(req: NextRequest) {
        as long as Whisper transcribing, so running them in sequence would
        double the wait for no reason. */
     const transcriptionPromise = (async () => {
-      const audioForm = new FormData();
-      audioForm.append('file', file, 'speech.webm');
-      audioForm.append('model', TRANSCRIPTION_MODEL);
-      audioForm.append('response_format', 'verbose_json');
-      // Word-level timings are the whole point here: they are what makes pause
-      // and pace analysis measurable rather than guessed.
-      audioForm.append('timestamp_granularities[]', 'word');
+      let lastError = 'Transcription failed.';
 
-      const res = await fetchWithRetryLimited('transcription', 'https://api.deepinfra.com/v1/openai/audio/transcriptions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${DEEPINFRA_API_KEY}` },
-        body: audioForm,
-      }, 0, 0, 60000);
+      for (const model of TRANSCRIPTION_MODELS) {
+        const audioForm = new FormData();
+        audioForm.append('file', file, 'speech.webm');
+        audioForm.append('model', model);
+        audioForm.append('response_format', 'verbose_json');
+        // Word-level timings are the whole point here: they are what makes
+        // pause and pace analysis measurable rather than guessed.
+        audioForm.append('timestamp_granularities[]', 'word');
 
-      const data = (await res.json().catch(() => ({}))) as WhisperVerbose;
-      if (!res.ok || data.error) {
-        throw new Error(data.error?.message || 'Transcription failed.');
+        const res = await fetchWithRetryLimited('transcription', 'https://api.deepinfra.com/v1/openai/audio/transcriptions', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${DEEPINFRA_API_KEY}` },
+          body: audioForm,
+        }, 0, 0, TRANSCRIBE_TIMEOUT_MS).catch(() => null);
+
+        if (!res) {
+          lastError = 'Transcription timed out.';
+          continue;
+        }
+
+        const data = (await res.json().catch(() => ({}))) as WhisperVerbose;
+        if (res.ok && !data.error && (data.text || '').trim()) {
+          return data;
+        }
+
+        lastError = data.error?.message || `Transcription failed (${res.status}).`;
       }
-      return data;
+
+      throw new Error(lastError);
     })();
 
     const vocalPromise = analyseVocalDelivery(
       audioBuffer,
       file.type || 'audio/webm',
       GEMINI_API_KEY,
-      90000,
+      // Kept under the transcription budget: if Gemini is the slow one, the
+      // report still lands using the timing data alone.
+      100000,
     );
 
     const [transcriptionResult, vocalResult] = await Promise.allSettled([transcriptionPromise, vocalPromise]);
@@ -181,16 +204,18 @@ The speaker has already received feedback on their words and structure. This rep
 
 🎧 DELIVERY ANALYSIS
 • Pace: [judgement using the measured words/min and the pace curve]
-• Pausing: [judgement using the measured pauses — are they used deliberately, or absent?]
+• Pausing: [judgement using the measured pauses — are they used deliberately, or absent?]${vocal ? `
 • Tone & confidence: [what the voice conveyed]
-• Energy & emphasis: [dynamic range, whether key words landed]
+• Energy & emphasis: [dynamic range, whether key words landed]` : ''}
 • Delivery score: X/100
 
 🎯 WHAT YOUR VOICE DID WELL
 [2-3 sentences naming specific things that genuinely worked in the delivery. If very little worked, say that plainly instead of inventing something.]
 
 ⚠️ WHAT HELD IT BACK
-[2-3 direct sentences on the biggest delivery weaknesses, each tied to the measured data or what was heard.]
+[2-3 direct sentences on the biggest delivery weaknesses, each tied to the measured data${vocal ? ' or what was heard' : ''}.]${vocal ? '' : `
+
+IMPORTANT: no vocal recording data is available for this analysis — only the timing measurements. Judge pace, pausing, and rhythm only. Do NOT describe tone, warmth, confidence, vocal energy, or how the voice sounded: you cannot hear it, and guessing would be inventing findings.`}
 
 🎤 3 DELIVERY DRILLS
 [Technical and imperative only. No encouragement in this section.]
