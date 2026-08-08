@@ -234,7 +234,7 @@ export function TemplatePicker({
                 ))}
               </ul>
               <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2.5">
-                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#857ca2]">The coach judges strictly against this rubric — no mercy mode.</p>
+                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#857ca2]">The coach judges your speech against this rubric.</p>
                 <button
                   type="button"
                   onClick={() => {

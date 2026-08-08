@@ -25,7 +25,7 @@ const mono = DM_Mono({
 
 export const metadata: Metadata = {
   title: 'Aawaz Speaker Coach',
-  description: 'History-aware speech coaching with brutal, technical feedback.',
+  description: 'History-aware speech coaching with honest, technical feedback.',
 };
 
 export const viewport: Viewport = {

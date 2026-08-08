@@ -15,7 +15,9 @@ export function parseFeedback(text: string): ParsedFeedback {
   const score = extractScore(text);
 
   const analysisItems: { label: string; value: string }[] = [];
-  const analysisMatch = text.match(/(?:📊\s*)?ANALYSIS[:\s]*\n([\s\S]*?)(?=\n(?:🔥|BRUTALLY)|$)/i);
+  // Accepts both the current "HONEST FEEDBACK" heading and the older
+  // "BRUTALLY HONEST FEEDBACK" one, so saved reports still parse.
+  const analysisMatch = text.match(/(?:📊\s*)?ANALYSIS[:\s]*\n([\s\S]*?)(?=\n(?:🔥|BRUTALLY|HONEST)|$)/i);
   if (analysisMatch) {
     const lines = analysisMatch[1].split('\n').map((l) => l.replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean);
     for (const line of lines) {
@@ -30,7 +32,7 @@ export function parseFeedback(text: string): ParsedFeedback {
   }
 
   let brutalFeedback = '';
-  const brutalMatch = text.match(/(?:🔥\s*)?BRUTALLY HONEST FEEDBACK[:\s]*\n([\s\S]*?)(?=\n(?:🛠|3 SPECIFIC|$))/i);
+  const brutalMatch = text.match(/(?:🔥\s*)?(?:BRUTALLY\s+)?HONEST FEEDBACK[:\s]*\n([\s\S]*?)(?=\n(?:🛠|3 SPECIFIC|$))/i);
   if (brutalMatch) brutalFeedback = brutalMatch[1].trim();
 
   const fixes: string[] = [];
@@ -43,12 +45,15 @@ export function parseFeedback(text: string): ParsedFeedback {
   return { analysisItems, score, brutalFeedback, fixes, rawText: text };
 }
 
+/** Bands mirror the scoring rules sent to the coach in the analysis prompt. */
 export function scoreGrade(score: number) {
-  if (score >= 85) return { label: 'Commanding', tone: 'Stage-ready. Keep this standard.' };
-  if (score >= 70) return { label: 'Strong', tone: 'Solid control. Sharpen the edges.' };
-  if (score >= 55) return { label: 'Developing', tone: 'The bones are there. Drill the fixes.' };
-  if (score >= 40) return { label: 'Rough', tone: 'Structure first. Then everything else.' };
-  return { label: 'Needs Work', tone: 'Honest start. The only way is up.' };
+  if (score >= 90) return { label: 'Exceptional', tone: 'Stage-ready. Hold this standard.' };
+  if (score >= 80) return { label: 'Commanding', tone: 'Strong work. Sharpen the last edges.' };
+  if (score >= 70) return { label: 'Strong', tone: 'Solid control. Tighten the weak spots.' };
+  if (score >= 60) return { label: 'Competent', tone: 'It works. Now make it consistent.' };
+  if (score >= 45) return { label: 'Developing', tone: 'The bones are there. Drill the fixes.' };
+  if (score >= 30) return { label: 'Rough', tone: 'Structure first. Then everything else.' };
+  return { label: 'Early Days', tone: 'Every speaker starts here. Run the fixes.' };
 }
 
 export function scoreColor(score: number) {

@@ -227,7 +227,7 @@ function contextFor(tab: CompanionTab, flags: AawaxCompanionProps['flags']): Tou
     return {
       tab,
       title: 'Start with one fix',
-      body: 'Do not try to fix everything at once. Pick the harshest comment, rehearse it twice, then record again.',
+      body: 'Do not try to fix everything at once. Pick the sharpest comment, rehearse it twice, then record again.',
       mood: 'coach',
       position: 'bottom-left',
       targetLabel: 'Coach report',

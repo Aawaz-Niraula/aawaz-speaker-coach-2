@@ -297,7 +297,7 @@ export function FeedbackReport({
       {/* ── Brutal feedback ───────────────────────────────── */}
       {parsed.brutalFeedback && (
         <CollapsibleSection
-          title="Brutally Honest Feedback"
+          title="Honest Feedback"
           icon={<Flame className="h-4 w-4 text-[#f87171]" />}
           tone="danger"
           actions={<TextActions value={parsed.brutalFeedback} label="Feedback" copyText={copyText} speakText={speakText} />}
