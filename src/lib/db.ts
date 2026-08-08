@@ -11,37 +11,6 @@ let schemaReadyPromise: Promise<DbClient | null> | null = null;
 let authSchemaReady = false;
 let authSchemaReadyPromise: Promise<DbClient | null> | null = null;
 
-function bytesFromBase64(value: string) {
-  try {
-    const binary = atob(value);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes.buffer;
-  } catch {
-    return new ArrayBuffer(0);
-  }
-}
-
-function normalizeBlobValue(value: unknown) {
-  if (value instanceof ArrayBuffer) {
-    return value;
-  }
-
-  if (value instanceof Uint8Array) {
-    const copy = new Uint8Array(value.byteLength);
-    copy.set(value);
-    return copy.buffer;
-  }
-
-  if (typeof value === 'string') {
-    return bytesFromBase64(value);
-  }
-
-  return new ArrayBuffer(0);
-}
-
 function getDbClient() {
   if (dbClient !== undefined) {
     return dbClient;
@@ -77,18 +46,6 @@ export type SpeechSessionRecord = {
   created_at: string;
 };
 
-export type SpeechVoiceSampleRecord = {
-  user_id: string;
-  audio_data: ArrayBuffer;
-  mime_type: string;
-  filename: string;
-  size_bytes: number;
-  provider_voice_id: string | null;
-  provider_voice_created_at: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
 export async function ensureSpeechSchema() {
   const db = getDbClient();
 
@@ -121,23 +78,6 @@ export async function ensureSpeechSchema() {
       CREATE INDEX IF NOT EXISTS idx_speech_sessions_user_created
       ON speech_sessions (user_id, created_at DESC)
     `);
-
-    await db.execute(`
-      CREATE TABLE IF NOT EXISTS speech_voice_samples (
-        user_id TEXT PRIMARY KEY,
-        audio_data BLOB NOT NULL,
-        mime_type TEXT NOT NULL,
-        filename TEXT NOT NULL,
-        size_bytes INTEGER NOT NULL,
-        provider_voice_id TEXT,
-        provider_voice_created_at TEXT,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    await db.execute('ALTER TABLE speech_voice_samples ADD COLUMN provider_voice_id TEXT').catch(() => null);
-    await db.execute('ALTER TABLE speech_voice_samples ADD COLUMN provider_voice_created_at TEXT').catch(() => null);
 
     schemaReady = true;
     return db;
@@ -318,31 +258,6 @@ export async function mergeGuestDataIntoUser(guestId: string, userId: string) {
 
     await db.execute({
       sql: `
-        INSERT INTO speech_voice_samples (
-          user_id, audio_data, mime_type, filename, size_bytes,
-          provider_voice_id, provider_voice_created_at, created_at, updated_at
-        )
-        SELECT ?, audio_data, mime_type, filename, size_bytes,
-               provider_voice_id, provider_voice_created_at, created_at, updated_at
-        FROM speech_voice_samples
-        WHERE user_id = ?
-          AND NOT EXISTS (
-            SELECT 1 FROM speech_voice_samples WHERE user_id = ?
-          )
-      `,
-      args: [userId, guestId, userId],
-    });
-
-    await db.execute({
-      sql: `
-        DELETE FROM speech_voice_samples
-        WHERE user_id = ?
-      `,
-      args: [guestId],
-    });
-
-    await db.execute({
-      sql: `
         DELETE FROM guest_usage
         WHERE guest_id = ?
       `,
@@ -352,226 +267,6 @@ export async function mergeGuestDataIntoUser(guestId: string, userId: string) {
     return true;
   } catch (error) {
     console.error('Failed to merge guest data into user:', error);
-    return false;
-  }
-}
-
-export async function upsertSpeechVoiceSample({
-  userId,
-  audioData,
-  mimeType,
-  filename,
-}: {
-  userId: string;
-  audioData: ArrayBuffer;
-  mimeType: string;
-  filename: string;
-}) {
-  const db = await ensureSpeechSchema();
-
-  if (!db) {
-    return false;
-  }
-
-  try {
-    await db.execute({
-      sql: `
-        INSERT INTO speech_voice_samples (
-          user_id, audio_data, mime_type, filename, size_bytes
-        ) VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(user_id) DO NOTHING
-      `,
-      args: [userId, new Uint8Array(audioData), mimeType, filename, audioData.byteLength],
-    });
-
-    return true;
-  } catch (error) {
-    console.error('Failed to upsert speech voice sample:', error);
-    return false;
-  }
-}
-
-export async function replaceSpeechVoiceSample({
-  userId,
-  audioData,
-  mimeType,
-  filename,
-}: {
-  userId: string;
-  audioData: ArrayBuffer;
-  mimeType: string;
-  filename: string;
-}) {
-  const db = await ensureSpeechSchema();
-
-  if (!db) {
-    return false;
-  }
-
-  try {
-    await db.execute({
-      sql: `
-        DELETE FROM speech_voice_samples
-        WHERE user_id = ?
-      `,
-      args: [userId],
-    });
-
-    const result = await db.execute({
-      sql: `
-        INSERT INTO speech_voice_samples (
-          user_id, audio_data, mime_type, filename, size_bytes
-        ) VALUES (?, ?, ?, ?, ?)
-      `,
-      args: [userId, new Uint8Array(audioData), mimeType, filename, audioData.byteLength],
-    });
-
-    return result.rowsAffected > 0;
-  } catch (error) {
-    console.error('Failed to replace speech voice sample:', error);
-    return false;
-  }
-}
-
-/** Reads only the stored provider voice id — no audio blob round-trip. */
-export async function getSpeechVoiceSampleProviderVoiceId(userId: string) {
-  const db = await ensureSpeechSchema();
-
-  if (!db) {
-    return null;
-  }
-
-  try {
-    const result = await db.execute({
-      sql: `
-        SELECT provider_voice_id
-        FROM speech_voice_samples
-        WHERE user_id = ?
-        LIMIT 1
-      `,
-      args: [userId],
-    });
-
-    const row = result.rows[0];
-    return row?.provider_voice_id ? String(row.provider_voice_id) : null;
-  } catch (error) {
-    console.error('Failed to read provider voice id:', error);
-    return null;
-  }
-}
-
-export async function deleteSpeechVoiceSample(userId: string) {
-  const db = await ensureSpeechSchema();
-
-  if (!db) {
-    return false;
-  }
-
-  try {
-    await db.execute({
-      sql: `
-        DELETE FROM speech_voice_samples
-        WHERE user_id = ?
-      `,
-      args: [userId],
-    });
-
-    return true;
-  } catch (error) {
-    console.error('Failed to delete speech voice sample:', error);
-    return false;
-  }
-}
-
-export async function getSpeechVoiceSample(userId: string) {
-  const db = await ensureSpeechSchema();
-
-  if (!db) {
-    return null;
-  }
-
-  try {
-    const result = await db.execute({
-      sql: `
-        SELECT user_id, audio_data, mime_type, filename, size_bytes,
-               provider_voice_id, provider_voice_created_at, created_at, updated_at
-        FROM speech_voice_samples
-        WHERE user_id = ?
-        LIMIT 1
-      `,
-      args: [userId],
-    });
-
-    const row = result.rows[0];
-    if (!row) return null;
-
-    const audioData = normalizeBlobValue(row.audio_data);
-
-    return {
-      user_id: String(row.user_id),
-      audio_data: audioData,
-      mime_type: String(row.mime_type),
-      filename: String(row.filename),
-      size_bytes: Number(row.size_bytes),
-      provider_voice_id: row.provider_voice_id ? String(row.provider_voice_id) : null,
-      provider_voice_created_at: row.provider_voice_created_at ? String(row.provider_voice_created_at) : null,
-      created_at: String(row.created_at),
-      updated_at: String(row.updated_at),
-    } as SpeechVoiceSampleRecord;
-  } catch (error) {
-    console.error('Failed to get speech voice sample:', error);
-    return null;
-  }
-}
-
-export async function setSpeechVoiceSampleProviderVoiceId(userId: string, providerVoiceId: string) {
-  const db = await ensureSpeechSchema();
-
-  if (!db) {
-    return false;
-  }
-
-  try {
-    const result = await db.execute({
-      sql: `
-        UPDATE speech_voice_samples
-        SET provider_voice_id = ?,
-            provider_voice_created_at = CURRENT_TIMESTAMP,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE user_id = ?
-      `,
-      args: [providerVoiceId, userId],
-    });
-
-    return result.rowsAffected > 0;
-  } catch (error) {
-    console.error('Failed to store speech provider voice id:', error);
-    return false;
-  }
-}
-
-export async function clearSpeechVoiceSampleProviderVoiceId(userId: string) {
-  const db = await ensureSpeechSchema();
-
-  if (!db) {
-    return false;
-  }
-
-  try {
-    const result = await db.execute({
-      sql: `
-        UPDATE speech_voice_samples
-        SET provider_voice_id = NULL,
-            provider_voice_created_at = NULL,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE user_id = ?
-      `,
-      args: [userId],
-    });
-
-    return result.rowsAffected > 0;
-  } catch (error) {
-    console.error('Failed to clear speech provider voice id:', error);
     return false;
   }
 }

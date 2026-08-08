@@ -1,327 +1,75 @@
 import { NextRequest } from 'next/server';
 
 import { GuestLimitError, IdentityError, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
-import { clearSpeechVoiceSampleProviderVoiceId, getSpeechVoiceSample, setSpeechVoiceSampleProviderVoiceId } from '@/lib/db';
-import { fetchWithRetry, fetchWithRetryLimited } from '@/lib/fetch';
+import { fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
-import { deleteProviderVoice, deleteUserProviderVoices, findNewestProviderVoiceIdByName, providerVoiceName } from '@/lib/provider-voice';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
+import { EXAMPLE_VOICES, ELEVENLABS_MODEL_ID, ELEVENLABS_OUTPUT_FORMAT, buildPerformanceScript, type ExampleVoice } from '@/lib/elevenlabs';
 
-const DEFAULT_TTS_MODEL = 'XiaomiMiMo/MiMo-V2.5-tts';
-const VOICE_CLONE_MODEL = 'XiaomiMiMo/MiMo-V2.5-tts-voiceclone';
-const EXAMPLE_VOICES = {
-  female: 'Mia',
-  male: 'Milo',
-} as const;
-const STYLE_PROMPT =
-  'Sound like a real human public speaker, not a robotic narrator. Deliver with confident, eloquent, brilliant stage presence: warm and persuasive, emotionally expressive, natural breath, varied pacing, lifelike pauses, subtle emphasis, rising energy on inspiring lines, thoughtful softness on reflective lines, and clear audience command. Use natural conversational rhythm, not flat monotone reading.';
+const ELEVENLABS_TTS_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
 
-type AudioMode = 'example' | 'clone';
-type ExampleVoice = keyof typeof EXAMPLE_VOICES;
+// Eleven v3 caps a single generation at 5,000 characters. Leave headroom for
+// the audio tags the performance script injects.
+const MAX_SCRIPT_CHARS = 4200;
 
 function cleanText(value: FormDataEntryValue | null) {
-  return typeof value === 'string' ? value.trim().slice(0, 6000) : '';
+  return typeof value === 'string' ? value.trim().slice(0, MAX_SCRIPT_CHARS) : '';
 }
 
 function providerMessage(data: unknown) {
   if (!data || typeof data !== 'object') return '';
   const record = data as Record<string, unknown>;
-  const error = record.error;
-  if (typeof error === 'string') return error;
-  if (error && typeof error === 'object' && typeof (error as Record<string, unknown>).message === 'string') {
-    return String((error as Record<string, unknown>).message);
+
+  // ElevenLabs errors look like { detail: { status, message } } or
+  // { detail: [{ msg, loc }] } for validation failures.
+  const detail = record.detail;
+  if (typeof detail === 'string') return detail;
+  if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+    const nested = detail as Record<string, unknown>;
+    if (typeof nested.message === 'string') return nested.message;
+    if (typeof nested.status === 'string') return nested.status;
   }
-  if (typeof record.message === 'string') return record.message;
-  if (Array.isArray(record.detail)) {
-    return record.detail
-      .map((item) => {
-        if (!item || typeof item !== 'object') return null;
-        const detail = item as Record<string, unknown>;
-        const message = typeof detail.msg === 'string' ? detail.msg : null;
-        const location = Array.isArray(detail.loc) ? detail.loc.filter((part) => typeof part === 'string').join('.') : '';
-        return message && location ? `${location}: ${message}` : message;
-      })
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => (item && typeof item === 'object' ? String((item as Record<string, unknown>).msg ?? '') : ''))
       .filter(Boolean)
       .join(' ');
   }
-  if (typeof record.detail === 'string') return record.detail;
+
+  if (typeof record.message === 'string') return record.message;
   return '';
 }
 
-function decodeBase64Audio(value: string) {
-  const cleaned = value.includes(',') ? value.split(',').pop() || '' : value;
-  if (!cleaned || cleaned.startsWith('http')) return null;
+async function synthesize(voice: ExampleVoice, text: string, apiKey: string) {
+  const { voiceId, settings } = EXAMPLE_VOICES[voice];
+  const url = `${ELEVENLABS_TTS_URL}/${encodeURIComponent(voiceId)}?output_format=${ELEVENLABS_OUTPUT_FORMAT}`;
 
-  try {
-    const buffer = Buffer.from(cleaned, 'base64');
-    const bytes = new Uint8Array(buffer.byteLength);
-    bytes.set(buffer);
-    return bytes.buffer;
-  } catch {
-    return null;
-  }
-}
+  const res = await fetchWithRetryLimited('tts', url, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': apiKey,
+      'Content-Type': 'application/json',
+      Accept: 'audio/mpeg',
+    },
+    body: JSON.stringify({
+      text: buildPerformanceScript(text),
+      model_id: ELEVENLABS_MODEL_ID,
+      voice_settings: settings,
+      apply_text_normalization: 'auto',
+    }),
+  }, 1, 1200, 120000);
 
-function findAudioPayload(value: unknown): string | null {
-  if (typeof value === 'string') {
-    if (value.startsWith('http://') || value.startsWith('https://')) return value;
-    return decodeBase64Audio(value) ? value : null;
-  }
-
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const found = findAudioPayload(item);
-      if (found) return found;
-    }
-    return null;
-  }
-
-  if (!value || typeof value !== 'object') {
-    return null;
-  }
-
-  const record = value as Record<string, unknown>;
-  for (const key of ['audio', 'audio_base64', 'audio_data', 'data', 'output', 'result', 'url']) {
-    const found = findAudioPayload(record[key]);
-    if (found) return found;
-  }
-
-  return null;
-}
-
-async function readAudioResponse(res: Response) {
-  const contentType = res.headers.get('content-type') || 'audio/ogg';
-
-  if (contentType.includes('application/json')) {
+  if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    const payload = findAudioPayload(data);
-    if (payload?.startsWith('http')) {
-      const audioRes = await fetchWithRetry(payload, {}, 1, 1000, 60000);
-      if (audioRes.ok) {
-        return readAudioResponse(audioRes);
-      }
-    }
-
-    const audio = payload ? decodeBase64Audio(payload) : null;
-    if (audio && audio.byteLength > 1000) {
-      return { audio, contentType: 'audio/ogg; codecs=opus' };
-    }
-
-    const message = providerMessage(data);
-    throw new Error(message || 'The voice model returned JSON instead of audio.');
+    throw new Error(providerMessage(data) || 'Speech audio generation failed.');
   }
 
   const audio = await res.arrayBuffer();
-  if (!audio.byteLength) {
+  if (audio.byteLength < 1000) {
     throw new Error('The voice model returned an empty audio file.');
   }
 
-  return { audio, contentType };
-}
-
-async function synthesizeWithVoice(voiceId: string, text: string, modelId: string, token: string) {
-  const res = await fetchWithRetryLimited('tts', `https://api.deepinfra.com/v1/text-to-speech/${encodeURIComponent(voiceId)}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      text,
-      model_id: modelId,
-      output_format: 'opus',
-      language_code: 'en',
-      style_instruction: STYLE_PROMPT,
-    }),
-  }, 1, 1000, 120000);
-
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(providerMessage(data) || 'Speech audio generation failed.');
-  }
-
-  return readAudioResponse(res);
-}
-
-async function synthesizeDirect(modelId: string, text: string, token: string, voiceId?: string) {
-  const body = JSON.stringify({
-    text,
-    voice: voiceId,
-    voice_id: voiceId,
-    style_instruction: STYLE_PROMPT,
-    output_format: 'opus',
-    language_code: 'en',
-  });
-
-  const res = await fetchWithRetryLimited('tts', `https://api.deepinfra.com/v1/inference/${modelId}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body,
-  }, 1, 1000, 120000);
-
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(providerMessage(data) || 'Speech audio generation failed.');
-  }
-
-  return readAudioResponse(res);
-}
-
-async function synthesizeCloneWithVoice(voiceId: string, text: string, token: string) {
-  const res = await fetchWithRetryLimited('tts', `https://api.deepinfra.com/v1/inference/${VOICE_CLONE_MODEL}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      text,
-      voice: voiceId,
-      instruct: STYLE_PROMPT,
-      output_format: 'opus',
-      stream: false,
-    }),
-  }, 1, 1000, 120000);
-
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(providerMessage(data) || 'Speech audio generation failed.');
-  }
-
-  return readAudioResponse(res);
-}
-
-async function synthesizeCloneWhenReady(voiceId: string, text: string, token: string) {
-  let lastError: unknown;
-  const delays = [0, 2500, 5000, 8000, 12000];
-
-  for (const delay of delays) {
-    if (delay) {
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
-
-    try {
-      return await synthesizeCloneWithVoice(voiceId, text, token);
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  throw lastError instanceof Error
-    ? lastError
-    : new Error('The voice service could not prepare your cloned voice.');
-}
-
-function extractVoiceId(data: unknown): string {
-  if (!data || typeof data !== 'object') return '';
-  const record = data as Record<string, unknown>;
-  if (typeof record.voice_id === 'string') return record.voice_id;
-  if (record.voice && typeof record.voice === 'object') {
-    const nested = record.voice as Record<string, unknown>;
-    if (typeof nested.voice_id === 'string') return nested.voice_id;
-    if (typeof nested.id === 'string') return nested.id;
-  }
-  if (typeof record.id === 'string') return record.id;
-  return '';
-}
-
-type VoiceAddAttempt = {
-  ok: boolean;
-  status: number;
-  voiceId: string;
-  message: string;
-  uploadShape: string;
-};
-
-function appendVoiceFile(form: FormData, sample: File, uploadShape: string) {
-  const filename = sample.name || 'voice-sample.wav';
-
-  if (uploadShape === 'files-items') {
-    form.append('files', '');
-    form.append('files.items', sample, filename);
-    return;
-  }
-
-  form.append(uploadShape, sample, filename);
-}
-
-async function addVoiceOnce(sample: File, voiceName: string, token: string, uploadShape: string): Promise<VoiceAddAttempt> {
-  const voiceForm = new FormData();
-  voiceForm.append('name', voiceName);
-  voiceForm.append('description', 'Short voice sample captured after speech analysis for practice speech playback.');
-  appendVoiceFile(voiceForm, sample, uploadShape);
-
-  const res = await fetchWithRetryLimited('voice', 'https://api.deepinfra.com/v1/voices/add', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: voiceForm,
-  }, 0, 1000, 120000);
-
-  const data = await res.json().catch(() => ({}));
-  let voiceId = extractVoiceId(data);
-
-  if (!voiceId && res.status >= 500) {
-    // DeepInfra's voice API can create the voice but still return
-    // {"message":"Internal server error"}. Treat the provider voice list as
-    // source of truth before giving up.
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-    voiceId = await findNewestProviderVoiceIdByName(voiceName, token);
-  }
-
-  return { ok: res.ok || !!voiceId, status: res.status, voiceId, message: providerMessage(data), uploadShape };
-}
-
-async function addVoiceWithFallbacks(sample: File, userId: string, token: string) {
-  const uploadShapes = ['files', 'files-items', 'audio'];
-  const attempts: VoiceAddAttempt[] = [];
-  const voiceName = `${providerVoiceName(userId)} ${Date.now().toString(36)}`;
-
-  for (const uploadShape of uploadShapes) {
-    const attempt = await addVoiceOnce(sample, voiceName, token, uploadShape);
-    attempts.push(attempt);
-
-    if (attempt.ok && attempt.voiceId) {
-      return attempt;
-    }
-  }
-
-  return attempts.find((attempt) => attempt.message) ?? attempts[attempts.length - 1];
-}
-
-async function createVoice(sample: File, userId: string, token: string) {
-  // Clear old same-name voices first. Besides freeing quota, this makes the
-  // post-500 recovery lookup unambiguous when the provider creates a voice but
-  // fails to return its id in the response body.
-  await deleteUserProviderVoices(userId, token);
-  let attempt = await addVoiceWithFallbacks(sample, userId, token);
-
-  if (!attempt.ok || !attempt.voiceId) {
-    // The most common silent failure here is a full voice quota on the
-    // provider account (old voices from replaced samples pile up). Reclaim
-    // this user's stale voice slots and try once more.
-    await deleteUserProviderVoices(userId, token);
-    attempt = await addVoiceWithFallbacks(sample, userId, token);
-  }
-
-  if (!attempt.ok || !attempt.voiceId) {
-    console.error('DeepInfra voice creation failed', {
-      status: attempt.status,
-      uploadShape: attempt.uploadShape,
-      message: attempt.message,
-      mimeType: sample.type,
-      size: sample.size,
-    });
-    const detail = attempt.message?.toLowerCase() ?? '';
-    const friendly = !attempt.message || detail.includes('internal') || detail.includes('server error')
-      ? 'The voice service could not process your sample right now. Please try again in a moment.'
-      : attempt.message;
-    throw new Error(friendly);
-  }
-
-  return attempt.voiceId;
+  return audio;
 }
 
 export async function POST(req: NextRequest) {
@@ -330,29 +78,24 @@ export async function POST(req: NextRequest) {
 
   try {
     const form = await req.formData();
-    const mode = String(form.get('mode') || 'example') as AudioMode;
     const text = cleanText(form.get('text'));
-    const requestedExampleVoice = String(form.get('exampleVoice') || 'female') as ExampleVoice;
-
-    if (mode !== 'example' && mode !== 'clone') {
-      return Response.json({ error: 'Invalid speech audio mode.' }, { status: 400 });
-    }
+    const requestedVoice = String(form.get('exampleVoice') || 'female') as ExampleVoice;
 
     if (!text) {
       return Response.json({ error: 'First generate a text script.' }, { status: 400 });
     }
 
-    if (mode === 'example' && !Object.prototype.hasOwnProperty.call(EXAMPLE_VOICES, requestedExampleVoice)) {
+    if (!Object.prototype.hasOwnProperty.call(EXAMPLE_VOICES, requestedVoice)) {
       return Response.json({ error: 'Invalid example voice.' }, { status: 400 });
     }
 
-    const DEEPINFRA_API_KEY = process.env.DEEPINFRA_API_KEY;
-    if (!DEEPINFRA_API_KEY) {
+    const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+    if (!ELEVENLABS_API_KEY) {
       return Response.json({ error: 'Server configuration error: missing API key.' }, { status: 500 });
     }
 
     const { userId } = await resolveAppUser(req, true);
-    const rateKey = `generate-speech-audio:${mode}:${getClientKey(req, userId)}`;
+    const rateKey = `generate-speech-audio:${getClientKey(req, userId)}`;
     const rateLimit = checkRateLimit(rateKey, 8, 10 * 60 * 1000);
     if (!rateLimit.allowed) {
       return Response.json(
@@ -369,62 +112,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    let result: Awaited<ReturnType<typeof readAudioResponse>> | null = null;
+    const audio = await synthesize(requestedVoice, text, ELEVENLABS_API_KEY);
 
-    if (mode === 'clone') {
-      const storedSample = await getSpeechVoiceSample(userId);
-      if (!storedSample || storedSample.size_bytes < 3000 || storedSample.audio_data.byteLength < 3000) {
-        return Response.json({ error: 'First do a speech analysis and try again.' }, { status: 400 });
-      }
-
-      if (storedSample.size_bytes > 12 * 1024 * 1024) {
-        return Response.json({ error: 'Saved voice sample is too large. Record a shorter speech analysis and try again.' }, { status: 413 });
-      }
-
-      const sample = new File(
-        [Buffer.from(storedSample.audio_data)],
-        storedSample.filename || 'voice-sample.webm',
-        { type: storedSample.mime_type || 'audio/webm;codecs=opus' },
-      );
-
-      let voiceId = storedSample.provider_voice_id || '';
-
-      if (voiceId) {
-        try {
-          result = await synthesizeCloneWhenReady(voiceId, text, DEEPINFRA_API_KEY);
-        } catch {
-          // The stored voice is unusable — drop it on the provider too so it
-          // doesn't occupy a voice slot forever.
-          await deleteProviderVoice(voiceId, DEEPINFRA_API_KEY);
-          await clearSpeechVoiceSampleProviderVoiceId(userId);
-          voiceId = '';
-        }
-      }
-
-      if (!voiceId) {
-        voiceId = await createVoice(sample, userId, DEEPINFRA_API_KEY);
-        await setSpeechVoiceSampleProviderVoiceId(userId, voiceId);
-        result = await synthesizeCloneWhenReady(voiceId, text, DEEPINFRA_API_KEY);
-      }
-    } else {
-      const voiceId = EXAMPLE_VOICES[requestedExampleVoice];
-      try {
-        result = await synthesizeWithVoice(voiceId, text, DEFAULT_TTS_MODEL, DEEPINFRA_API_KEY);
-      } catch {
-        result = await synthesizeDirect(DEFAULT_TTS_MODEL, text, DEEPINFRA_API_KEY, voiceId);
-      }
-    }
-
-    if (!result) {
-      throw new Error('Speech audio generation failed.');
-    }
-
-    return new Response(result.audio, {
+    return new Response(audio, {
       headers: {
-        'Content-Type': result.contentType.includes('audio/') ? result.contentType : 'audio/ogg; codecs=opus',
-        'Content-Disposition': `attachment; filename="aawaz-${mode}-speech.opus"`,
+        'Content-Type': 'audio/mpeg',
+        'Content-Disposition': `attachment; filename="aawaz-${requestedVoice}-speech.mp3"`,
         'Cache-Control': 'no-store',
-        'X-Aawaz-Style-Prompt': STYLE_PROMPT,
       },
     });
   } catch (error) {

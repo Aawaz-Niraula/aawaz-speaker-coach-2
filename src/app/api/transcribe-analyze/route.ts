@@ -4,7 +4,7 @@ import { after, NextRequest } from 'next/server';
 
 import { getProviderErrorMessage, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
 import { GuestLimitError, IdentityError, guestLimitResponse, resolveAppUser } from '@/lib/app-user';
-import { getSpeechVoiceSample, insertSpeechSession, listRecentSpeechSessions, upsertSpeechVoiceSample } from '@/lib/db';
+import { insertSpeechSession, listRecentSpeechSessions } from '@/lib/db';
 import { fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
@@ -97,7 +97,6 @@ export async function POST(req: NextRequest) {
   }
 
   const file = formData.get('file') as File | null;
-  const voiceSample = formData.get('voiceSample') as File | null;
   const selectedTemplateId = String(formData.get('templateId') || '').trim().slice(0, 80) || null;
 
   if (!file || file.size < 3000) {
@@ -113,17 +112,6 @@ export async function POST(req: NextRequest) {
       {
         transcript: '',
         feedback: 'Audio is too large. Keep recordings under 20 MB and try again.',
-        history: [],
-      },
-      { status: 413 },
-    );
-  }
-
-  if (voiceSample && voiceSample.size > 8 * 1024 * 1024) {
-    return Response.json(
-      {
-        transcript: '',
-        feedback: 'Voice sample is too large. Record a shorter speech analysis and try again.',
         history: [],
       },
       { status: 413 },
@@ -254,28 +242,6 @@ export async function POST(req: NextRequest) {
   const duration = Number(whisperData.duration || 0);
   const wordCount = transcript.split(/\s+/).filter(Boolean).length;
   const wordsPerMin = duration > 0 ? Math.round((wordCount / duration) * 60) : 0;
-
-  // Store the voice sample concurrently with the analysis call instead of after it.
-  const voiceSamplePromise = (async () => {
-    try {
-      const existingVoiceSample = await getSpeechVoiceSample(userId);
-      const hasUsableVoiceSample = !!existingVoiceSample && existingVoiceSample.size_bytes >= 3000;
-      if (hasUsableVoiceSample) return true;
-
-      if (!voiceSample || voiceSample.size < 3000) return false;
-
-      const sampleBytes = await voiceSample.arrayBuffer();
-      return await upsertSpeechVoiceSample({
-        userId,
-        audioData: sampleBytes,
-        mimeType: voiceSample.type || 'audio/webm;codecs=opus',
-        filename: voiceSample.name || 'voice-sample.webm',
-      });
-    } catch (error) {
-      console.error('Failed to prepare speech voice sample:', error);
-      return false;
-    }
-  })();
 
   let analysisData: ChatCompletionData = {};
   let analysisStatus = 503;
@@ -412,7 +378,6 @@ ${transcript}`,
   };
 
   const updatedHistory = [newSessionHeader, ...previousHistory].slice(0, 6);
-  const voiceSampleSaved = await voiceSamplePromise;
 
   after(async () => {
     try {
@@ -437,7 +402,6 @@ ${transcript}`,
     transcript,
     feedback,
     history: updatedHistory,
-    voiceSampleSaved,
     isGuest,
     guestRemaining,
     rubricMode,
