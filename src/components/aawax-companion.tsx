@@ -64,6 +64,26 @@ const TOUR_SPOTS_MOBILE: Record<CompanionPosition, TourSpot> = {
 const TOUR_STORAGE_KEY = 'aawax-onboarding-v1';
 const TOUR_MUTE_KEY = 'aawax-tour-muted';
 
+/**
+ * Where Aawax laughs in each narration clip, as a fraction of the line.
+ *
+ * The audio is pre-rendered from a fixed script, so the [giggles] beats are
+ * known ahead of time. Expressed as fractions rather than seconds so they hold
+ * even if a clip is regenerated at a slightly different length. Keyed by step
+ * index; steps with no laugh are simply absent.
+ */
+const GIGGLE_BEATS: Record<number, number[]> = {
+  // Step 2, "...every um and uh. [giggles] Sorry in advance."
+  // Measured from the clip: isolated burst at 0.887-0.908.
+  1: [0.882],
+  // Step 7, "...how I look... [giggles] you can change that here too."
+  // Measured from the clip: burst at 0.592-0.734.
+  6: [0.59],
+};
+
+/** How long the laughing face holds, as a fraction of the clip. */
+const GIGGLE_HOLD = 0.1;
+
 const TOUR_STEPS: TourStep[] = [
   {
     tab: 'coach',
@@ -309,6 +329,10 @@ export function AawaxCompanion({ activeTab, onTabChange, onOpenChat, flags }: Aa
   });
   const lineDuration = narration.step === stepIndex ? narration.durationMs : undefined;
   const speaking = narration.step === stepIndex && narration.speaking;
+  // 0–1 mouth openness, sampled from the narration audio for lip-sync.
+  const [mouthOpen, setMouthOpen] = useState(0);
+  // True while Aawax is mid-laugh, so his whole face reacts and not just the mouth.
+  const [giggling, setGiggling] = useState(false);
 
   useEffect(() => {
     let seen = true;
@@ -360,6 +384,7 @@ export function AawaxCompanion({ activeTab, onTabChange, onOpenChat, flags }: Aa
     const step = stepIndex;
     const audio = new Audio(`/tour/tour-${step + 1}.mp3`);
     audio.volume = 0.85;
+    audio.crossOrigin = 'anonymous';
     narrationRef.current = audio;
 
     const onPlaying = () => setNarration((n) => ({ ...n, step, speaking: true }));
@@ -368,21 +393,88 @@ export function AawaxCompanion({ activeTab, onTabChange, onOpenChat, flags }: Aa
         setNarration((n) => ({ ...n, step, durationMs: audio.duration * 1000 }));
       }
     };
-    const onEnded = () => setNarration((n) => ({ ...n, step, speaking: false }));
+    const onEnded = () => {
+      setNarration((n) => ({ ...n, step, speaking: false }));
+      setMouthOpen(0);
+      setGiggling(false);
+    };
 
     audio.addEventListener('loadedmetadata', onMeta);
     audio.addEventListener('playing', onPlaying);
     audio.addEventListener('ended', onEnded);
 
+    /* Lip-sync. Tap the narration through an AnalyserNode and shape the mouth
+       from the live signal level, so it tracks the actual syllables instead of
+       looping on its own clock. Everything here is best-effort: if Web Audio
+       is unavailable the mouth just falls back to its idle loop. */
+    let frame = 0;
+    let audioCtx: AudioContext | null = null;
+
+    try {
+      const Ctor = window.AudioContext
+        ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
+      if (Ctor) {
+        audioCtx = new Ctor();
+        const source = audioCtx.createMediaElementSource(audio);
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        // Smoothing here would fight our own easing below; keep it responsive.
+        analyser.smoothingTimeConstant = 0.15;
+        source.connect(analyser);
+        analyser.connect(audioCtx.destination);
+
+        const samples = new Uint8Array(analyser.frequencyBinCount);
+        let smoothed = 0;
+
+        const beats = GIGGLE_BEATS[step] ?? [];
+
+        const tick = () => {
+          analyser.getByteFrequencyData(samples);
+
+          // Speech energy lives mostly in the low-mid bins; averaging the whole
+          // spectrum washes the movement out.
+          let sum = 0;
+          const bins = Math.min(32, samples.length);
+          for (let i = 0; i < bins; i += 1) sum += samples[i];
+          const level = sum / bins / 255;
+
+          // Open fast, close slower: mouths snap open on a syllable and relax
+          // shut, and symmetric easing reads as chewing.
+          const target = Math.min(1, Math.max(0, (level - 0.06) * 2.6));
+          smoothed += (target - smoothed) * (target > smoothed ? 0.55 : 0.22);
+
+          setMouthOpen(smoothed);
+
+          // Laugh beats are known from the script, so his face can react on cue.
+          if (beats.length && audio.duration) {
+            const at = audio.currentTime / audio.duration;
+            setGiggling(beats.some((b) => at >= b && at <= b + GIGGLE_HOLD));
+          }
+
+          frame = requestAnimationFrame(tick);
+        };
+
+        frame = requestAnimationFrame(tick);
+      }
+    } catch {
+      // No Web Audio (or the element is already tapped): silent fallback.
+      audioCtx = null;
+    }
+
     // Autoplay can be blocked until the user interacts with the page; the
     // tour still reads fine silently, so a rejection is not worth surfacing.
-    void audio.play().catch(() => null);
+    void audio.play().then(() => audioCtx?.resume().catch(() => null)).catch(() => null);
 
     return () => {
+      if (frame) cancelAnimationFrame(frame);
       audio.removeEventListener('loadedmetadata', onMeta);
       audio.removeEventListener('playing', onPlaying);
       audio.removeEventListener('ended', onEnded);
       audio.pause();
+      setMouthOpen(0);
+      setGiggling(false);
+      void audioCtx?.close().catch(() => null);
     };
   }, [mode, stepIndex, muted]);
 
@@ -457,12 +549,14 @@ export function AawaxCompanion({ activeTab, onTabChange, onOpenChat, flags }: Aa
       if (flags.isAnalyzing || flags.isGenerating) return 'think';
       if (flags.isVoiceBusy) return 'sing';
     }
+    // Mid-laugh: the whole face changes, not just the mouth.
+    if (mode === 'tour' && giggling) return 'cheer';
     // Mouth only moves while he is actually mid-line. Once the audio ends he
     // settles into a smile instead of chewing on silence. When muted there is
     // no audio to follow, so the typewriter stands in for the talking.
     if (mode === 'tour' && !speaking && !muted) return 'idle';
     return activeStep.mood;
-  }, [activeStep.mood, boopCount, flags.isAnalyzing, flags.isGenerating, flags.isRecording, flags.isVoiceBusy, isBusy, mode, speaking, muted]);
+  }, [activeStep.mood, boopCount, flags.isAnalyzing, flags.isGenerating, flags.isRecording, flags.isVoiceBusy, isBusy, mode, speaking, muted, giggling]);
 
   const boop = () => {
     setBoopCount((count) => {
@@ -674,10 +768,28 @@ export function AawaxCompanion({ activeTab, onTabChange, onOpenChat, flags }: Aa
                     tabIndex={0}
                     aria-label="Boop Aawax"
                     className="cursor-pointer rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[#a78bfa]/70"
-                    animate={reduceMotion ? undefined : { y: [0, -7, 0] }}
-                    transition={reduceMotion ? undefined : { duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
+                    animate={
+                      reduceMotion
+                        ? undefined
+                        : giggling
+                          // Quick shoulder-shaking bounce while he laughs.
+                          ? { y: [0, -9, -1, -7, 0], rotate: [0, -3, 2, -2, 0] }
+                          : { y: [0, -7, 0] }
+                    }
+                    transition={
+                      reduceMotion
+                        ? undefined
+                        : giggling
+                          ? { duration: 0.6, ease: 'easeOut' }
+                          : { duration: 2.6, repeat: Infinity, ease: 'easeInOut' }
+                    }
                   >
-                    <CoachMascot mood={mascotMood} size={isNarrow ? 84 : 104} float={false} />
+                    <CoachMascot
+                      mood={mascotMood}
+                      size={isNarrow ? 84 : 104}
+                      float={false}
+                      mouthOpen={speaking && !giggling ? mouthOpen : undefined}
+                    />
                   </motion.div>
                   <span className="mt-1 block h-2 w-14 rounded-[50%] bg-[#06060b]/45 blur-[3px] sm:w-16" aria-hidden />
                 </div>
