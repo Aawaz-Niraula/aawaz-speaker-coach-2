@@ -192,5 +192,7 @@ ${variationLine}
 - Silence: ${Math.round(m.silenceRatio * 100)}% of the recording
 - Filler words: ${m.fillerCount} total, of which ${m.hesitations} follow a gap (searching for the word, not verbal habit)
 
-Use these numbers directly in the analysis. Do not contradict them or invent different figures.`;
+Use these numbers directly in the analysis. Do not contradict them or invent different figures. The filler count above is counted from the audio: report exactly that number, even if your own reading of the transcript suggests otherwise.
+Note that words like "so", "like" and "actually" are counted as fillers here, which is why the total may look higher than expected.
+These figures describe delivery only. They do not tell you whether the content or structure was good — judge that from the transcript.`;
 }

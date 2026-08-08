@@ -7,6 +7,7 @@ import { GuestLimitError, IdentityError, guestLimitResponse, resolveAppUser } fr
 import { insertSpeechSession, listRecentSpeechSessions } from '@/lib/db';
 import { fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
+import { computeSpeechMetrics, formatMetricsForPrompt } from '@/lib/speech-metrics';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
 import { GENERAL_RUBRIC, getSpeechTemplate } from '@/lib/speech-config';
 
@@ -178,13 +179,22 @@ export async function POST(req: NextRequest) {
   const historyPromise = listRecentSpeechSessions(userId, 4);
 
   let whisperRes: Response | null = null;
-  let whisperData: { text?: string; duration?: number; error?: { message?: string } } = {};
+  let whisperData: {
+    text?: string;
+    duration?: number;
+    words?: unknown;
+    segments?: unknown;
+    error?: { message?: string };
+  } = {};
 
   for (const transcriptionModel of TRANSCRIPTION_MODELS) {
     const audioForm = new FormData();
     audioForm.append('file', file, 'speech.webm');
     audioForm.append('model', transcriptionModel);
     audioForm.append('response_format', 'verbose_json');
+    // Word timings come back on the same call at no extra cost, and turn
+    // pace and pausing from guesses into measurements.
+    audioForm.append('timestamp_granularities[]', 'word');
 
     whisperRes = await fetchWithRetryLimited('transcription', 'https://api.deepinfra.com/v1/openai/audio/transcriptions', {
       method: 'POST',
@@ -241,6 +251,11 @@ export async function POST(req: NextRequest) {
   const wordCount = transcript.split(/\s+/).filter(Boolean).length;
   const wordsPerMin = duration > 0 ? Math.round((wordCount / duration) * 60) : 0;
 
+  // Derived from the word timings above. Null on very short recordings, where
+  // there is not enough timing data for the numbers to mean anything.
+  const metrics = computeSpeechMetrics(whisperData, duration);
+  const metricsSection = metrics ? `\n${formatMetricsForPrompt(metrics)}\n` : '';
+
   let analysisData: ChatCompletionData = {};
   let analysisStatus = 503;
   let analysisMessage: string | undefined;
@@ -278,8 +293,11 @@ Score execution, not effort. But score it accurately in both directions: real co
           content: `Analyse this speech transcript and reply in EXACTLY this format only:
 
 📊 ANALYSIS
-• Total filler words (um/uh/like/you know/so): X
-• Speaking speed: ${wordsPerMin} words/min (target 130-160)
+• Total filler words (um/uh/like/you know/so): ${metrics ? `${metrics.fillerCount} — COPY THIS NUMBER EXACTLY, do not recount` : 'X'}
+• Speaking speed: ${wordsPerMin} words/min (target 130-160)${metrics ? `
+• Pacing control: [judge using the measured pace curve and variation below]
+• Pausing: [judge using the measured pauses below — deliberate, absent, or stalling?]${metrics.fillerCount > 0 ? `
+• Hesitation: [${metrics.hesitations} of ${metrics.fillerCount} fillers follow a gap — say in your own words what that indicates]` : ''}` : ''}
 • Clarity & volume: Excellent / Good / Weak / Inaudible
 • Structure check: [brief judgment tied to the active rubric]
 • Overall score: X/100
@@ -308,7 +326,8 @@ Scoring rules:
 - If the transcript is vague, repetitive, casual when it should be formal, unsupported when it should be argumentative, or messy when it should be structured, say so explicitly and score accordingly.
 - Score execution, not effort or sincerity. But when execution is genuinely good, say so and score it accordingly.
 - Very short transcripts (under ~40 words) have little to judge. Say that plainly rather than inventing faults, and score conservatively without going near zero.
-
+- Delivery counts toward the score, not just the words. Rushing with no pauses, metronomic pacing, or heavy hesitation are real faults; controlled pace with deliberate pausing is a real strength. Judge these from the measured data below, never from guesswork.
+${metricsSection}
 You must evaluate against this rubric:
 ${rubricInstructions}
 
@@ -369,7 +388,13 @@ ${transcript}`,
     });
   }
 
-  const feedback = analysisData.choices?.[0]?.message?.content || 'No feedback from coach.';
+  const rawFeedback = analysisData.choices?.[0]?.message?.content || 'No feedback from coach.';
+  /* The prompt tells the model to copy the measured filler count verbatim,
+     because left to itself it recounts from the transcript and contradicts the
+     audio. That instruction sometimes survives into the reply, so strip it. */
+  const feedback = rawFeedback
+    .replace(/\s*—?\s*COPY THIS NUMBER EXACTLY[^\n]*/gi, '')
+    .replace(/\s*\[?do not recount\]?/gi, '');
   const overallScore = extractOverallScore(feedback);
 
   const newSessionHeader = {
@@ -415,6 +440,8 @@ ${transcript}`,
     guestRemaining,
     rubricMode,
     template: template?.label ?? null,
+    // Null when the recording is too short for the timings to mean anything.
+    metrics,
   });
 }
 
