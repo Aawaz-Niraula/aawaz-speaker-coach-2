@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Label from '@radix-ui/react-label';
 import { AnimatePresence, motion, useReducedMotion, type Variants } from 'framer-motion';
 import {
+  AudioLines,
   BarChart3,
   ChevronDown,
   Copy,
@@ -57,6 +58,8 @@ type SpeechHistoryItem = {
   words_per_min: number | null;
   transcript: string;
   feedback: string;
+  /** Delivery report, present only if the user ran a deep analysis. */
+  deep_analysis?: string | null;
 };
 type HistoryResponse = { history?: SpeechHistoryItem[] };
 type AnalyzeResponse = HistoryResponse & { transcript?: string; feedback?: string; isGuest?: boolean; guestRemaining?: number | null };
@@ -242,6 +245,12 @@ export default function Home() {
   const [history, setHistory] = useState<SpeechHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  /* Deep analysis. The recording is held in browser memory only — nothing is
+     stored server-side — so the button disappears on reload or a new take. */
+  const [deepAnalysis, setDeepAnalysis] = useState<string | null>(null);
+  const [isGoingDeeper, setIsGoingDeeper] = useState(false);
+  const [canGoDeeper, setCanGoDeeper] = useState(false);
+  const lastRecordingRef = useRef<{ blob: Blob; sessionId: string | null } | null>(null);
   const [deletingSessionIds, setDeletingSessionIds] = useState<Set<string>>(new Set());
   const [selectedTemplateId, setSelectedTemplateId] = useState<SpeechTemplateId | null>(null);
   const [speechTemplateId, setSpeechTemplateId] = useState<SpeechTemplateId | null>(null);
@@ -566,6 +575,12 @@ export default function Home() {
           setFeedback(data.feedback || '');
           setHistory(data.history || []);
           setSelectedSessionId(null);
+          // Keep the recording in memory so "Go deeper" can re-read it for a
+          // delivery report. It never touches the server unless the user asks,
+          // and it is dropped as soon as they record again.
+          lastRecordingRef.current = { blob, sessionId: data.history?.[0]?.id ?? null };
+          setDeepAnalysis(null);
+          setCanGoDeeper(true);
           trackGuestUse(data.guestRemaining);
           toast.success('Report ready. Scroll for the verdict.');
         } catch (err) {
@@ -579,6 +594,11 @@ export default function Home() {
       mediaRecorderRef.current = recorder;
       setTranscript('');
       setFeedback('');
+      // Release the previous take: its report is already saved, and holding
+      // the audio for a speech the user has moved on from serves no purpose.
+      lastRecordingRef.current = null;
+      setDeepAnalysis(null);
+      setCanGoDeeper(false);
       setSeconds(0);
       setIsRecording(true);
       setIsAnalyzing(false);
@@ -751,6 +771,39 @@ export default function Home() {
       toast.error(err instanceof Error ? err.message : 'Could not sign out.');
     } finally {
       setIsAuthBusy(false);
+    }
+  };
+
+  /* ── Deep analysis ─────────────────────────────────────────────── */
+  const runDeepAnalysis = async () => {
+    const recording = lastRecordingRef.current;
+    if (!recording || isGoingDeeper) return;
+
+    setIsGoingDeeper(true);
+    const form = new FormData();
+    form.append('file', recording.blob, 'speech.webm');
+    if (recording.sessionId) form.append('sessionId', recording.sessionId);
+    if (selectedTemplateId) form.append('templateId', selectedTemplateId);
+
+    try {
+      const data = await requestJson<{ deepAnalysis?: string; degraded?: boolean }>(
+        '/api/deep-analysis',
+        { method: 'POST', body: form },
+        300000,
+      );
+      setDeepAnalysis(data.deepAnalysis || '');
+      trackGuestUse(null);
+      sfx.success();
+      toast.success(
+        data.degraded
+          ? 'Delivery report ready, based on your timing data.'
+          : 'Delivery report ready.',
+      );
+    } catch (err) {
+      if (handleSpecialError(err)) return;
+      toast.error(err instanceof Error ? err.message : 'Could not run the deep analysis.');
+    } finally {
+      setIsGoingDeeper(false);
     }
   };
 
@@ -1623,6 +1676,34 @@ export default function Home() {
                     </CollapsibleSection>
                   )}
                   {feedback && <div ref={feedbackRef}><FeedbackReport feedback={feedback} copyText={copyText} speakText={speakText} celebrate /></div>}
+
+                  {/* Deep analysis. Only offered while the recording is still
+                      in memory — it is never stored, so a reload retires it. */}
+                  {feedback && canGoDeeper && !deepAnalysis ? (
+                    <Shell>
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <Eyebrow className="mb-2">Optional</Eyebrow>
+                          <p className="font-serif text-lg tracking-tight text-white">How it sounded</p>
+                          <p className="mt-1 max-w-lg text-sm leading-6 text-[#a79dc8]">
+                            The report above read your words. This one listens to your delivery: pace, pauses, tone, and confidence.
+                          </p>
+                        </div>
+                        <Button
+                          onClick={runDeepAnalysis}
+                          disabled={isGoingDeeper}
+                          className={cn('h-12 shrink-0 rounded-[16px] px-5 font-mono text-[11px] uppercase tracking-[0.16em]', isGoingDeeper && 'skeleton-shimmer')}
+                        >
+                          <AudioLines className={cn('h-4 w-4', isGoingDeeper && 'animate-pulse')} />
+                          {isGoingDeeper ? 'Listening…' : 'Analyse my delivery'}
+                        </Button>
+                      </div>
+                    </Shell>
+                  ) : null}
+
+                  {deepAnalysis ? (
+                    <FeedbackReport feedback={deepAnalysis} copyText={copyText} speakText={speakText} />
+                  ) : null}
                 </>
               )}
 
@@ -1802,6 +1883,11 @@ export default function Home() {
                         <ActionBar text={selectedSession.transcript} label="Transcript" copyText={copyText} speakText={speakText} />
                       </CollapsibleSection>
                       <FeedbackReport feedback={selectedSession.feedback} copyText={copyText} speakText={speakText} />
+                      {/* A delivery report is saved with the session, so it
+                          survives long after the recording itself is gone. */}
+                      {selectedSession.deep_analysis ? (
+                        <FeedbackReport feedback={selectedSession.deep_analysis} copyText={copyText} speakText={speakText} />
+                      ) : null}
                     </motion.div>
                   )}
                 </>

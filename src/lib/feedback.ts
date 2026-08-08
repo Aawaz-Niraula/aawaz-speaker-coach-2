@@ -7,38 +7,62 @@ export type ParsedFeedback = {
 };
 
 export function extractScore(text: string) {
-  const match = text.match(/overall score[:\s-]*(\d+)\/100/i);
+  // "Overall score" on the standard report, "Delivery score" on the deep one.
+  const match = text.match(/(?:overall|delivery) score[:\s-]*(\d+)\/100/i);
   return match ? Number(match[1]) : null;
 }
 
+/**
+ * Parses either report shape.
+ *
+ * The standard analysis and the deep delivery report use different headings,
+ * so every pattern here accepts both. Older saved reports used "BRUTALLY
+ * HONEST FEEDBACK" and still parse.
+ */
 export function parseFeedback(text: string): ParsedFeedback {
   const score = extractScore(text);
 
   const analysisItems: { label: string; value: string }[] = [];
-  // Accepts both the current "HONEST FEEDBACK" heading and the older
-  // "BRUTALLY HONEST FEEDBACK" one, so saved reports still parse.
-  const analysisMatch = text.match(/(?:📊\s*)?ANALYSIS[:\s]*\n([\s\S]*?)(?=\n(?:🔥|BRUTALLY|HONEST)|$)/i);
+  const analysisMatch = text.match(
+    /(?:📊|🎧)?\s*(?:DELIVERY\s+)?ANALYSIS[:\s]*\n([\s\S]*?)(?=\n(?:🔥|🎯|BRUTALLY|HONEST|WHAT YOUR VOICE)|$)/i,
+  );
   if (analysisMatch) {
-    const lines = analysisMatch[1].split('\n').map((l) => l.replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean);
+    const lines = analysisMatch[1].split('\n').map((l) => l.replace(/^[•\-*]\s*/, '').trim()).filter(Boolean);
     for (const line of lines) {
       const colonIdx = line.indexOf(':');
       if (colonIdx > 0) {
         const label = line.slice(0, colonIdx).trim();
         const value = line.slice(colonIdx + 1).trim();
-        if (label.toLowerCase().includes('overall score')) continue; // shown in ring
+        // Both score labels are rendered in the ring instead of the list.
+        if (/^(overall|delivery) score$/i.test(label)) continue;
         analysisItems.push({ label, value });
       }
     }
   }
 
   let brutalFeedback = '';
-  const brutalMatch = text.match(/(?:🔥\s*)?(?:BRUTALLY\s+)?HONEST FEEDBACK[:\s]*\n([\s\S]*?)(?=\n(?:🛠|3 SPECIFIC|$))/i);
-  if (brutalMatch) brutalFeedback = brutalMatch[1].trim();
+  const bodyMatch = text.match(
+    /(?:🔥\s*)?(?:BRUTALLY\s+)?HONEST FEEDBACK[:\s]*\n([\s\S]*?)(?=\n(?:🛠|3 SPECIFIC)|$)/i,
+  );
+  if (bodyMatch) {
+    brutalFeedback = bodyMatch[1].trim();
+  } else {
+    // Deep report: the prose is split across a strengths and a weaknesses
+    // section. Join them so the card shows the whole picture.
+    const good = text.match(/(?:🎯\s*)?WHAT YOUR VOICE DID WELL[:\s]*\n([\s\S]*?)(?=\n(?:⚠️?|WHAT HELD|🎤|3 DELIVERY)|$)/i);
+    const bad = text.match(/(?:⚠️?\s*)?WHAT HELD IT BACK[:\s]*\n([\s\S]*?)(?=\n(?:🎤|3 DELIVERY)|$)/i);
+    brutalFeedback = [good?.[1]?.trim(), bad?.[1]?.trim()].filter(Boolean).join('\n\n');
+  }
 
   const fixes: string[] = [];
-  const fixesMatch = text.match(/(?:🛠️?\s*)?3 SPECIFIC FIXES[:\s]*\n([\s\S]*?)$/i);
+  const fixesMatch = text.match(/(?:🛠️?|🎤)?\s*3 (?:SPECIFIC FIXES|DELIVERY DRILLS)[:\s]*\n([\s\S]*?)$/i);
   if (fixesMatch) {
-    const fixLines = fixesMatch[1].split('\n').map((l) => l.replace(/^\d+\.\s*/, '').trim()).filter(Boolean);
+    const fixLines = fixesMatch[1]
+      .split('\n')
+      // Drop the bracketed instruction line the model sometimes echoes back.
+      .filter((l) => !/^\s*\[/.test(l))
+      .map((l) => l.replace(/^\d+\.\s*/, '').trim())
+      .filter(Boolean);
     fixes.push(...fixLines.slice(0, 3));
   }
 
