@@ -27,6 +27,44 @@ function getAuthBaseURL() {
   return undefined;
 }
 
+/**
+ * Origins allowed to POST to the auth endpoints.
+ *
+ * Better Auth compares the browser's Origin header against this list with an
+ * exact string match, and defaults it to baseURL alone. That means a single
+ * wrong or stale BETTER_AUTH_URL rejects every sign-in with INVALID_ORIGIN,
+ * and Vercel preview builds — which get a fresh hostname per deployment —
+ * never match at all. Listing the origins explicitly keeps previews working
+ * and stops one env var from silently breaking auth everywhere.
+ */
+function getTrustedOrigins() {
+  const origins = new Set<string>();
+
+  if (process.env.BETTER_AUTH_URL) {
+    // BETTER_AUTH_URL may include the /api/auth suffix; trustedOrigins wants
+    // the bare origin.
+    try {
+      origins.add(new URL(process.env.BETTER_AUTH_URL).origin);
+    } catch {
+      // Ignore a malformed value rather than taking auth down with it.
+    }
+  }
+
+  // Set by Vercel on every deployment, including previews.
+  if (process.env.VERCEL_URL) {
+    origins.add(`https://${process.env.VERCEL_URL}`);
+  }
+
+  // Vercel's own generated preview/production hostnames.
+  origins.add('https://*.vercel.app');
+
+  if (process.env.NODE_ENV === 'development') {
+    origins.add('http://localhost:3000');
+  }
+
+  return [...origins];
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _auth: any;
 
@@ -42,6 +80,7 @@ function createAuth() {
     },
     secret: process.env.BETTER_AUTH_SECRET,
     baseURL: getAuthBaseURL(),
+    trustedOrigins: getTrustedOrigins(),
     emailAndPassword: {
       enabled: true,
       minPasswordLength: 6,
