@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { GuestLimitError, IdentityError, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
 import { ChatCompletionData } from '@/lib/ai';
-import { updateSpeechSessionDeepAnalysis } from '@/lib/db';
+import { getSpeechSessionScore, updateSpeechSessionDeepAnalysis } from '@/lib/db';
 import { fetchWithRetryLimited } from '@/lib/fetch';
 import { analyseVocalDelivery, formatVocalForPrompt } from '@/lib/gemini';
 import { requireSameOrigin } from '@/lib/identity';
@@ -90,6 +90,12 @@ export async function POST(req: NextRequest) {
     const template = getSpeechTemplate(selectedTemplateId);
     const audioBuffer = await file.arrayBuffer();
 
+    // Fetched alongside the analysis work, not before it: the delivery score
+    // anchors to this so the two reports cannot contradict each other.
+    const contentScorePromise = sessionId
+      ? getSpeechSessionScore(sessionId, userId).catch(() => null)
+      : Promise.resolve(null);
+
     /* Both halves start together. Gemini listening to the delivery takes about
        as long as Whisper transcribing, so running them in sequence would
        double the wait for no reason. */
@@ -167,9 +173,24 @@ export async function POST(req: NextRequest) {
       ? `${template.rubricTitle}\n${template.rubric}`
       : GENERAL_RUBRIC;
 
+    const contentScore = await contentScorePromise;
+
+    /* Both reports grade the same performance, so wildly different numbers
+       read as the app contradicting itself. The delivery score is free to
+       differ — delivery genuinely can be better or worse than content — but
+       a large gap has to be earned and explained. */
+    const anchorSection = typeof contentScore === 'number'
+      ? `SCORE ANCHOR
+The speaker already received ${contentScore}/100 for the content and structure of this same speech.
+Your delivery score should normally land within about 12 points of that, because a speech that is well organised is usually delivered with some control, and vice versa.
+Go further apart ONLY when the evidence clearly justifies it — for example strong arguments delivered in a flat rush, or thin content carried by excellent delivery. When you do, say so explicitly in the feedback so the difference is understandable rather than confusing.
+Never contradict the other report: it judged WHAT was said, you are judging HOW it was said.`
+      : '';
+
     const sections = [
       metrics ? formatMetricsForPrompt(metrics) : null,
       vocal ? formatVocalForPrompt(vocal) : null,
+      anchorSection || null,
     ].filter(Boolean).join('\n\n');
 
     let analysisData: ChatCompletionData = {};
