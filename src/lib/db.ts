@@ -278,6 +278,31 @@ export async function mergeGuestDataIntoUser(guestId: string, userId: string) {
 }
 
 /**
+ * Reads the score the standard analysis gave this session.
+ * The delivery report anchors to it so the two numbers cannot contradict
+ * each other. Scoped by user_id, like every other session read.
+ */
+export async function getSpeechSessionScore(sessionId: string, userId: string) {
+  const db = await ensureSpeechSchema();
+  if (!db) return null;
+
+  try {
+    const result = await db.execute({
+      sql: 'SELECT overall_score FROM speech_sessions WHERE id = ? AND user_id = ? LIMIT 1',
+      args: [sessionId, userId],
+    });
+
+    const row = result.rows[0];
+    return row?.overall_score === null || row?.overall_score === undefined
+      ? null
+      : Number(row.overall_score);
+  } catch (error) {
+    console.error('Failed to read session score:', error);
+    return null;
+  }
+}
+
+/**
  * Attaches a delivery report to an existing session.
  * Scoped by user_id so a session can only ever be updated by its owner.
  */
