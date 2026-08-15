@@ -296,11 +296,11 @@ Score execution, not effort. But score it accurately in both directions: real co
 📊 ANALYSIS
 • Filler words: ${metrics ? `${metrics.fillerCount} — COPY THIS NUMBER EXACTLY, do not recount` : 'X'}
 • Speaking speed: ${wordsPerMin} words/min (most speeches sit best at 130-160)${metrics ? `
-• Did your speed stay steady?: [one plain sentence: did they speed up, slow down, or hold steady? Use the measured numbers. No jargon.]
-• Did you pause enough?: [one plain sentence: did they leave gaps for the audience, or run words together? Use the measured pauses.]${metrics.fillerCount > 0 ? `
-• Were you searching for words?: [${metrics.hesitations} of ${metrics.fillerCount} fillers came after a gap. Say in plain words whether this looks like hunting for the next word or just a speech habit.]` : ''}` : ''}
-• Clarity & volume: Excellent / Good / Weak / Inaudible
-• Structure check: [brief judgment tied to the active rubric]
+• Speed control: [one plain sentence: did they speed up, slow down, or hold steady? Use the measured numbers. No jargon.]
+• Pauses: [one plain sentence: did they leave gaps for the audience, or run words together? Use the measured pauses.]${metrics.fillerCount > 0 ? `
+• Hesitation: [${metrics.hesitations} of ${metrics.fillerCount} fillers came after a gap. Say in plain words whether this looks like hunting for the next word or just a speech habit.]` : ''}` : ''}
+• Clarity: Excellent / Good / Weak / Inaudible
+• Structure: [brief judgment tied to the active rubric]
 • Overall score: X/100
 
 🔥 HONEST FEEDBACK
