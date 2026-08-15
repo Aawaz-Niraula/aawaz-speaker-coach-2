@@ -38,6 +38,7 @@ Listen closely and report on all of this:
 Rules:
 - Judge delivery only. Ignore grammar, vocabulary, accent and dialect entirely. A strong accent is NOT a delivery flaw and must never be described as one.
 - Quote actual words from the recording when describing a moment. "Your voice dropped on 'this matters most'" is useful; "sounds unconfident" is not.
+- EVERY criticism must come with the fix, in the same breath: quote what you heard, then say concretely what to do differently on that exact phrase. Not "vary your tone" but "you delivered 'twenty-three minutes' at the same pitch as the sentence before it — drop your pitch and slow down on those two words so the number registers."
 - Say plainly and specifically when something is delivered well. Do not manufacture problems that are not audible.
 - If the audio is too short or unclear to judge something, say so rather than guessing.
 
