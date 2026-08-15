@@ -2,6 +2,8 @@ export type ParsedFeedback = {
   analysisItems: { label: string; value: string }[];
   score: number | null;
   brutalFeedback: string;
+  /** Per-criterion marks from the marking scheme, e.g. "Pausing: 5/7". */
+  markBreakdown: { label: string; value: string }[];
   fixes: string[];
   rawText: string;
 };
@@ -24,7 +26,7 @@ export function parseFeedback(text: string): ParsedFeedback {
 
   const analysisItems: { label: string; value: string }[] = [];
   const analysisMatch = text.match(
-    /(?:📊|🎧)?\s*(?:DELIVERY\s+)?ANALYSIS[:\s]*\n([\s\S]*?)(?=\n(?:🔥|🎯|BRUTALLY|HONEST|WHAT YOUR VOICE)|$)/i,
+    /(?:📊|🎧)?\s*(?:DELIVERY\s+)?ANALYSIS[:\s]*\n([\s\S]*?)(?=\n(?:📐|🔥|🎯|MARK BREAKDOWN|BRUTALLY|HONEST|WHAT YOUR VOICE)|$)/i,
   );
   if (analysisMatch) {
     const lines = analysisMatch[1].split('\n').map((l) => l.replace(/^[•\-*]\s*/, '').trim()).filter(Boolean);
@@ -36,6 +38,20 @@ export function parseFeedback(text: string): ParsedFeedback {
         // Both score labels are rendered in the ring instead of the list.
         if (/^(overall|delivery) score$/i.test(label)) continue;
         analysisItems.push({ label, value });
+      }
+    }
+  }
+
+  /* Marking scheme breakdown. Shows how the total was arrived at, so a score
+     can be explained rather than taken on trust. */
+  const markBreakdown: { label: string; value: string }[] = [];
+  const breakdownMatch = text.match(/(?:📐\s*)?MARK BREAKDOWN[:\s]*\n([\s\S]*?)(?=\n(?:🔥|🎯|⚠|HONEST|WHAT YOUR VOICE|In every row)|$)/i);
+  if (breakdownMatch) {
+    for (const line of breakdownMatch[1].split('\n')) {
+      const row = line.replace(/^[•\-*]\s*/, '').trim();
+      const idx = row.lastIndexOf(':');
+      if (idx > 0 && /\d+\s*\/\s*\d+/.test(row.slice(idx))) {
+        markBreakdown.push({ label: row.slice(0, idx).trim(), value: row.slice(idx + 1).trim() });
       }
     }
   }
@@ -66,7 +82,7 @@ export function parseFeedback(text: string): ParsedFeedback {
     fixes.push(...fixLines.slice(0, 3));
   }
 
-  return { analysisItems, score, brutalFeedback, fixes, rawText: text };
+  return { analysisItems, score, brutalFeedback, markBreakdown, fixes, rawText: text };
 }
 
 /** Bands mirror the scoring rules sent to the coach in the analysis prompt. */

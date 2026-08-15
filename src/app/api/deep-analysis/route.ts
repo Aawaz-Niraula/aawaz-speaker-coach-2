@@ -7,6 +7,7 @@ import { fetchWithRetryLimited } from '@/lib/fetch';
 import { analyseVocalDelivery, formatVocalForPrompt } from '@/lib/gemini';
 import { requireSameOrigin } from '@/lib/identity';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
+import { DELIVERY_SCHEME, formatSchemeForPrompt } from '@/lib/scoring';
 import { computeSpeechMetrics, formatMetricsForPrompt } from '@/lib/speech-metrics';
 import { GENERAL_RUBRIC, getSpeechTemplate } from '@/lib/speech-config';
 
@@ -233,6 +234,9 @@ The speaker has already received feedback on their words and structure. This rep
 • Emphasis: [name the exact words that landed, and any that passed by flat]` : ''}
 • Delivery score: X/100
 
+📐 MARK BREAKDOWN
+[One line per criterion in the marking scheme, in order, exactly as: "Criterion name: X/Y". Then "Total: X/100" whose value is the sum and matches the Delivery score above.]
+
 In every row above, when you identify a problem, quote the specific words it happened on and say what to do differently on that phrase. Never leave a criticism as a general observation.
 
 🎯 WHAT YOUR VOICE DID WELL
@@ -262,17 +266,9 @@ Name the technique, say exactly how to do it, give reps or a duration, and tie i
 2. [named exercise for the weakest vocal quality heard, with how-to and reps]
 3. [named exercise they can run daily, with how-to and duration]
 
-Delivery score bands (score the DELIVERY only, not the content or structure):
-  90-100 — Commanding. Controlled pace with real variation, deliberate pauses, warm confident tone, key words land.
-  80-89  — Strong delivery with minor, nameable flaws.
-  70-79  — Good. Clear and controlled, with a few real weaknesses.
-  55-69  — Competent but inconsistent: flat stretches, or pace and pausing that drift.
-  40-54  — Developing. One clear delivery problem, such as rushing or almost no pausing.
-  25-39  — Weak. Hard to follow because of how it was delivered.
-  0-24   — Only for delivery that is genuinely unintelligible.
-Start from what the delivery achieved and deduct for specific faults, rather than starting at zero and granting points grudgingly.
-Clear, audible, followable delivery belongs in the 60s or 70s even when unpolished. Judge against a normal speaker practising, not a professional keynote.
-If the speaker was audible and could be followed, the score starts at 45 or above however rough it was. Below 45 means the delivery genuinely got in the way of understanding them.
+${formatSchemeForPrompt(DELIVERY_SCHEME)}
+
+Score the DELIVERY only, not the content or structure. Judge against a normal speaker practising, not a professional keynote. If the speaker was audible and could be followed, the total should land at 45 or above however rough it was.
 
 Rubric context:
 ${rubricInstructions}

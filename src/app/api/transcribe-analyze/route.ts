@@ -7,6 +7,8 @@ import { GuestLimitError, IdentityError, guestLimitResponse, resolveAppUser } fr
 import { insertSpeechSession, listRecentSpeechSessions } from '@/lib/db';
 import { fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
+import { formatSchemeForPrompt, getScoringScheme, totalFromBreakdown } from '@/lib/scoring';
+import { parseFeedback } from '@/lib/feedback';
 import { computeSpeechMetrics, formatMetricsForPrompt } from '@/lib/speech-metrics';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
 import { GENERAL_RUBRIC, getSpeechTemplate } from '@/lib/speech-config';
@@ -255,6 +257,10 @@ export async function POST(req: NextRequest) {
   // there is not enough timing data for the numbers to mean anything.
   const metrics = computeSpeechMetrics(whisperData, duration);
   const metricsSection = metrics ? `\n${formatMetricsForPrompt(metrics)}\n` : '';
+  // Concrete weighted scheme for whichever rubric is active, so the score is
+  // an addition of stated marks rather than one unexplained number.
+  const scheme = getScoringScheme(template?.id ?? null);
+  const schemeSection = formatSchemeForPrompt(scheme);
 
   let analysisData: ChatCompletionData = {};
   let analysisStatus = 503;
@@ -303,6 +309,9 @@ Score execution, not effort. But score it accurately in both directions: real co
 • Structure: [brief judgment tied to the active rubric]
 • Overall score: X/100
 
+📐 MARK BREAKDOWN
+[One line per criterion in the marking scheme, in the order given, exactly as: "Criterion name: X/Y". Then a final line "Total: X/100" whose value is the sum and matches the Overall score above.]
+
 In every row above, when you identify a problem, quote the specific words it happened on and say what to do differently. Never leave a criticism as a general observation.
 
 🔥 HONEST FEEDBACK
@@ -326,6 +335,8 @@ Name the technique, say exactly how to run it, give reps or a duration, and tie 
 1. [named technique for the biggest structural or content fault, with how-to and reps]
 2. [named exercise for the biggest delivery fault, with how-to and reps]
 3. [named exercise they can run daily, with how-to and duration]
+
+${schemeSection}
 
 Scoring rules:
 - Use the FULL range. Scores must be calibrated to these bands, not clustered at the bottom:
@@ -415,7 +426,18 @@ ${transcript}`,
   const feedback = rawFeedback
     .replace(/\s*—?\s*COPY THIS NUMBER EXACTLY[^\n]*/gi, '')
     .replace(/\s*\[?do not recount\]?/gi, '');
-  const overallScore = extractOverallScore(feedback);
+  /* Correct the headline number from the breakdown the model produced.
+     Models drift when adding: in testing they reported totals 4-5 points off
+     their own marks. The breakdown is what a user can check, so it wins. */
+  const parsedMarks = parseFeedback(feedback).markBreakdown;
+  const correctedTotal = totalFromBreakdown(parsedMarks, scheme);
+  const reportedScore = extractOverallScore(feedback);
+  const overallScore = correctedTotal ?? reportedScore;
+  const feedbackWithScore = correctedTotal !== null && correctedTotal !== reportedScore
+    ? feedback
+        .replace(/(overall score[:\s-]*)\d+(\/100)/i, `$1${correctedTotal}$2`)
+        .replace(/(^|\n)(\s*[•\-*]?\s*Total:\s*)\d+(\s*\/\s*100)/i, `$1$2${correctedTotal}$3`)
+    : feedback;
 
   const newSessionHeader = {
     id: randomUUID(),
@@ -424,7 +446,7 @@ ${transcript}`,
     template_label: template?.label ?? null,
     rubric_mode: rubricMode,
     transcript,
-    feedback,
+    feedback: feedbackWithScore,
     overall_score: overallScore,
     words_per_min: wordsPerMin || null,
     duration_seconds: duration || null,
@@ -454,7 +476,7 @@ ${transcript}`,
 
   return Response.json({
     transcript,
-    feedback,
+    feedback: feedbackWithScore,
     history: updatedHistory,
     isGuest,
     guestRemaining,
