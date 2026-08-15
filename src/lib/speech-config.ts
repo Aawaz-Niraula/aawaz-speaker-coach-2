@@ -141,10 +141,21 @@ export const SPEECH_TEMPLATES: SpeechTemplate[] = [
   },
 ];
 
-export function getSpeechTemplate(templateId?: string | null) {
-  if (!templateId) {
-    return null;
-  }
+/** The format used when the user has not picked one. */
+export const DEFAULT_TEMPLATE_ID: SpeechTemplateId = 'general-public-speaking';
 
-  return SPEECH_TEMPLATES.find((template) => template.id === templateId) ?? null;
+/**
+ * Resolves a template, falling back to General Public Speaking.
+ *
+ * There used to be a separate "General evaluation" mode that bypassed the
+ * templates entirely and used a looser rubric. That meant the most common
+ * path through the app was the least specific one. General Public Speaking is
+ * a real template with its own rubric and marking scheme, so it is now simply
+ * the default and there is no rubric-less mode.
+ */
+export function getSpeechTemplate(templateId?: string | null) {
+  const id = templateId || DEFAULT_TEMPLATE_ID;
+  return SPEECH_TEMPLATES.find((template) => template.id === id)
+    ?? SPEECH_TEMPLATES.find((template) => template.id === DEFAULT_TEMPLATE_ID)
+    ?? null;
 }
