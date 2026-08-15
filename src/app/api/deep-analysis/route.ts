@@ -225,12 +225,12 @@ The speaker has already received feedback on their words and structure. This rep
               content: `Write a delivery report in EXACTLY this format:
 
 🎧 DELIVERY ANALYSIS
-• How fast you spoke: [plain sentence using the measured words/min and how it changed through the speech]
-• Did you pause enough?: [plain sentence: did they leave gaps for the audience, or run words together?]${vocal ? `
-• How you sounded: [warm, flat, tense, engaging? Quote a moment from the vocal notes.]
-• What you sounded like you felt: [the emotion actually in the voice, and whether it matched the words]
-• Did you sound sure of yourself?: [confidence, upspeak, trailing off — quote where it happened]
-• Did your key points land?: [name the exact words that landed, and any that passed by flat]` : ''}
+• Speed: [plain sentence using the measured words/min and how it changed through the speech]
+• Pauses: [plain sentence: did they leave gaps for the audience, or run words together?]${vocal ? `
+• Tone: [warm, flat, tense, engaging? Quote a moment from the vocal notes.]
+• Emotion: [the emotion actually in the voice, and whether it matched the words]
+• Conviction: [confidence, upspeak, trailing off — quote where it happened]
+• Emphasis: [name the exact words that landed, and any that passed by flat]` : ''}
 • Delivery score: X/100
 
 🎯 WHAT YOUR VOICE DID WELL
