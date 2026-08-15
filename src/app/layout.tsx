@@ -1,14 +1,20 @@
 import type { Metadata, Viewport } from 'next';
-import { DM_Mono, Manrope } from 'next/font/google';
 import localFont from 'next/font/local';
 import './globals.css';
 
 /*
- * Cormorant Garamond is self-hosted rather than fetched from Google at build
- * time. Google republished the family and the woff2 URLs Next.js had cached
- * started returning 404, which failed the production build on unchanged code.
- * Shipping the files removes that dependency: the build can no longer be
- * broken by a third party rotating a filename.
+ * All three fonts ship with the app rather than being fetched from Google at
+ * build time.
+ *
+ * next/font/google downloads the files during the build and self-hosts them,
+ * so the runtime was never dependent on Google — but the BUILD was. When
+ * Google republished Cormorant Garamond the cached woff2 filenames started
+ * returning 404 and production failed on unchanged code. Vercel restoring its
+ * build cache is what made it stick.
+ *
+ * Committing the files removes that failure mode entirely: no third party can
+ * break a deploy by rotating a filename. Only the latin weights the app
+ * actually uses are included.
  */
 const serif = localFont({
   src: [
@@ -18,20 +24,31 @@ const serif = localFont({
   ],
   variable: '--font-serif-next',
   display: 'swap',
+  // Matches the metrics Google's own fallback uses, so swapping in the real
+  // font does not shift the layout.
+  fallback: ['Georgia', 'Times New Roman', 'serif'],
 });
 
-const sans = Manrope({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
+const sans = localFont({
+  src: [
+    { path: './fonts/manrope-400.woff2', weight: '400', style: 'normal' },
+    { path: './fonts/manrope-500.woff2', weight: '500', style: 'normal' },
+    { path: './fonts/manrope-600.woff2', weight: '600', style: 'normal' },
+    { path: './fonts/manrope-700.woff2', weight: '700', style: 'normal' },
+  ],
   variable: '--font-sans-next',
   display: 'swap',
+  fallback: ['system-ui', 'Helvetica Neue', 'Arial', 'sans-serif'],
 });
 
-const mono = DM_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500'],
+const mono = localFont({
+  src: [
+    { path: './fonts/dm-mono-400.woff2', weight: '400', style: 'normal' },
+    { path: './fonts/dm-mono-500.woff2', weight: '500', style: 'normal' },
+  ],
   variable: '--font-mono-next',
   display: 'swap',
+  fallback: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
 });
 
 export const metadata: Metadata = {
