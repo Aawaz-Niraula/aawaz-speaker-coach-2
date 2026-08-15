@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { after, NextRequest } from 'next/server';
 
 import { getProviderErrorMessage, isAbortTimeout, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
-import { GuestLimitError, IdentityError, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
+import { DailyQuotaError, GuestLimitError, IdentityError, dailyQuotaResponse, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
 import { insertGeneratedSpeech } from '@/lib/db';
 import { fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
       return Response.json({ speech: '', error: 'Server configuration error: missing API key.' }, { status: 500 });
     }
 
-    const { userId, isGuest, guestRemaining } = await resolveAppUser(req, true);
+    const { userId, isGuest, guestRemaining } = await resolveAppUser(req, true, 'generate-speech');
     const rateKey = `generate-speech:${getClientKey(req, userId)}`;
     const rateLimit = checkRateLimit(rateKey, 20, 10 * 60 * 1000);
     if (!rateLimit.allowed) {
@@ -246,6 +246,9 @@ FORMATTING — this is spoken text, not a document.
       { status: lastStatus },
     );
   } catch (error) {
+    if (error instanceof DailyQuotaError) {
+      return dailyQuotaResponse();
+    }
     if (error instanceof GuestLimitError) {
       return guestLimitResponse();
     }

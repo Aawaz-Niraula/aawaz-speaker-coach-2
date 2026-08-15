@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import { after, NextRequest } from 'next/server';
 
 import { getProviderErrorMessage, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
-import { GuestLimitError, IdentityError, guestLimitResponse, resolveAppUser } from '@/lib/app-user';
+import { DailyQuotaError, GuestLimitError, IdentityError, dailyQuotaResponse, guestLimitResponse, resolveAppUser } from '@/lib/app-user';
 import { insertSpeechSession, listRecentSpeechSessions } from '@/lib/db';
 import { fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
@@ -121,8 +121,11 @@ export async function POST(req: NextRequest) {
 
   let resolvedUser: Awaited<ReturnType<typeof resolveAppUser>>;
   try {
-    resolvedUser = await resolveAppUser(req, true);
+    resolvedUser = await resolveAppUser(req, true, 'transcribe-analyze');
   } catch (error) {
+    if (error instanceof DailyQuotaError) {
+      return dailyQuotaResponse();
+    }
     if (error instanceof GuestLimitError) {
       return guestLimitResponse();
     }

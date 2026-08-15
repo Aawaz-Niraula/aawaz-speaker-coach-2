@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { getProviderErrorMessage, isAbortTimeout, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
-import { GuestLimitError, IdentityError, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
+import { DailyQuotaError, GuestLimitError, IdentityError, dailyQuotaResponse, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
 import { listRecentSpeechSessions, type SpeechSessionRecord } from '@/lib/db';
 import { fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
@@ -122,7 +122,7 @@ export async function POST(req: NextRequest) {
       return Response.json({ answer: '', error: 'Server configuration error: missing API key.' }, { status: 500 });
     }
 
-    const { userId } = await resolveAppUser(req, true);
+    const { userId } = await resolveAppUser(req, true, 'aawax-chat');
     const rateKey = `aawax-chat:${getClientKey(req, userId)}`;
     const rateLimit = checkRateLimit(rateKey, 30, 10 * 60 * 1000);
     if (!rateLimit.allowed) {
@@ -206,6 +206,9 @@ Current app tab: ${tab}.`,
 
     return Response.json({ answer });
   } catch (error) {
+    if (error instanceof DailyQuotaError) {
+      return dailyQuotaResponse();
+    }
     if (error instanceof GuestLimitError) {
       return guestLimitResponse();
     }

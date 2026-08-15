@@ -2,6 +2,12 @@ import { createClient } from '@libsql/client';
 
 type DbClient = ReturnType<typeof createClient>;
 
+/*
+ * created_at is always written as CURRENT_TIMESTAMP ("YYYY-MM-DD HH:MM:SS"),
+ * which sorts correctly as plain text. Ordering by datetime(created_at) forced
+ * a temp B-tree on every history read because the wrapped column cannot use
+ * the (user_id, created_at DESC) index; ordering by the raw column uses it.
+ */
 const MAX_SESSIONS_PER_USER = 50;
 const GUEST_FREE_ACTIONS = 3;
 
@@ -204,6 +210,16 @@ export async function ensureAuthSchema() {
       )
     `);
 
+    // Daily per-user ceiling on the expensive routes. Keyed by
+    // "<userId>:<action>:<YYYY-MM-DD>" so a day's counter is one row.
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS usage_quota (
+        quota_key TEXT PRIMARY KEY,
+        used INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     authSchemaReady = true;
     return db;
   })().catch((error) => {
@@ -215,6 +231,77 @@ export async function ensureAuthSchema() {
   return authSchemaReadyPromise;
 }
 
+/**
+ * Daily per-user ceiling on the expensive AI routes.
+ *
+ * The in-process rate limiter only sees one serverless instance, so it cannot
+ * hold a real quota — it is burst protection. This is the durable ceiling: one
+ * shared counter per user per day, so a runaway client or a determined user
+ * cannot turn into an unbounded provider bill.
+ *
+ * Generous enough that a genuine user practising hard will not notice.
+ */
+const DAILY_LIMITS: Record<string, number> = {
+  'transcribe-analyze': 40,
+  'deep-analysis': 20,
+  'generate-speech': 40,
+  'generate-speech-audio': 40,
+  'aawax-chat': 120,
+  'generate-insights': 20,
+};
+
+export async function consumeDailyQuota(userId: string, action: string) {
+  const limit = DAILY_LIMITS[action];
+  if (!limit) return { allowed: true, remaining: null as number | null };
+
+  const db = await ensureAuthSchema();
+  // Never block a real user because the counter is unavailable.
+  if (!db) return { allowed: true, remaining: null };
+
+  // UTC day. A rolling window would need a second column and buys little here.
+  const day = new Date().toISOString().slice(0, 10);
+  const key = `${userId}:${action}:${day}`;
+
+  try {
+    const result = await db.execute({
+      sql: `
+        INSERT INTO usage_quota (quota_key, used)
+        VALUES (?, 1)
+        ON CONFLICT(quota_key) DO UPDATE
+          SET used = used + 1,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE used < ?
+        RETURNING used
+      `,
+      args: [key, limit],
+    });
+
+    const row = result.rows[0];
+    if (!row) return { allowed: false, remaining: 0 };
+
+    return { allowed: true, remaining: Math.max(0, limit - Number(row.used)) };
+  } catch (error) {
+    console.error('Failed to consume daily quota:', error);
+    return { allowed: true, remaining: null };
+  }
+}
+
+/** Drops quota rows from previous days so the table cannot grow unbounded. */
+export async function pruneOldQuota() {
+  const db = await ensureAuthSchema();
+  if (!db) return;
+
+  const day = new Date().toISOString().slice(0, 10);
+  try {
+    await db.execute({
+      sql: "DELETE FROM usage_quota WHERE quota_key NOT LIKE ?",
+      args: [`%:${day}`],
+    });
+  } catch {
+    // Best effort: stale rows are wasteful, not harmful.
+  }
+}
+
 export async function consumeGuestUsage(guestId: string) {
   const db = await ensureAuthSchema();
 
@@ -223,44 +310,41 @@ export async function consumeGuestUsage(guestId: string) {
   }
 
   try {
-    await db.execute({
+    /* One statement, not three.
+     *
+     * This used to insert, read the count, then write count+1. Two requests
+     * from the same guest arriving together both read the same value and both
+     * wrote the same increment, so the limit leaked a free action — and it
+     * cost three round trips on every guest AI call.
+     *
+     * The upsert increments only while the count is under the cap, and
+     * RETURNING gives us the post-increment value, so the decision and the
+     * write are the same atomic operation.
+     */
+    const result = await db.execute({
       sql: `
         INSERT INTO guest_usage (guest_id, action_count)
-        VALUES (?, 0)
-        ON CONFLICT(guest_id) DO NOTHING
+        VALUES (?, 1)
+        ON CONFLICT(guest_id) DO UPDATE
+          SET action_count = action_count + 1,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE action_count < ?
+        RETURNING action_count
       `,
-      args: [guestId],
+      args: [guestId, GUEST_FREE_ACTIONS],
     });
 
-    const current = await db.execute({
-      sql: `
-        SELECT action_count
-        FROM guest_usage
-        WHERE guest_id = ?
-        LIMIT 1
-      `,
-      args: [guestId],
-    });
-
-    const count = Number(current.rows[0]?.action_count ?? 0);
-    if (count >= GUEST_FREE_ACTIONS) {
+    const row = result.rows[0];
+    if (!row) {
+      // The WHERE guard blocked the update: this guest is at the cap.
       return { allowed: false, remaining: 0 };
     }
 
-    const next = count + 1;
-    await db.execute({
-      sql: `
-        UPDATE guest_usage
-        SET action_count = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE guest_id = ?
-      `,
-      args: [next, guestId],
-    });
-
-    return { allowed: true, remaining: Math.max(0, GUEST_FREE_ACTIONS - next) };
+    const count = Number(row.action_count);
+    return { allowed: true, remaining: Math.max(0, GUEST_FREE_ACTIONS - count) };
   } catch (error) {
     console.error('Failed to consume guest usage:', error);
+    // Never block a real user because the counter is unavailable.
     return { allowed: true, remaining: GUEST_FREE_ACTIONS };
   }
 }
@@ -368,7 +452,7 @@ export async function listRecentSpeechSessions(userId: string, limit = 6) {
                overall_score, words_per_min, duration_seconds, deep_analysis, created_at
         FROM speech_sessions
         WHERE user_id = ?
-        ORDER BY datetime(created_at) DESC
+        ORDER BY created_at DESC
         LIMIT ?
       `,
       args: [userId, Math.min(25, Math.max(1, Math.round(limit)))],
@@ -433,7 +517,7 @@ export async function insertSpeechSession(session: Omit<SpeechSessionRecord, 'cr
             SELECT id
             FROM speech_sessions
             WHERE user_id = ?
-            ORDER BY datetime(created_at) DESC
+            ORDER BY created_at DESC
             LIMIT ?
           )
       `,
@@ -487,7 +571,7 @@ export async function insertGeneratedSpeech(record: Omit<GeneratedSpeechRecord, 
           AND id NOT IN (
             SELECT id FROM generated_speeches
             WHERE user_id = ?
-            ORDER BY datetime(created_at) DESC
+            ORDER BY created_at DESC
             LIMIT ?
           )
       `,
@@ -511,7 +595,7 @@ export async function listGeneratedSpeeches(userId: string, limit = 20) {
         SELECT id, user_id, topic, template_id, template_label, word_count, speech, created_at
         FROM generated_speeches
         WHERE user_id = ?
-        ORDER BY datetime(created_at) DESC
+        ORDER BY created_at DESC
         LIMIT ?
       `,
       args: [userId, limit],
