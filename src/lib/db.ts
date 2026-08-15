@@ -245,7 +245,10 @@ const DAILY_LIMITS: Record<string, number> = {
   'transcribe-analyze': 40,
   'deep-analysis': 20,
   'generate-speech': 40,
-  'generate-speech-audio': 40,
+  // Tightest ceiling here: ElevenLabs charges per character, so a long script
+  // synthesized repeatedly is by far the most expensive thing a user can do.
+  // Twelve is several passes over a practice speech in one sitting.
+  'generate-speech-audio': 12,
   'aawax-chat': 120,
   'generate-insights': 20,
 };
