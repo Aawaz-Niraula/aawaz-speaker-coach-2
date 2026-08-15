@@ -584,15 +584,20 @@ export function AawaxCompanion({ activeTab, onTabChange, onOpenChat, flags }: Aa
         return { animate: { y: [0, -9, 0], rotate: [-4, 4, -4, 0] }, transition: { duration: 0.8, repeat: Infinity, ease: 'easeInOut' } };
       case 'cheer': // success — celebratory hops
         return { animate: { y: [0, -12, 0], scale: [1, 1.06, 1] }, transition: { duration: 0.7, repeat: Infinity, ease: 'easeOut' } };
-      default: // idle — gentle sideways drift
-        return { animate: { x: [0, 7, 0, -7, 0], y: [0, -4, 0, -4, 0] }, transition: { duration: 6.5, repeat: Infinity, ease: 'easeInOut' } };
+      default:
+        /* Idle sits perfectly still. The old gentle drift ran forever on a
+           fixed element, which is permanent compositor work for a decoration
+           nobody is looking at, and it nudged the dock toward the viewport
+           edge on short windows. The mood animations above still play, but
+           only while something is actually happening. */
+        return { animate: undefined, transition: undefined };
     }
   }, [mascotMood, reduceMotion]);
 
   return (
     <>
       <motion.div
-        className="gpu-layer fixed bottom-6 right-8 z-30 hidden flex-col items-end gap-2 md:flex"
+        className="gpu-layer fixed bottom-[max(1.5rem,env(safe-area-inset-bottom))] right-8 z-30 hidden flex-col items-end gap-2 md:flex"
         animate={companionMotion.animate}
         transition={companionMotion.transition}
       >
