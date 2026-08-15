@@ -233,11 +233,13 @@ The speaker has already received feedback on their words and structure. This rep
 • Emphasis: [name the exact words that landed, and any that passed by flat]` : ''}
 • Delivery score: X/100
 
+In every row above, when you identify a problem, quote the specific words it happened on and say what to do differently on that phrase. Never leave a criticism as a general observation.
+
 🎯 WHAT YOUR VOICE DID WELL
 [2-3 sentences naming specific things that genuinely worked in the delivery. If very little worked, say that plainly instead of inventing something.]
 
 ⚠️ WHAT HELD IT BACK
-[2-3 direct sentences on the biggest delivery weaknesses, each tied to the measured data${vocal ? ' or what was heard' : ''}.]${vocal ? '' : `
+[2-3 direct sentences on the biggest delivery weaknesses, each tied to the measured data${vocal ? ' or what was heard' : ''}. Every criticism must name the exact moment — quote the words${vocal ? ' or give the timestamp' : ''} — and then say concretely what to do differently on that specific phrase. "You rushed" is useless; "you ran 'twenty-three minutes' straight into the next sentence — stop for two full seconds after it so the number lands" is the standard.]${vocal ? '' : `
 
 IMPORTANT: no vocal recording data is available for this analysis — only the timing measurements. Judge pace, pausing, and rhythm only. Do NOT describe tone, warmth, confidence, vocal energy, or how the voice sounded: you cannot hear it, and guessing would be inventing findings.`}
 
