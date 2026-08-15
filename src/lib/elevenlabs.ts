@@ -130,36 +130,107 @@ const BEAT_ENDINGS = /([.!?])\s+/g;
  * timing — it has no SSML break tag, so ellipses and line breaks are the only
  * way to buy a beat.
  */
-const CUE_MAP: [RegExp, string][] = [
-  [/\[\s*long pause\s*\]/gi, '\n\n...\n\n'],
-  [/\[\s*pause\s*\]/gi, '...'],
-  [/\[\s*breathe?\s*\]/gi, '\n\n[exhales]\n'],
-  [/\[\s*slower\s*\]/gi, '[slowly]'],
-  [/\[\s*faster\s*\]/gi, '[quickly]'],
-  [/\[\s*soft(?:ly)?\s*\]/gi, '[softly]'],
-  [/\[\s*louder\s*\]/gi, '[loudly]'],
-  [/\[\s*higher pitch\s*\]/gi, '[brightly]'],
-  [/\[\s*lower pitch\s*\]/gi, '[seriously]'],
-  [/\[\s*emphasi[sz]e\s*\]/gi, '[emphatically]'],
-  [/\[\s*warmly\s*\]/gi, '[warmly]'],
-  [/\[\s*firmly\s*\]/gi, '[firmly]'],
-  [/\[\s*with conviction\s*\]/gi, '[confidently]'],
-  [/\[\s*more confidence\s*\]/gi, '[confidently]'],
+/**
+ * The complete set of delivery cues a generated speech may use.
+ *
+ * This is the single source of truth: the speech writer is given exactly this
+ * list and told nothing outside it is permitted, and the translator below is
+ * built from the same table. Keeping one list means the two cannot drift apart
+ * and start disagreeing about what is legal.
+ *
+ * `v3` is what the cue becomes on its way to ElevenLabs — either a real v3
+ * audio tag, or the punctuation v3 uses for timing, since it has no SSML break
+ * tag. `hint` is the one-line explanation shown to the writer.
+ */
+export const DELIVERY_CUES: { cue: string; v3: string; hint: string }[] = [
+  { cue: 'pause', v3: '...', hint: 'a beat, after a point that needs to land' },
+  { cue: 'long pause', v3: '\n\n...\n\n', hint: 'before a turn in the argument, or after your strongest line' },
+  { cue: 'breathe', v3: '\n\n[exhales]\n', hint: 'a real breath, usually before a new section' },
+  { cue: 'slower', v3: '[slowly]', hint: 'deliberately slow down' },
+  { cue: 'faster', v3: '[quickly]', hint: 'deliberately pick up the pace' },
+  { cue: 'softly', v3: '[softly]', hint: 'drop the voice for something intimate or serious' },
+  { cue: 'louder', v3: '[loudly]', hint: 'lift for a call to action or a peak' },
+  { cue: 'higher pitch', v3: '[brightly]', hint: 'lift the register' },
+  { cue: 'lower pitch', v3: '[seriously]', hint: 'drop the register' },
+  { cue: 'emphasise', v3: '[emphatically]', hint: 'immediately before the word that must carry weight' },
+  { cue: 'warmly', v3: '[warmly]', hint: 'the intent behind a friendly line' },
+  { cue: 'firmly', v3: '[firmly]', hint: 'the intent behind an assertive line' },
+  { cue: 'with conviction', v3: '[confidently]', hint: 'the intent behind your strongest claim' },
 ];
 
-/** v3 tags we are willing to pass straight through. */
-const KNOWN_TAGS = /^\[(?:exhales|sighs|laughs|giggles|whispers|softly|loudly|slowly|quickly|warmly|firmly|confidently|brightly|seriously|emphatically|excited|curious|thoughtfully|gently|cheerfully|playfully|knowingly)\]$/i;
+/** Renders the allowed cues for the speech-writing prompt. */
+export function formatCueListForPrompt() {
+  return DELIVERY_CUES.map(({ cue, hint }) => `[${cue}] — ${hint}`).join('\n');
+}
+
+/** Escapes a cue name for use inside a regular expression. */
+function cuePattern(cue: string) {
+  return new RegExp(`\\[\\s*${cue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\]`, 'gi');
+}
+
+/**
+ * Near-misses of the legal cues, mapped to the cue they clearly meant.
+ *
+ * Models reliably drift a little — [pauses] for [pause], [loudly] for [louder],
+ * a stray "for effect". Discarding those loses a beat the writer intended, so
+ * the obvious variants are accepted rather than thrown away. Anything genuinely
+ * invented still gets stripped.
+ */
+const CUE_ALIASES: [RegExp, string][] = [
+  [/\[\s*(?:pauses|pause briefly|short pause|beat)\s*\]/gi, '[pause]'],
+  [/\[\s*pause[sd]?\s+[^\]\n]{0,24}\]/gi, '[pause]'],
+  [/\[\s*(?:longer pause|long beat)\s*\]/gi, '[long pause]'],
+  [/\[\s*(?:breath|breathes|breathing|deep breath|inhales?)\s*\]/gi, '[breathe]'],
+  [/\[\s*(?:loudly|loud|raise voice|raising voice)\s*\]/gi, '[louder]'],
+  [/\[\s*(?:quietly|soft|lower voice|hushed)\s*\]/gi, '[softly]'],
+  [/\[\s*(?:slowly|slow down|slow)\s*\]/gi, '[slower]'],
+  [/\[\s*(?:quickly|quicker|speed up)\s*\]/gi, '[faster]'],
+  [/\[\s*(?:emphasi[sz]ed?|emphasi[sz]ing|emphatic|stress)\s*\]/gi, '[emphasise]'],
+  [/\[\s*(?:confidently|confident|conviction)\s*\]/gi, '[with conviction]'],
+  [/\[\s*(?:warm|warmer)\s*\]/gi, '[warmly]'],
+  [/\[\s*(?:firm|firmer|sternly)\s*\]/gi, '[firmly]'],
+  [/\[\s*(?:higher|rising pitch|brighter)\s*\]/gi, '[higher pitch]'],
+  [/\[\s*(?:lower|falling pitch|deeper)\s*\]/gi, '[lower pitch]'],
+];
+
+// Longest first, so "long pause" is matched before "pause" would swallow it.
+const CUE_MAP: [RegExp, string][] = [...DELIVERY_CUES]
+  .sort((a, b) => b.cue.length - a.cue.length)
+  .map(({ cue, v3 }) => [cuePattern(cue), v3]);
+
+/**
+ * v3 tags allowed to survive translation.
+ *
+ * Everything the cue table produces, plus the handful of tags the tour
+ * narration writes by hand. Anything else in brackets would be spoken aloud.
+ */
+const KNOWN_TAGS = new Set(
+  [
+    ...DELIVERY_CUES.map(({ v3 }) => v3.trim()).filter((v) => v.startsWith('[')),
+    '[exhales]', '[sighs]', '[laughs]', '[giggles]', '[whispers]',
+    '[excited]', '[curious]', '[thoughtfully]', '[gently]',
+    '[cheerfully]', '[playfully]', '[knowingly]',
+  ].map((tag) => tag.toLowerCase()),
+);
 
 /** Converts our delivery cues into v3 tags, and drops anything v3 would read out. */
 export function translateDeliveryCues(text: string) {
   let out = text;
+
+  // Normalise near-misses onto a legal cue first, so a drifted [pauses] still
+  // buys its beat instead of being discarded.
+  for (const [pattern, canonical] of CUE_ALIASES) {
+    out = out.replace(pattern, canonical);
+  }
+
   for (const [pattern, replacement] of CUE_MAP) {
     out = out.replace(pattern, replacement);
   }
 
-  // Anything still in brackets is not a tag v3 knows. Left alone it gets
-  // spoken aloud, so remove it rather than let the voice read "[dramatic]".
-  out = out.replace(/\[[^\]\n]{1,40}\]/g, (match) => (KNOWN_TAGS.test(match.trim()) ? match : ''));
+  // Belt and braces: the writer is restricted to the cue list, but a model can
+  // still invent one. Anything not recognised is removed rather than left for
+  // the voice to read out as "[dramatic flourish]".
+  out = out.replace(/\[[^\]\n]{1,40}\]/g, (match) => (KNOWN_TAGS.has(match.trim().toLowerCase()) ? match : ''));
 
   return out.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
 }

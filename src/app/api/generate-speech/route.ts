@@ -8,6 +8,7 @@ import { fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
 import { formatSchemeForPrompt, getScoringScheme } from '@/lib/scoring';
+import { formatCueListForPrompt } from '@/lib/elevenlabs';
 import { getSpeechTemplate } from '@/lib/speech-config';
 
 const SPEECH_MODELS = [
@@ -81,6 +82,10 @@ export async function POST(req: NextRequest) {
     // The same marking scheme the coach will grade against, so the writer aims
     // at the actual target rather than a general idea of "good".
     const schemeSection = formatSchemeForPrompt(getScoringScheme(template?.id ?? null));
+    // The exact cue vocabulary the translator understands. Generated from the
+    // same table, so the writer cannot be told about a cue that would later be
+    // stripped, or miss one that is legal.
+    const cueList = formatCueListForPrompt();
     const requestedWordCount = Number(body?.wordCount);
     const targetWordCount = Number.isFinite(requestedWordCount) ? Math.min(500, Math.max(80, Math.round(requestedWordCount))) : 180;
     const lowerWordCount = Math.max(70, targetWordCount - 10);
@@ -151,24 +156,20 @@ ${schemeSection}
 LENGTH — this is a hard limit.
 Write between ${lowerWordCount} and ${upperWordCount} spoken words. Delivery cues in brackets do not count. Count as you write and stop when you reach the range: a speech that runs over is wrong however good it is, because the speaker has a time slot.
 
-DELIVERY CUES — required.
-Mark the speech for performance using inline cues in square brackets, so it reads like a script rather than a paragraph. Use them where a real speaker would actually change something:
+DELIVERY CUES — required, and this list is exhaustive.
+Mark the speech for performance using inline cues in square brackets, so it reads like a script rather than a paragraph.
 
-[pause] — a beat, after a point that needs to land
-[long pause] — before a turn in the argument, or after your strongest line
-[breathe] — where the speaker should take a real breath, usually before a new section
-[slower] / [faster] — deliberate changes of pace
-[softly] — dropping the voice for something intimate or serious
-[louder] — lifting for a call to action or a peak
-[higher pitch] / [lower pitch] — a genuine change in register
-[emphasise] — immediately before the word or phrase that must carry weight
-[warmly] / [firmly] / [with conviction] — the intent behind a line
+You may ONLY use these cues, spelled exactly as written:
+
+${cueList}
 
 Rules for cues:
+- Use ONLY the cues listed above. Any other bracketed text is invalid: do not invent cues such as [dramatic], [narratively], [pauses 2 seconds] or [gestures]. There are no other legal cues and anything else will be discarded.
+- Copy the wording exactly. [pause] is valid; [Pause for effect] is not.
 - Roughly one cue every two or three sentences. Enough to shape the delivery, not so many that the text is unreadable.
 - Place them where they change something. A cue on every sentence is noise.
-- Never open two cues in a row.
-- Cues sit inline in the text, exactly as shown, in square brackets.
+- Never put two cues in a row.
+- Cues sit inline in the text, in square brackets, on the same line as the words.
 
 FORMATTING — this is spoken text, not a document.
 - Short paragraphs separated by blank lines, the way a speaker sees a script.
