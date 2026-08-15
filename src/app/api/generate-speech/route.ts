@@ -180,6 +180,15 @@ You may ONLY use these cues, spelled exactly as written:
 
 ${cueList}
 
+EMOTIONAL REGISTER — match the delivery to the subject.
+The cues above include emotional ones. Choose them from what the speech is actually about, because the voice performs exactly what you mark and nothing else tells it how to feel.
+- A grave subject — suicide, grief, loss, illness, violence, injustice — is delivered [sombrely], [gravely] or [gently]. Never mark such a speech [joyfully] or [louder] merely to sound energetic. Sounding upbeat about a death is the single worst mistake you can make here.
+- On a heavy subject, restraint carries more weight than volume. Quiet and slow lands harder than loud and fast.
+- Where a speech turns toward what can change, [hopefully] marks the turn. Earn it, do not open with it.
+- A celebratory or light subject takes [joyfully], [warmly] or [brightly].
+- Controlled [angrily] suits a real injustice, used once, not as a general intensity setting.
+- Most speeches sit in the middle and need few emotional cues. Reach for them where the feeling genuinely changes, not on every line.
+
 Rules for cues:
 - Use ONLY the cues listed above. Any other bracketed text is invalid: do not invent cues such as [dramatic], [narratively], [pauses 2 seconds] or [gestures]. There are no other legal cues and anything else will be discarded.
 - Copy the wording exactly. [pause] is valid; [Pause for effect] is not.
