@@ -294,6 +294,45 @@ export function FeedbackReport({
         </Shell>
       )}
 
+      {/* ── Mark breakdown ────────────────────────────────
+          Shows how the total was reached, criterion by criterion, so the
+          score can be explained instead of taken on trust. */}
+      {parsed.markBreakdown.length > 0 && (
+        <CollapsibleSection title="How this was marked" defaultOpen={false}>
+          <div className="grid gap-1.5">
+            {parsed.markBreakdown.map((row, i) => {
+              const [got, max] = row.value.split('/').map((n) => Number(n.trim()));
+              const pct = Number.isFinite(got) && Number.isFinite(max) && max > 0 ? (got / max) * 100 : null;
+              const isTotal = /^total$/i.test(row.label);
+              return (
+                <div
+                  key={i}
+                  className={cn(
+                    'flex items-center gap-3 rounded-[12px] px-3 py-2',
+                    isTotal ? 'mt-1 border border-[#a78bfa]/25 bg-[#a78bfa]/10' : 'bg-white/[0.04]',
+                  )}
+                >
+                  <span className={cn('min-w-0 flex-1 break-words text-sm', isTotal ? 'font-semibold text-[#f2efff]' : 'text-[#cfc8e8]')}>
+                    {row.label}
+                  </span>
+                  {pct !== null && !isTotal ? (
+                    <span className="hidden h-1.5 w-24 overflow-hidden rounded-full bg-white/8 sm:block">
+                      <span
+                        className="block h-full rounded-full bg-[linear-gradient(90deg,#a78bfa,#f9a8d4)]"
+                        style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
+                      />
+                    </span>
+                  ) : null}
+                  <span className={cn('shrink-0 font-mono text-xs tabular-nums', isTotal ? 'text-[#f2efff]' : 'text-[#a79dc8]')}>
+                    {row.value}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </CollapsibleSection>
+      )}
+
       {/* ── Brutal feedback ───────────────────────────────── */}
       {parsed.brutalFeedback && (
         <CollapsibleSection
