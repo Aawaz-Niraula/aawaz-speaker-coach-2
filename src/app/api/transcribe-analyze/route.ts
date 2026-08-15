@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 
 import { after, NextRequest } from 'next/server';
 
-import { getProviderErrorMessage, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
+import { ANALYSIS_MODELS, TRANSCRIPTION_MODELS, getProviderErrorMessage, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
 import { DailyQuotaError, GuestLimitError, IdentityError, dailyQuotaResponse, guestLimitResponse, resolveAppUser } from '@/lib/app-user';
 import { insertSpeechSession, listRecentSpeechSessions } from '@/lib/db';
 import { fetchWithRetryLimited } from '@/lib/fetch';
@@ -12,18 +12,6 @@ import { parseFeedback } from '@/lib/feedback';
 import { computeSpeechMetrics, formatMetricsForPrompt } from '@/lib/speech-metrics';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
 import { GENERAL_RUBRIC, getSpeechTemplate } from '@/lib/speech-config';
-
-const ANALYSIS_MODELS = [
-  'google/gemma-4-26B-A4B-it',
-  'Qwen/Qwen3-14B',
-] as const;
-
-// Turbo first: ~8x faster than whisper-large-v3 with near-identical accuracy.
-// The full model stays as a fallback if turbo is unavailable.
-const TRANSCRIPTION_MODELS = [
-  'openai/whisper-large-v3-turbo',
-  'openai/whisper-large-v3',
-] as const;
 
 function formatApiError(prefix: string, status: number, message?: string) {
   if (status === 429) {

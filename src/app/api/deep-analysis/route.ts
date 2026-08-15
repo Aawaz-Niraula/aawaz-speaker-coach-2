@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { DailyQuotaError, GuestLimitError, IdentityError, dailyQuotaResponse, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
-import { ChatCompletionData } from '@/lib/ai';
+import { ANALYSIS_MODELS, TRANSCRIPTION_MODELS, type ChatCompletionData } from '@/lib/ai';
 import { getSpeechSessionScore, updateSpeechSessionDeepAnalysis } from '@/lib/db';
 import { fetchWithRetryLimited } from '@/lib/fetch';
 import { analyseVocalDelivery, formatVocalForPrompt } from '@/lib/gemini';
@@ -22,9 +22,6 @@ import { GENERAL_RUBRIC, getSpeechTemplate } from '@/lib/speech-config';
  * Whisper and Gemini run at the same time: one hears the words and their exact
  * timings, the other hears how they were said. The coach then sees both.
  */
-
-const ANALYSIS_MODELS = ['google/gemma-4-26B-A4B-it', 'Qwen/Qwen3-14B'] as const;
-const TRANSCRIPTION_MODELS = ['openai/whisper-large-v3-turbo', 'openai/whisper-large-v3'] as const;
 
 /**
  * Transcription here is slower than in the standard route: word-level
