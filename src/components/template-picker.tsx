@@ -10,7 +10,7 @@ import { CoachMascot } from '@/components/mascot';
 import { Button } from '@/components/ui/button';
 import { Eyebrow, Shell } from '@/components/ui/shell';
 import { sfx } from '@/lib/sound';
-import { SPEECH_TEMPLATES, type SpeechTemplate, type SpeechTemplateId } from '@/lib/speech-config';
+import { DEFAULT_TEMPLATE_ID, SPEECH_TEMPLATES, type SpeechTemplate, type SpeechTemplateId } from '@/lib/speech-config';
 import { cn } from '@/lib/utils';
 
 /** Full-screen popup showing the hand-designed Canva format image for a rubric. */
@@ -94,10 +94,10 @@ export function FormatSelect({
 }) {
   return (
     <Select.Root
-      value={value ?? 'general'}
+      value={value ?? DEFAULT_TEMPLATE_ID}
       onValueChange={(next) => {
         sfx.select();
-        onChange(next === 'general' ? null : (next as SpeechTemplateId));
+        onChange(next as SpeechTemplateId);
       }}
       disabled={disabled}
     >
@@ -110,17 +110,13 @@ export function FormatSelect({
       >
         <span className="flex min-w-0 items-center gap-2">
           <ScrollText className="h-4 w-4 shrink-0 text-[#a78bfa]" />
-          <span className="truncate"><Select.Value placeholder="Free format" /></span>
+          <span className="truncate"><Select.Value /></span>
         </span>
         <Select.Icon><ChevronDown className="h-4 w-4 shrink-0 text-[#857ca2]" /></Select.Icon>
       </Select.Trigger>
       <Select.Portal>
         <Select.Content position="popper" className="z-50 max-w-[calc(100vw-2rem)] overflow-hidden rounded-3xl border border-white/10 bg-[#0d0c16]/95 p-2 text-[#f2efff] shadow-[0_20px_60px_rgba(0,0,0,0.5)] backdrop-blur-xl">
           <Select.Viewport className="grid gap-1">
-            <Select.Item value="general" className="flex cursor-pointer items-center justify-between rounded-2xl px-4 py-3 text-sm outline-none hover:bg-white/10 data-[highlighted]:bg-white/10">
-              <Select.ItemText>Free format</Select.ItemText>
-              <Select.ItemIndicator><Check className="h-4 w-4 text-[#a78bfa]" /></Select.ItemIndicator>
-            </Select.Item>
             {SPEECH_TEMPLATES.map((template) => (
               <Select.Item key={template.id} value={template.id} className="flex cursor-pointer items-center justify-between rounded-2xl px-4 py-3 text-sm outline-none hover:bg-white/10 data-[highlighted]:bg-white/10">
                 <Select.ItemText>{template.label}</Select.ItemText>
@@ -152,10 +148,10 @@ export function TemplatePicker({
         <Eyebrow className="mb-3">Speech Format</Eyebrow>
         <Label.Root className="mb-2 block text-sm text-[#ddd6fe]">Evaluation rubric</Label.Root>
         <Select.Root
-          value={value ?? 'general'}
+          value={value ?? DEFAULT_TEMPLATE_ID}
           onValueChange={(next) => {
             sfx.select();
-            onChange(next === 'general' ? null : (next as SpeechTemplateId));
+            onChange(next as SpeechTemplateId);
           }}
           disabled={disabled}
         >
@@ -167,16 +163,12 @@ export function TemplatePicker({
                 : 'border-white/12',
             )}
           >
-            <Select.Value placeholder="General evaluation" />
+            <Select.Value />
             <Select.Icon><ChevronDown className="h-4 w-4 text-[#857ca2]" /></Select.Icon>
           </Select.Trigger>
           <Select.Portal>
             <Select.Content position="popper" className="z-50 max-w-[calc(100vw-2rem)] overflow-hidden rounded-3xl border border-white/10 bg-[#0d0c16]/95 p-2 text-[#f2efff] shadow-[0_20px_60px_rgba(0,0,0,0.5)] backdrop-blur-xl">
               <Select.Viewport className="grid gap-1">
-                <Select.Item value="general" className="flex cursor-pointer items-center justify-between rounded-2xl px-4 py-3 text-sm outline-none hover:bg-white/10 data-[highlighted]:bg-white/10">
-                  <Select.ItemText>General evaluation</Select.ItemText>
-                  <Select.ItemIndicator><Check className="h-4 w-4 text-[#a78bfa]" /></Select.ItemIndicator>
-                </Select.Item>
                 {SPEECH_TEMPLATES.map((template) => (
                   <Select.Item key={template.id} value={template.id} className="flex cursor-pointer items-center justify-between rounded-2xl px-4 py-3 text-sm outline-none hover:bg-white/10 data-[highlighted]:bg-white/10">
                     <Select.ItemText>{template.label}</Select.ItemText>

@@ -44,7 +44,7 @@ import { formatClock, formatHistoryDate, scoreColor } from '@/lib/feedback';
 import { requestJson } from '@/lib/request';
 import { sfx } from '@/lib/sound';
 import { DEFAULT_ACCENT, EXAMPLE_ACCENTS, getAvailableAccents, type ExampleAccent } from '@/lib/elevenlabs';
-import { type SpeechTemplateId } from '@/lib/speech-config';
+import { DEFAULT_TEMPLATE_ID, type SpeechTemplateId } from '@/lib/speech-config';
 import { cn } from '@/lib/utils';
 
 /* ── Types ───────────────────────────────────────────────────────── */
@@ -267,8 +267,8 @@ export default function Home() {
   const [canGoDeeper, setCanGoDeeper] = useState(false);
   const lastRecordingRef = useRef<{ blob: Blob; sessionId: string | null } | null>(null);
   const [deletingSessionIds, setDeletingSessionIds] = useState<Set<string>>(new Set());
-  const [selectedTemplateId, setSelectedTemplateId] = useState<SpeechTemplateId | null>(null);
-  const [speechTemplateId, setSpeechTemplateId] = useState<SpeechTemplateId | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<SpeechTemplateId | null>(DEFAULT_TEMPLATE_ID);
+  const [speechTemplateId, setSpeechTemplateId] = useState<SpeechTemplateId | null>(DEFAULT_TEMPLATE_ID);
   const [topic, setTopic] = useState('');
   const [wordCount, setWordCount] = useState(180);
   const [speech, setSpeech] = useState('');
@@ -667,7 +667,7 @@ export default function Home() {
     setCanGoDeeper(false);
     lastRecordingRef.current = null;
     setSeconds(0);
-    setSelectedTemplateId(null);
+    setSelectedTemplateId(DEFAULT_TEMPLATE_ID);
     setIsRecording(false);
     setIsAnalyzing(false);
     toast.success('Fresh slate. Ready when you are.');

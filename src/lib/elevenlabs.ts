@@ -119,13 +119,60 @@ const BEAT_ENDINGS = /([.!?])\s+/g;
  * mid-sentence — mis-placed tags get spoken or cause artifacts, and the script
  * shown on screen has to match the audio the user hears.
  */
+/**
+ * Delivery cues written by the speech generator, mapped to what v3 actually
+ * acts on.
+ *
+ * Generated speeches carry inline cues like [pause] and [emphasise] so the
+ * script reads as something to perform. Passing them through untranslated is
+ * worse than useless: v3 speaks unrecognised bracket text aloud. Each cue is
+ * either converted to a real v3 audio tag, or to the punctuation v3 uses for
+ * timing — it has no SSML break tag, so ellipses and line breaks are the only
+ * way to buy a beat.
+ */
+const CUE_MAP: [RegExp, string][] = [
+  [/\[\s*long pause\s*\]/gi, '\n\n...\n\n'],
+  [/\[\s*pause\s*\]/gi, '...'],
+  [/\[\s*breathe?\s*\]/gi, '\n\n[exhales]\n'],
+  [/\[\s*slower\s*\]/gi, '[slowly]'],
+  [/\[\s*faster\s*\]/gi, '[quickly]'],
+  [/\[\s*soft(?:ly)?\s*\]/gi, '[softly]'],
+  [/\[\s*louder\s*\]/gi, '[loudly]'],
+  [/\[\s*higher pitch\s*\]/gi, '[brightly]'],
+  [/\[\s*lower pitch\s*\]/gi, '[seriously]'],
+  [/\[\s*emphasi[sz]e\s*\]/gi, '[emphatically]'],
+  [/\[\s*warmly\s*\]/gi, '[warmly]'],
+  [/\[\s*firmly\s*\]/gi, '[firmly]'],
+  [/\[\s*with conviction\s*\]/gi, '[confidently]'],
+  [/\[\s*more confidence\s*\]/gi, '[confidently]'],
+];
+
+/** v3 tags we are willing to pass straight through. */
+const KNOWN_TAGS = /^\[(?:exhales|sighs|laughs|giggles|whispers|softly|loudly|slowly|quickly|warmly|firmly|confidently|brightly|seriously|emphatically|excited|curious|thoughtfully|gently|cheerfully|playfully|knowingly)\]$/i;
+
+/** Converts our delivery cues into v3 tags, and drops anything v3 would read out. */
+export function translateDeliveryCues(text: string) {
+  let out = text;
+  for (const [pattern, replacement] of CUE_MAP) {
+    out = out.replace(pattern, replacement);
+  }
+
+  // Anything still in brackets is not a tag v3 knows. Left alone it gets
+  // spoken aloud, so remove it rather than let the voice read "[dramatic]".
+  out = out.replace(/\[[^\]\n]{1,40}\]/g, (match) => (KNOWN_TAGS.test(match.trim()) ? match : ''));
+
+  return out.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 export function buildPerformanceScript(text: string) {
-  const paragraphs = text
+  const cued = translateDeliveryCues(text);
+
+  const paragraphs = cued
     .split(/\n{2,}/)
-    .map((paragraph) => paragraph.replace(/\s+/g, ' ').trim())
+    .map((paragraph) => paragraph.replace(/[ \t]+/g, ' ').trim())
     .filter(Boolean);
 
-  const body = (paragraphs.length ? paragraphs : [text.replace(/\s+/g, ' ').trim()])
+  const body = (paragraphs.length ? paragraphs : [cued.replace(/\s+/g, ' ').trim()])
     // A line break after each sentence gives v3 a natural place to breathe;
     // blank lines between paragraphs mark the bigger rhetorical pauses.
     .map((paragraph) => paragraph.replace(BEAT_ENDINGS, '$1\n'))
