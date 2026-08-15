@@ -104,6 +104,35 @@ export function getAvailableAccents(): Record<ExampleAccent, { male: boolean; fe
 const DELIVERY_HEADER =
   '[confident] [speaking to a live audience] [warm, deliberate, commanding]';
 
+/**
+ * The header used when the script itself is grave.
+ *
+ * The default header primes every performance as warm and commanding, which is
+ * right for most speeches and badly wrong for a few. A speech about suicide,
+ * grief or violence delivered "warm, deliberate, commanding" sounds cheerful
+ * about its subject — the complaint that prompted this. The register has to
+ * follow the material, so a script carrying somber emotional cues is primed
+ * somberly instead.
+ */
+const SOMBER_HEADER =
+  '[solemn] [speaking to a live audience] [subdued, measured, sincere]';
+
+/** Emotional cues whose presence means the script is a grave one. */
+const SOMBER_TAGS = ['[sad]', '[solemnly]', '[gently]', '[sighs]'];
+
+/**
+ * Picks the opening register from the cues the writer actually used.
+ *
+ * Deliberately keyed off the translated tags rather than the topic string: the
+ * writer has already read the topic and chosen a register, and a keyword list
+ * would both miss euphemisms and misfire on a hopeful speech that merely
+ * mentions a hard word.
+ */
+function selectDeliveryHeader(translated: string) {
+  const lower = translated.toLowerCase();
+  return SOMBER_TAGS.some((tag) => lower.includes(tag)) ? SOMBER_HEADER : DELIVERY_HEADER;
+}
+
 /** Sentence-ending punctuation that already carries a natural beat. */
 const BEAT_ENDINGS = /([.!?])\s+/g;
 
@@ -156,6 +185,18 @@ export const DELIVERY_CUES: { cue: string; v3: string; hint: string }[] = [
   { cue: 'warmly', v3: '[warmly]', hint: 'the intent behind a friendly line' },
   { cue: 'firmly', v3: '[firmly]', hint: 'the intent behind an assertive line' },
   { cue: 'with conviction', v3: '[confidently]', hint: 'the intent behind your strongest claim' },
+
+  // Emotional register. Without these the voice defaults to bright and
+  // energetic, which is badly wrong on a speech about loss, grief or suicide:
+  // the words say one thing and the delivery says another.
+  { cue: 'sombrely', v3: '[sad]', hint: 'grief, loss, or a death toll — the weight of the subject' },
+  { cue: 'gravely', v3: '[solemnly]', hint: 'the seriousness of a hard truth, without self-pity' },
+  { cue: 'gently', v3: '[gently]', hint: 'a fragile subject, or speaking to someone who is hurting' },
+  { cue: 'hopefully', v3: '[hopeful]', hint: 'the turn toward what can change' },
+  { cue: 'joyfully', v3: '[happy]', hint: 'genuine celebration or good news' },
+  { cue: 'angrily', v3: '[angry]', hint: 'controlled anger at an injustice, used sparingly' },
+  { cue: 'reflectively', v3: '[thoughtful]', hint: 'thinking aloud, or recalling something' },
+  { cue: 'sighs', v3: '[sighs]', hint: 'the weight of something, before you carry on' },
 ];
 
 /** Renders the allowed cues for the speech-writing prompt. */
@@ -191,6 +232,16 @@ const CUE_ALIASES: [RegExp, string][] = [
   [/\[\s*(?:firm|firmer|sternly)\s*\]/gi, '[firmly]'],
   [/\[\s*(?:higher|rising pitch|brighter)\s*\]/gi, '[higher pitch]'],
   [/\[\s*(?:lower|falling pitch|deeper)\s*\]/gi, '[lower pitch]'],
+  // Emotional near-misses. [sadly] is the spelling a model reaches for first,
+  // so it must not be the one that gets discarded.
+  [/\[\s*(?:sadly|sad|sorrowful|sorrowfully|mournful|mournfully|somber|sombre|somberly|grief|grieving)\s*\]/gi, '[sombrely]'],
+  [/\[\s*(?:solemn|solemnly|gravely|grave|reverent|reverently)\s*\]/gi, '[gravely]'],
+  [/\[\s*(?:gentle|tenderly|tender|compassionate|compassionately|kindly)\s*\]/gi, '[gently]'],
+  [/\[\s*(?:hopeful|hopefully|optimistic|optimistically|uplifting)\s*\]/gi, '[hopefully]'],
+  [/\[\s*(?:happy|happily|joyful|joyfully|cheerful|cheerfully|delighted)\s*\]/gi, '[joyfully]'],
+  [/\[\s*(?:angry|angrily|furious|furiously|indignant|indignantly|outraged)\s*\]/gi, '[angrily]'],
+  [/\[\s*(?:thoughtful|thoughtfully|reflective|reflectively|pensive|pensively|wistful|wistfully)\s*\]/gi, '[reflectively]'],
+  [/\[\s*(?:sighs?|sighing|heavy sigh)\s*\]/gi, '[sighs]'],
 ];
 
 // Longest first, so "long pause" is matched before "pause" would swallow it.
@@ -210,6 +261,8 @@ const KNOWN_TAGS = new Set(
     '[exhales]', '[sighs]', '[laughs]', '[giggles]', '[whispers]',
     '[excited]', '[curious]', '[thoughtfully]', '[gently]',
     '[cheerfully]', '[playfully]', '[knowingly]',
+    // Emotional tags, all documented for v3.
+    '[sad]', '[solemnly]', '[hopeful]', '[happy]', '[angry]', '[thoughtful]',
   ].map((tag) => tag.toLowerCase()),
 );
 
@@ -249,5 +302,5 @@ export function buildPerformanceScript(text: string) {
     .map((paragraph) => paragraph.replace(BEAT_ENDINGS, '$1\n'))
     .join('\n\n');
 
-  return `${DELIVERY_HEADER}\n\n${body}`;
+  return `${selectDeliveryHeader(cued)}\n\n${body}`;
 }
