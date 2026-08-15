@@ -24,7 +24,8 @@ import { cn } from '@/lib/utils';
 export function AawaxCustomizer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { style, setStyle } = useAawax();
   const [spinKey, setSpinKey] = useState(0);
-  const [previewMood, setPreviewMood] = useState<MascotMood>('cheer');
+  // The preview always shows the happy face; there is no mood switcher.
+  const previewMood: MascotMood = 'cheer';
 
   const pickDesign = (design: AawaxDesignId) => {
     if (design === style.design) return;
@@ -51,16 +52,6 @@ export function AawaxCustomizer({ open, onClose }: { open: boolean; onClose: () 
     setStyle(next);
     if (next.sound) sfx.pop();
   };
-
-  const selectedDesign = AAWAX_DESIGNS.find((d) => d.id === style.design);
-  const reactions: { mood: MascotMood; label: string }[] = [
-    { mood: 'idle', label: 'Idle' },
-    { mood: 'listen', label: 'Listen' },
-    { mood: 'think', label: 'Think' },
-    { mood: 'cheer', label: 'Cheer' },
-    { mood: 'sing', label: 'Sing' },
-    { mood: 'oops', label: 'Oops' },
-  ];
 
   return (
     <AnimatePresence>
@@ -105,16 +96,6 @@ export function AawaxCustomizer({ open, onClose }: { open: boolean; onClose: () 
 
             {/* stage / preview */}
             <div className="relative mt-4 flex flex-col items-center overflow-hidden rounded-[22px] border border-white/10 bg-[radial-gradient(ellipse_at_50%_120%,rgba(167,139,250,0.22),transparent_70%),linear-gradient(180deg,rgba(255,255,255,0.045),transparent)] py-6">
-              {/* sparkle backdrop */}
-              {[...Array(6)].map((_, i) => (
-                <motion.span
-                  key={i}
-                  className="pointer-events-none absolute h-1 w-1 rounded-full bg-[#ddd6fe]"
-                  style={{ left: `${12 + i * 15}%`, top: `${18 + (i % 3) * 24}%` }}
-                  animate={{ opacity: [0.1, 0.8, 0.1], scale: [0.7, 1.3, 0.7] }}
-                  transition={{ duration: 2.4, repeat: Infinity, delay: i * 0.35 }}
-                />
-              ))}
               <motion.div
                 key={`${spinKey}-${previewMood}`}
                 initial={{ scale: 0.7, rotate: -8, opacity: 0.4 }}
@@ -125,34 +106,6 @@ export function AawaxCustomizer({ open, onClose }: { open: boolean; onClose: () 
               </motion.div>
               {/* pedestal */}
               <div className="mt-1 h-2.5 w-24 rounded-[50%] bg-black/45 blur-[2px]" />
-              <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.24em] text-[#857ca2]">
-                {selectedDesign?.blurb ?? 'Looking sharp'} · tap to boop
-              </p>
-              <div className="mt-4 flex max-w-[92%] flex-wrap justify-center gap-1.5">
-                {reactions.map((reaction) => {
-                  const active = previewMood === reaction.mood;
-                  return (
-                    <button
-                      key={reaction.mood}
-                      type="button"
-                      onClick={() => {
-                        setPreviewMood(reaction.mood);
-                        setSpinKey((k) => k + 1);
-                        sfx.tick();
-                      }}
-                      className={cn(
-                        'rounded-full border px-2.5 py-1 font-mono text-[8.5px] uppercase tracking-[0.12em] transition',
-                        active
-                          ? 'border-[#a78bfa]/50 bg-[#a78bfa]/18 text-[#f2efff]'
-                          : 'border-white/10 bg-white/5 text-[#857ca2] hover:border-white/20 hover:text-[#ddd6fe]',
-                      )}
-                      aria-pressed={active}
-                    >
-                      {reaction.label}
-                    </button>
-                  );
-                })}
-              </div>
             </div>
 
             {/* design picker */}
