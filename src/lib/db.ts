@@ -80,6 +80,27 @@ export async function ensureSpeechSchema() {
     // pipeline are unaffected. Only populated when a user asks to go deeper.
     await db.execute('ALTER TABLE speech_sessions ADD COLUMN deep_analysis TEXT').catch(() => null);
 
+    // Scripts written in Speech Practice. Kept in its own table rather than
+    // sharing speech_sessions, because a generated script has no recording,
+    // no score, and no feedback — only a topic and the text.
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS generated_speeches (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        topic TEXT NOT NULL,
+        template_id TEXT,
+        template_label TEXT,
+        word_count INTEGER,
+        speech TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute(`
+      CREATE INDEX IF NOT EXISTS idx_generated_speeches_user_created
+      ON generated_speeches (user_id, created_at DESC)
+    `);
+
     await db.execute(`
       CREATE INDEX IF NOT EXISTS idx_speech_sessions_user_created
       ON speech_sessions (user_id, created_at DESC)
@@ -262,6 +283,12 @@ export async function mergeGuestDataIntoUser(guestId: string, userId: string) {
       args: [userId, guestId],
     });
 
+    // Scripts written as a guest follow the account too.
+    await db.execute({
+      sql: 'UPDATE generated_speeches SET user_id = ? WHERE user_id = ?',
+      args: [userId, guestId],
+    }).catch(() => null);
+
     await db.execute({
       sql: `
         DELETE FROM guest_usage
@@ -416,6 +443,108 @@ export async function insertSpeechSession(session: Omit<SpeechSessionRecord, 'cr
     return true;
   } catch (error) {
     console.error('Failed to insert speech session:', error);
+    return false;
+  }
+}
+
+export type GeneratedSpeechRecord = {
+  id: string;
+  user_id: string;
+  topic: string;
+  template_id: string | null;
+  template_label: string | null;
+  word_count: number | null;
+  speech: string;
+  created_at: string;
+};
+
+/** Saves a generated script, trimming the user's oldest beyond the cap. */
+export async function insertGeneratedSpeech(record: Omit<GeneratedSpeechRecord, 'created_at'>) {
+  const db = await ensureSpeechSchema();
+  if (!db) return false;
+
+  try {
+    await db.execute({
+      sql: `
+        INSERT INTO generated_speeches (id, user_id, topic, template_id, template_label, word_count, speech)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+      args: [
+        record.id,
+        record.user_id,
+        record.topic,
+        record.template_id,
+        record.template_label,
+        record.word_count,
+        record.speech,
+      ],
+    });
+
+    await db.execute({
+      sql: `
+        DELETE FROM generated_speeches
+        WHERE user_id = ?
+          AND id NOT IN (
+            SELECT id FROM generated_speeches
+            WHERE user_id = ?
+            ORDER BY datetime(created_at) DESC
+            LIMIT ?
+          )
+      `,
+      args: [record.user_id, record.user_id, MAX_SESSIONS_PER_USER],
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Failed to save generated speech:', error);
+    return false;
+  }
+}
+
+export async function listGeneratedSpeeches(userId: string, limit = 20) {
+  const db = await ensureSpeechSchema();
+  if (!db) return [];
+
+  try {
+    const result = await db.execute({
+      sql: `
+        SELECT id, user_id, topic, template_id, template_label, word_count, speech, created_at
+        FROM generated_speeches
+        WHERE user_id = ?
+        ORDER BY datetime(created_at) DESC
+        LIMIT ?
+      `,
+      args: [userId, limit],
+    });
+
+    return result.rows.map((row) => ({
+      id: String(row.id),
+      user_id: String(row.user_id),
+      topic: String(row.topic),
+      template_id: row.template_id ? String(row.template_id) : null,
+      template_label: row.template_label ? String(row.template_label) : null,
+      word_count: row.word_count === null ? null : Number(row.word_count),
+      speech: String(row.speech),
+      created_at: String(row.created_at),
+    })) as GeneratedSpeechRecord[];
+  } catch (error) {
+    console.error('Failed to list generated speeches:', error);
+    return [];
+  }
+}
+
+export async function deleteGeneratedSpeech(userId: string, speechId: string) {
+  const db = await ensureSpeechSchema();
+  if (!db) return false;
+
+  try {
+    const result = await db.execute({
+      sql: 'DELETE FROM generated_speeches WHERE id = ? AND user_id = ?',
+      args: [speechId, userId],
+    });
+    return result.rowsAffected > 0;
+  } catch (error) {
+    console.error('Failed to delete generated speech:', error);
     return false;
   }
 }

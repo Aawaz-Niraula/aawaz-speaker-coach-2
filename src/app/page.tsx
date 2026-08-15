@@ -61,6 +61,14 @@ type SpeechHistoryItem = {
   /** Delivery report, present only if the user ran a deep analysis. */
   deep_analysis?: string | null;
 };
+type GeneratedSpeechItem = {
+  id: string;
+  created_at: string;
+  topic: string;
+  template_label: string | null;
+  word_count: number | null;
+  speech: string;
+};
 type HistoryResponse = { history?: SpeechHistoryItem[] };
 type AnalyzeResponse = HistoryResponse & { transcript?: string; feedback?: string; isGuest?: boolean; guestRemaining?: number | null };
 type SpeechResponse = { speech?: string; isGuest?: boolean; guestRemaining?: number | null };
@@ -245,6 +253,13 @@ export default function Home() {
   const [history, setHistory] = useState<SpeechHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  /* History has two views: recorded speeches you were scored on, and scripts
+     written in Speech Practice. They are different enough to warrant a toggle
+     rather than one mixed list. */
+  const [historyView, setHistoryView] = useState<'evaluations' | 'scripts'>('evaluations');
+  const [generatedSpeeches, setGeneratedSpeeches] = useState<GeneratedSpeechItem[]>([]);
+  const [scriptsLoading, setScriptsLoading] = useState(false);
+  const [selectedScriptId, setSelectedScriptId] = useState<string | null>(null);
   /* Deep analysis. The recording is held in browser memory only — nothing is
      stored server-side — so the button disappears on reload or a new take. */
   const [deepAnalysis, setDeepAnalysis] = useState<string | null>(null);
@@ -646,6 +661,11 @@ export default function Home() {
     setRecordingStream(null);
     setTranscript('');
     setFeedback('');
+    // The delivery report belongs to the speech being cleared, and the held
+    // recording is what makes it re-runnable. Both go with it.
+    setDeepAnalysis(null);
+    setCanGoDeeper(false);
+    lastRecordingRef.current = null;
     setSeconds(0);
     setSelectedTemplateId(null);
     setIsRecording(false);
@@ -917,6 +937,43 @@ export default function Home() {
   };
 
   /* ── History ───────────────────────────────────────────────────── */
+  const loadGeneratedSpeeches = useCallback(async () => {
+    setScriptsLoading(true);
+    try {
+      const data = await requestJson<{ speeches?: GeneratedSpeechItem[] }>('/api/generated-speeches', undefined, 300000);
+      setGeneratedSpeeches(data.speeches || []);
+    } catch {
+      // Non-fatal: the evaluations view still works.
+    } finally {
+      setScriptsLoading(false);
+    }
+  }, []);
+
+  const deleteGeneratedSpeechItem = async (speechId: string) => {
+    if (deletingSessionIds.has(speechId)) return;
+    setDeletingSessionIds((current) => new Set(current).add(speechId));
+
+    try {
+      const data = await requestJson<{ speeches?: GeneratedSpeechItem[] }>(
+        '/api/generated-speeches',
+        { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ speechId }) },
+        300000,
+      );
+      setGeneratedSpeeches(data.speeches || []);
+      if (selectedScriptId === speechId) setSelectedScriptId(null);
+      toast.success('Script deleted.');
+    } catch (err) {
+      if (handleSpecialError(err)) return;
+      toast.error(err instanceof Error ? err.message : 'Could not delete the script.');
+    } finally {
+      setDeletingSessionIds((current) => {
+        const next = new Set(current);
+        next.delete(speechId);
+        return next;
+      });
+    }
+  };
+
   const deleteSession = async (sessionId: string) => {
     if (deletingSessionIds.has(sessionId)) return;
     setDeletingSessionIds((current) => new Set(current).add(sessionId));
@@ -1612,7 +1669,7 @@ export default function Home() {
                       {helpOpen ? <PopupPanel title="Quick Help" onClose={() => setHelpOpen(false)}>{helpContent}</PopupPanel> : null}
                     </AnimatePresence>
                   </div>
-                  {activeTab === 'coach' && (transcript || feedback || isRecording || isAnalyzing) ? (
+                  {activeTab === 'coach' && (transcript || feedback || deepAnalysis || isRecording || isAnalyzing) ? (
                     <button
                       type="button"
                       onClick={resetSpeechRecording}
@@ -1790,6 +1847,124 @@ export default function Home() {
               {/* ── History tab ─────────────────────────── */}
               {activeTab === 'history' && (
                 <>
+                  {/* Two kinds of history live here: speeches you recorded and
+                      were scored on, and scripts you generated to practise. */}
+                  <div className="mb-4 inline-flex rounded-full border border-white/10 bg-white/5 p-1">
+                    {([
+                      { id: 'evaluations' as const, label: 'Speech evaluation' },
+                      { id: 'scripts' as const, label: 'Speech generation' },
+                    ]).map((view) => (
+                      <button
+                        key={view.id}
+                        type="button"
+                        onClick={() => {
+                          if (historyView === view.id) return;
+                          sfx.select();
+                          setHistoryView(view.id);
+                          if (view.id === 'scripts' && !generatedSpeeches.length) void loadGeneratedSpeeches();
+                        }}
+                        className={cn(
+                          'h-9 rounded-full px-4 font-mono text-[10px] uppercase tracking-[0.16em] transition',
+                          historyView === view.id
+                            ? 'bg-[#ddd6fe] text-[#06060b]'
+                            : 'text-[#857ca2] hover:bg-white/10 hover:text-[#f2efff]',
+                        )}
+                        aria-pressed={historyView === view.id}
+                      >
+                        {view.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {historyView === 'scripts' ? (
+                    <Shell>
+                      {scriptsLoading ? (
+                        <div className="grid gap-3">
+                          {[0, 1, 2].map((i) => (
+                            <div key={i} className="rounded-[20px] border border-white/8 p-4 sm:p-5">
+                              <SkeletonLines lines={2} />
+                            </div>
+                          ))}
+                        </div>
+                      ) : generatedSpeeches.length ? (
+                        <div className="grid gap-3">
+                          {generatedSpeeches.map((item) => {
+                            const isSelected = selectedScriptId === item.id;
+                            const isDeleting = deletingSessionIds.has(item.id);
+                            return (
+                              <motion.div
+                                key={item.id}
+                                layout="position"
+                                animate={{ opacity: isDeleting ? 0.4 : 1 }}
+                                className={cn(
+                                  'glass-edge rounded-[20px] border transition-colors sm:rounded-[24px]',
+                                  isSelected
+                                    ? 'border-[#a78bfa]/40 bg-[linear-gradient(135deg,rgba(167,139,250,0.12),rgba(249,168,212,0.08))]'
+                                    : 'border-white/10 bg-white/4 hover:border-white/20',
+                                )}
+                              >
+                                <div className="p-4 sm:p-5">
+                                  <div className="mb-2 flex items-center justify-between gap-3">
+                                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#857ca2]">
+                                      {new Date(item.created_at.replace(' ', 'T') + 'Z').toLocaleString()}
+                                    </p>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => deleteGeneratedSpeechItem(item.id)}
+                                      disabled={isDeleting}
+                                      className="h-8 w-8 rounded-full text-[#857ca2] hover:text-[#fca5a5]"
+                                      aria-label="Delete script"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedScriptId(isSelected ? null : item.id)}
+                                    disabled={isDeleting}
+                                    className="flex w-full flex-wrap items-center justify-between gap-2 text-left"
+                                    aria-expanded={isSelected}
+                                  >
+                                    <div className="min-w-0 break-words text-sm sm:text-base">{item.topic}</div>
+                                    <div className="flex shrink-0 items-center gap-2 font-mono text-xs text-[#857ca2]">
+                                      {item.template_label ? <span className="hidden sm:inline">{item.template_label}</span> : null}
+                                      {item.word_count ? <span>{item.word_count} words</span> : null}
+                                      <ChevronDown className={cn('h-4 w-4 transition-transform duration-300', isSelected && 'rotate-180')} />
+                                    </div>
+                                  </button>
+                                  <AnimatePresence initial={false}>
+                                    {isSelected ? (
+                                      <motion.div
+                                        initial={{ opacity: 0, height: 0 }}
+                                        animate={{ opacity: 1, height: 'auto' }}
+                                        exit={{ opacity: 0, height: 0 }}
+                                        className="overflow-hidden"
+                                      >
+                                        <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-7 text-[#f2efff] sm:leading-8">
+                                          {item.speech}
+                                        </p>
+                                        <ActionBar text={item.speech} label="Speech" copyText={copyText} speakText={speakText} />
+                                      </motion.div>
+                                    ) : null}
+                                  </AnimatePresence>
+                                </div>
+                              </motion.div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-3 py-10 text-center">
+                          <CoachMascot mood="idle" size={72} />
+                          <p className="font-serif text-xl text-white">No scripts yet</p>
+                          <p className="max-w-sm text-sm leading-6 text-[#a79dc8]">
+                            Generate a practice speech in Speech Practice and it will be saved here.
+                          </p>
+                        </div>
+                      )}
+                    </Shell>
+                  ) : (
+                  <>
                   <Shell>
                     {historyLoading ? (
                       <div className="grid gap-3">
@@ -1889,6 +2064,8 @@ export default function Home() {
                         <FeedbackReport feedback={selectedSession.deep_analysis} copyText={copyText} speakText={speakText} />
                       ) : null}
                     </motion.div>
+                  )}
+                  </>
                   )}
                 </>
               )}

@@ -227,8 +227,10 @@ The speaker has already received feedback on their words and structure. This rep
 🎧 DELIVERY ANALYSIS
 • How fast you spoke: [plain sentence using the measured words/min and how it changed through the speech]
 • Did you pause enough?: [plain sentence: did they leave gaps for the audience, or run words together?]${vocal ? `
-• How you sounded: [warm, flat, tense, engaging? Did you sound sure of yourself?]
-• Did your key points land?: [was there variation in energy, or did everything sound the same?]` : ''}
+• How you sounded: [warm, flat, tense, engaging? Quote a moment from the vocal notes.]
+• What you sounded like you felt: [the emotion actually in the voice, and whether it matched the words]
+• Did you sound sure of yourself?: [confidence, upspeak, trailing off — quote where it happened]
+• Did your key points land?: [name the exact words that landed, and any that passed by flat]` : ''}
 • Delivery score: X/100
 
 🎯 WHAT YOUR VOICE DID WELL
@@ -241,19 +243,34 @@ IMPORTANT: no vocal recording data is available for this analysis — only the t
 
 🎤 3 DELIVERY DRILLS
 [Technical and imperative only. No encouragement in this section.]
-1. [a drill targeting the weakest measured metric, with reps or timing]
-2. [a drill targeting the weakest vocal quality heard]
-3. [a rehearsal command they can run daily]
+Each drill must be a REAL, named exercise used in speech training — not invented advice. Draw from established techniques such as:
+- Diaphragmatic (belly) breathing for breath support and nerves
+- The "cork/pencil in teeth" articulation drill for slurred or clipped endings
+- Tongue twisters (e.g. "red leather, yellow leather") for diction
+- Humming and lip trills to warm up and open resonance
+- Sirening (gliding low to high) to widen pitch range against monotone
+- Marking a script with slashes at every intended pause, then reading it
+- Metronome or pacing drills for speed control
+- Reading aloud with exaggerated emotion, then dialling it back 50%
+- Recording, listening back, and marking every filler word on the transcript
+- Projecting to a fixed point across the room for volume and support
+- The "power pause": stopping fully for two seconds after each key sentence
+Name the technique, say exactly how to do it, give reps or a duration, and tie it to the specific fault you identified. Never write vague instructions like "practise more", "repeat this line", or "work on your pacing".
+1. [named exercise for the weakest measured metric, with how-to and reps]
+2. [named exercise for the weakest vocal quality heard, with how-to and reps]
+3. [named exercise they can run daily, with how-to and duration]
 
 Delivery score bands (score the DELIVERY only, not the content or structure):
   90-100 — Commanding. Controlled pace with real variation, deliberate pauses, warm confident tone, key words land.
   80-89  — Strong delivery with minor, nameable flaws.
   70-79  — Good. Clear and controlled, with a few real weaknesses.
-  60-69  — Competent but inconsistent — flat stretches, or pace and pausing that drift.
-  45-59  — Developing. A clear delivery problem: rushing, monotone, or almost no pausing.
-  30-44  — Weak. Hard to follow because of how it was delivered.
-  0-29   — Only for delivery that is genuinely unintelligible.
-Use the full range. Good delivery earns a good score; do not cluster everything low.
+  55-69  — Competent but inconsistent: flat stretches, or pace and pausing that drift.
+  40-54  — Developing. One clear delivery problem, such as rushing or almost no pausing.
+  25-39  — Weak. Hard to follow because of how it was delivered.
+  0-24   — Only for delivery that is genuinely unintelligible.
+Start from what the delivery achieved and deduct for specific faults, rather than starting at zero and granting points grudgingly.
+Clear, audible, followable delivery belongs in the 60s or 70s even when unpolished. Judge against a normal speaker practising, not a professional keynote.
+If the speaker was audible and could be followed, the score starts at 45 or above however rough it was. Below 45 means the delivery genuinely got in the way of understanding them.
 
 Rubric context:
 ${rubricInstructions}

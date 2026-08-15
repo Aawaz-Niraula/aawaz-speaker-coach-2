@@ -26,6 +26,9 @@ export async function DELETE(req: NextRequest) {
     await db
       .execute({ sql: 'DELETE FROM speech_voice_samples WHERE user_id = ?', args: [userId] })
       .catch(() => null);
+    await db
+      .execute({ sql: 'DELETE FROM generated_speeches WHERE user_id = ?', args: [userId] })
+      .catch(() => null);
     return Response.json({ ok: true });
   } catch (error) {
     console.error('Failed to delete user data', error);

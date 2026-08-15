@@ -30,6 +30,9 @@ export async function DELETE(req: NextRequest) {
     await speechDb
       .execute({ sql: 'DELETE FROM speech_voice_samples WHERE user_id = ?', args: [userId] })
       .catch(() => null);
+    await speechDb
+      .execute({ sql: 'DELETE FROM generated_speeches WHERE user_id = ?', args: [userId] })
+      .catch(() => null);
   } catch (error) {
     console.error('Failed to delete speech data during account deletion', error);
     return Response.json(
