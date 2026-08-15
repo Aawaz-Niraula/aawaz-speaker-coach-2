@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 
-import { GuestLimitError, IdentityError, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
+import { DailyQuotaError, GuestLimitError, IdentityError, dailyQuotaResponse, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
 import { ChatCompletionData } from '@/lib/ai';
 import { getSpeechSessionScore, updateSpeechSessionDeepAnalysis } from '@/lib/db';
 import { fetchWithRetryLimited } from '@/lib/fetch';
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: 'Recording is too large for deep analysis.' }, { status: 413 });
     }
 
-    const { userId } = await resolveAppUser(req, true);
+    const { userId } = await resolveAppUser(req, true, 'deep-analysis');
 
     const rateLimit = checkRateLimit(`deep-analysis:${getClientKey(req, userId)}`, 6, 10 * 60 * 1000);
     if (!rateLimit.allowed) {
@@ -317,6 +317,7 @@ ${transcript.slice(0, 4000)}`,
       degraded: !vocal,
     });
   } catch (error) {
+    if (error instanceof DailyQuotaError) return dailyQuotaResponse();
     if (error instanceof GuestLimitError) return guestLimitResponse();
     if (error instanceof IdentityError) return identityErrorResponse();
 

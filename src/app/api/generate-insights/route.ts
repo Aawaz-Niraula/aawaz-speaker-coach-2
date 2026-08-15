@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { getProviderErrorMessage, isAbortTimeout, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
-import { GuestLimitError, IdentityError, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
+import { DailyQuotaError, GuestLimitError, IdentityError, dailyQuotaResponse, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
 import { listRecentSpeechSessions } from '@/lib/db';
 import { fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
   if (originError) return originError;
 
   try {
-    const { userId } = await resolveAppUser(req, true);
+    const { userId } = await resolveAppUser(req, true, 'generate-insights');
     const rateKey = `generate-insights:${getClientKey(req, userId)}`;
     const rateLimit = checkRateLimit(rateKey, 15, 10 * 60 * 1000);
     if (!rateLimit.allowed) {
@@ -154,6 +154,9 @@ export async function POST(req: NextRequest) {
       });
     }
   } catch (error) {
+    if (error instanceof DailyQuotaError) {
+      return dailyQuotaResponse();
+    }
     if (error instanceof GuestLimitError) {
       return guestLimitResponse();
     }

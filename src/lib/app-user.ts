@@ -1,5 +1,5 @@
 import { auth } from '@/lib/auth';
-import { consumeGuestUsage, ensureAuthSchema } from '@/lib/db';
+import { consumeDailyQuota, consumeGuestUsage, ensureAuthSchema } from '@/lib/db';
 import { readVerifiedGuestId } from '@/lib/identity';
 
 const GUEST_LIMIT_MESSAGE = 'Create a free account to keep using Aawaz Speaker Coach.';
@@ -22,6 +22,24 @@ export class IdentityError extends Error {
   }
 }
 
+const QUOTA_MESSAGE = 'You have reached today\'s limit for this feature. It resets tomorrow.';
+
+/** Thrown when a signed-in user exhausts their daily allowance for a route. */
+export class DailyQuotaError extends Error {
+  status = 429;
+
+  constructor() {
+    super(QUOTA_MESSAGE);
+  }
+}
+
+export function dailyQuotaResponse() {
+  return Response.json(
+    { error: QUOTA_MESSAGE, quotaExceeded: true },
+    { status: 429 },
+  );
+}
+
 export type ResolvedAppUser = {
   userId: string;
   isGuest: boolean;
@@ -35,7 +53,16 @@ export type ResolvedAppUser = {
  *
  * Client-provided user ids are never trusted.
  */
-export async function resolveAppUser(req: Request, consumeGuestUse = false): Promise<ResolvedAppUser> {
+export async function resolveAppUser(
+  req: Request,
+  consumeGuestUse = false,
+  /**
+   * Route name for the daily quota, e.g. 'transcribe-analyze'. Omit on cheap
+   * or read-only routes. The in-process rate limiter is per-instance and
+   * cannot hold a real ceiling; this one is shared and durable.
+   */
+  action?: string,
+): Promise<ResolvedAppUser> {
   await ensureAuthSchema();
   const session = await auth.api.getSession({ headers: req.headers }).catch((err) => {
     console.error('getSession failed:', err);
@@ -44,6 +71,11 @@ export async function resolveAppUser(req: Request, consumeGuestUse = false): Pro
   const authUserId = session?.user?.id;
 
   if (authUserId) {
+    if (consumeGuestUse && action) {
+      const quota = await consumeDailyQuota(authUserId, action);
+      if (!quota.allowed) throw new DailyQuotaError();
+    }
+
     return {
       userId: authUserId,
       isGuest: false,
