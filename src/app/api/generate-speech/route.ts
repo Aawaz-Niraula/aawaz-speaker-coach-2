@@ -11,9 +11,23 @@ import { formatSchemeForPrompt, getScoringScheme } from '@/lib/scoring';
 import { formatCueListForPrompt } from '@/lib/elevenlabs';
 import { getSpeechTemplate } from '@/lib/speech-config';
 
+/*
+ * Speech writing is the most creative task in the app and was running on a
+ * 24B instruct model, which produced fragmented, ungrammatical prose
+ * ("Failure shows you." / "From a young professional, I remember.").
+ *
+ * Benchmarked on the app's own prompt, marked by the same model the coach
+ * uses: V4-Flash 88, V3.2 88, Qwen3-235B 82, Mistral-Small-24B 74,
+ * Llama-3.3-70B 68.
+ *
+ * V4-Flash and V3.2 tied on quality across repeat runs, so speed decided it:
+ * V4-Flash returns in about 6s against V3.2's 24s, and emitted no invalid
+ * delivery cues. V3.2 is the first fallback since it scores identically.
+ */
 const SPEECH_MODELS = [
-  'mistralai/Mistral-Small-24B-Instruct-2501',
-  'Qwen/Qwen3.5-9B',
+  'deepseek-ai/DeepSeek-V4-Flash-0731',
+  'deepseek-ai/DeepSeek-V3.2',
+  'Qwen/Qwen3-235B-A22B-Instruct-2507',
 ] as const;
 
 function formatSpeechGenerationError(status: number, message?: string) {
@@ -42,6 +56,9 @@ function tidySpeech(raw: string, maxWords: number) {
   // Markdown title or a leading "Speech:" label.
   text = text.replace(/^\s*(?:\*\*|##+\s*)?(?:speech|script|title)\s*[:*]*\s*\n+/i, '');
   text = text.replace(/^\s*\*\*[^\n*]{0,60}\*\*\s*\n+/, '');
+
+  // Markdown emphasis: the speaker cannot say an asterisk or underscore.
+  text = text.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/(?<!\w)\*([^*\n]+)\*(?!\w)/g, '$1');
 
   const lines = text.split('\n').map((line) => line
     // Bullets and numbered list markers: a speaker cannot say these.
@@ -176,7 +193,9 @@ FORMATTING — this is spoken text, not a document.
 - Every line is words the speaker says out loud.
 - NO bullet points, dashes, numbered lists, headings, section labels, or indentation. A speaker cannot say a bullet point.
 - No stage directions beyond the delivery cues listed above.
-- Do not label the format's sections. The structure should be audible, not announced.`,
+- Do not label the format's sections. The structure should be audible, not announced.
+- Do not narrate your own scaffolding. Never write "my first point is", "in conclusion", or "to summarise" — move between ideas the way a speaker does, with a turn of phrase rather than a signpost.
+- No markdown. No asterisks, underscores or backticks: a speaker cannot say them.`,
             },
           ],
           // Extra headroom: delivery cues add tokens without adding words.
