@@ -51,7 +51,13 @@ export function parseFeedback(text: string): ParsedFeedback {
       const row = line.replace(/^[•\-*]\s*/, '').trim();
       const idx = row.lastIndexOf(':');
       if (idx > 0 && /\d+\s*\/\s*\d+/.test(row.slice(idx))) {
-        markBreakdown.push({ label: row.slice(0, idx).trim(), value: row.slice(idx + 1).trim() });
+        const label = row.slice(0, idx).trim();
+        /* The model closes the breakdown with its own "Total: 84/100". That is
+           a summary of the rows, not a criterion, and counting it as one made
+           the row count exceed the scheme — which made totalFromBreakdown
+           reject every breakdown and silently stop correcting scores. */
+        if (/^total$/i.test(label)) continue;
+        markBreakdown.push({ label, value: row.slice(idx + 1).trim() });
       }
     }
   }
