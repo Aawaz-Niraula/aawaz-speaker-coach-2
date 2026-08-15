@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useState, useSyncExternalStore } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 
 import {
   AAWAX_COLORS,
@@ -104,6 +104,11 @@ export function CoachMascot({
   const { style } = useAawax();
   const uid = useId();
   const [booped, setBooped] = useState(false);
+  /* Every idle loop below is gated on this. Each mascot runs several
+     infinite SVG animations, and they are permanent compositor work even
+     when nobody is looking at them. */
+  const reduceMotion = useReducedMotion();
+  const animated = !reduceMotion;
 
   const design = styleOverride?.design ?? style.design;
   const palette = AAWAX_COLORS[styleOverride?.color ?? style.color];
@@ -158,7 +163,7 @@ export function CoachMascot({
             r="5"
             fill={effectiveMood === 'cheer' ? '#fde68a' : palette.to}
             animate={effectiveMood === 'cheer' ? { scale: [1, 1.35, 1] } : { scale: [1, 1.12, 1] }}
-            transition={{ duration: effectiveMood === 'cheer' ? 0.7 : 2.4, repeat: Infinity, ease: 'easeInOut' }}
+            transition={{ duration: effectiveMood === 'cheer' ? 0.7 : 2.4, repeat: animated ? Infinity : 0, ease: 'easeInOut' }}
             style={{ transformOrigin: '70px 15px' }}
           />
         </g>
@@ -289,7 +294,7 @@ export function CoachMascot({
           rx="5.2"
           fill="#2a2140"
           animate={{ ry: [1.6, 6.2, 2.6, 5.4, 1.8, 4.8, 2.2] }}
-          transition={{ duration: 1.15, repeat: Infinity, ease: 'easeInOut' }}
+          transition={{ duration: 1.15, repeat: animated ? Infinity : 0, ease: 'easeInOut' }}
         />
       ) : effectiveMood === 'cheer' ? (
         <path d="M51 74 Q60 84 69 74 Z" fill="#2a2140" />
@@ -313,7 +318,7 @@ export function CoachMascot({
           strokeLinecap="round"
           fill="none"
           animate={{ scaleY: [0.2, 1, 1, 0.2], opacity: [0, 1, 1, 0] }}
-          transition={{ duration: 2.2, repeat: Infinity, times: [0, 0.12, 0.4, 0.52], ease: 'easeInOut' }}
+          transition={{ duration: 2.2, repeat: animated ? Infinity : 0, times: [0, 0.12, 0.4, 0.52], ease: 'easeInOut' }}
           style={{ transformOrigin: '60px 83px' }}
         >
           <path d="M60 84 L60 91" />
@@ -343,7 +348,7 @@ export function CoachMascot({
               cy={34 - i * 7}
               r={2.4 + i * 0.9}
               animate={{ opacity: [0.2, 1, 0.2] }}
-              transition={{ duration: 1.4, repeat: Infinity, delay: i * 0.25 }}
+              transition={{ duration: 1.4, repeat: animated ? Infinity : 0, delay: i * 0.25 }}
             />
           ))}
         </g>
@@ -357,7 +362,7 @@ export function CoachMascot({
               key={i}
               d={`M${p.x} ${p.y - 6 * p.s} L${p.x + 1.8 * p.s} ${p.y - 1.8 * p.s} L${p.x + 6 * p.s} ${p.y} L${p.x + 1.8 * p.s} ${p.y + 1.8 * p.s} L${p.x} ${p.y + 6 * p.s} L${p.x - 1.8 * p.s} ${p.y + 1.8 * p.s} L${p.x - 6 * p.s} ${p.y} L${p.x - 1.8 * p.s} ${p.y - 1.8 * p.s} Z`}
               animate={{ opacity: [0.3, 1, 0.3], scale: [0.85, 1.12, 0.85] }}
-              transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.4 }}
+              transition={{ duration: 1.5, repeat: animated ? Infinity : 0, delay: i * 0.4 }}
               style={{ transformOrigin: `${p.x}px ${p.y}px` }}
             />
           ))}
@@ -371,7 +376,7 @@ export function CoachMascot({
             <motion.g
               key={i}
               animate={{ y: [-2, -10], opacity: [0, 1, 0] }}
-              transition={{ duration: 2, repeat: Infinity, delay: i * 0.9 }}
+              transition={{ duration: 2, repeat: animated ? Infinity : 0, delay: i * 0.9 }}
             >
               <circle cx={16 + i * 8} cy={44 - i * 12} r="2.6" />
               <rect x={18 + i * 8} y={32 - i * 12} width="1.8" height="12" rx="0.9" />
@@ -389,11 +394,11 @@ export function CoachMascot({
         onClick={boop}
         className={cn('cursor-pointer select-none border-none bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-[#a78bfa]/60 rounded-full', className)}
         style={{ width: size, height: size }}
-        animate={booped ? { rotate: [0, -4, 4, -2, 0], y: [0, -4, 0, -2, 0], scale: [1, 1.05, 1] } : float ? { y: [0, -4, 0] } : { y: 0 }}
+        animate={booped ? { rotate: [0, -4, 4, -2, 0], y: [0, -4, 0, -2, 0], scale: [1, 1.05, 1] } : float && animated ? { y: [0, -4, 0] } : { y: 0 }}
         transition={booped
           ? { duration: 0.6, ease: 'easeOut' }
           : float
-            ? { duration: 3.4, repeat: Infinity, ease: 'easeInOut' }
+            ? { duration: 3.4, repeat: animated ? Infinity : 0, ease: 'easeInOut' }
             : undefined}
         whileTap={{ scale: 0.92 }}
         aria-label="Boop Aawax"
@@ -408,8 +413,8 @@ export function CoachMascot({
     <motion.div
       className={cn('pointer-events-none select-none', className)}
       style={{ width: size, height: size }}
-      animate={float ? { y: [0, -4, 0] } : undefined}
-      transition={float ? { duration: 3.4, repeat: Infinity, ease: 'easeInOut' } : undefined}
+      animate={float && animated ? { y: [0, -4, 0] } : undefined}
+      transition={float && animated ? { duration: 3.4, repeat: Infinity, ease: 'easeInOut' } : undefined}
       aria-hidden
     >
       {svg}
