@@ -19,23 +19,29 @@ const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 /** Gemini bills audio at ~32 tokens/second, so a long clip is still cheap. */
 const MAX_AUDIO_BYTES = 18 * 1024 * 1024;
 
-const VOCAL_PROMPT = `You are analysing ONLY the vocal delivery in this recording. You are not judging the words, the argument, or the structure — another system handles those.
+const VOCAL_PROMPT = `You are a vocal coach listening to a recording. Analyse ONLY how it was said — the words, argument and structure are handled elsewhere.
 
-Report on what can only be heard, never read:
+Listen closely and report on all of this:
 
-1. TONE — warm, flat, tense, detached, engaging? Does the voice invite the listener in or hold them at a distance?
-2. CONFIDENCE — does the speaker sound certain of what they are saying? Note upspeak (statements rising like questions), trailing off at the ends of sentences, or a voice that thins out on the important lines.
-3. ENERGY AND EMPHASIS — is there dynamic range, or is it delivered on one level? Do the key words actually land, or does everything get equal weight?
-4. AUDIBLE NERVES — shakiness, rushed breathing, throat-clearing, swallowing, or a voice that tightens under pressure.
-5. STANDOUT MOMENTS — name the strongest-sounding delivery and the weakest, with roughly when they occur.
+1. EMOTION — what does the speaker actually sound like they are feeling? Conviction, detachment, nerves, excitement, weariness, warmth? Does the emotion match the words, or is a serious point delivered casually, or an ordinary line oversold? Note where the emotion shifts during the recording.
+
+2. TONE AND WARMTH — does the voice invite the listener in or hold them at arm's length? Is it conversational, formal, stiff, or performative? Would a listener feel spoken TO or spoken AT?
+
+3. CONFIDENCE — do they sound certain? Listen specifically for upspeak (statements rising like questions), trailing off at sentence ends, a voice thinning on the important lines, or apologetic softening. Also name where they sound genuinely sure of themselves.
+
+4. ENERGY AND EMPHASIS — is there real dynamic range, or is it one level throughout? Quote the exact words that landed with weight, and name places where a key word passed by with no emphasis at all.
+
+5. AUDIBLE NERVES AND BREATH — shakiness, tight throat, audible swallowing, rushed or shallow breathing, clipped word endings, or a voice under strain. Say plainly if none of this is present.
+
+6. MOMENTS — name the single strongest-sounding stretch and the weakest, quoting the words and roughly when each occurs.
 
 Rules:
-- Judge delivery only. Ignore grammar, vocabulary, accent, and dialect entirely. A strong accent is NOT a delivery flaw and must never be described as one.
-- Be specific and concrete. "Trails off at the end of each point" is useful; "sounds nervous" is not.
-- Say plainly when something is delivered well. Do not manufacture problems that are not audible.
-- If the audio is too short or unclear to judge, say so rather than guessing.
+- Judge delivery only. Ignore grammar, vocabulary, accent and dialect entirely. A strong accent is NOT a delivery flaw and must never be described as one.
+- Quote actual words from the recording when describing a moment. "Your voice dropped on 'this matters most'" is useful; "sounds unconfident" is not.
+- Say plainly and specifically when something is delivered well. Do not manufacture problems that are not audible.
+- If the audio is too short or unclear to judge something, say so rather than guessing.
 
-Answer in under 180 words, as plain prose. No headings, no bullet points, no score.`;
+Write 250-350 words of plain prose. No headings, no bullet points, no score.`;
 
 export type VocalAnalysis = {
   text: string;
@@ -90,7 +96,8 @@ export async function analyseVocalDelivery(
       }],
       generationConfig: {
         temperature: 0.3,
-        maxOutputTokens: 500,
+        // Room for the full 250-350 word read without truncation.
+        maxOutputTokens: 1200,
       },
     }),
   });

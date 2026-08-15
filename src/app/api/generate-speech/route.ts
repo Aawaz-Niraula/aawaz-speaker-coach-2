@@ -1,7 +1,9 @@
-import { NextRequest } from 'next/server';
+import { randomUUID } from 'crypto';
+import { after, NextRequest } from 'next/server';
 
 import { getProviderErrorMessage, isAbortTimeout, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
 import { GuestLimitError, IdentityError, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
+import { insertGeneratedSpeech } from '@/lib/db';
 import { fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
@@ -141,7 +143,28 @@ Requirements:
 
       const speech = data.choices?.[0]?.message?.content || '';
       if (speech.trim()) {
-        return Response.json({ speech: speech.trim(), isGuest, guestRemaining });
+        const trimmed = speech.trim();
+        const speechId = randomUUID();
+
+        // Saved in the background: a storage failure must not cost the user
+        // the script they just waited for.
+        after(async () => {
+          try {
+            await insertGeneratedSpeech({
+              id: speechId,
+              user_id: userId,
+              topic,
+              template_id: template?.id ?? null,
+              template_label: template?.label ?? null,
+              word_count: trimmed.split(/\s+/).filter(Boolean).length,
+              speech: trimmed,
+            });
+          } catch (e) {
+            console.error('Failed to save generated speech in background:', e);
+          }
+        });
+
+        return Response.json({ speech: trimmed, speechId, isGuest, guestRemaining });
       }
 
       lastMessage = 'The AI returned an empty speech. Please try again.';

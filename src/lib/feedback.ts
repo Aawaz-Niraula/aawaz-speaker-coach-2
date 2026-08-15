@@ -74,9 +74,9 @@ export function scoreGrade(score: number) {
   if (score >= 90) return { label: 'Exceptional', tone: 'Stage-ready. Hold this standard.' };
   if (score >= 80) return { label: 'Commanding', tone: 'Strong work. Sharpen the last edges.' };
   if (score >= 70) return { label: 'Strong', tone: 'Solid control. Tighten the weak spots.' };
-  if (score >= 60) return { label: 'Competent', tone: 'It works. Now make it consistent.' };
-  if (score >= 45) return { label: 'Developing', tone: 'The bones are there. Drill the fixes.' };
-  if (score >= 30) return { label: 'Rough', tone: 'Structure first. Then everything else.' };
+  if (score >= 55) return { label: 'Competent', tone: 'It works. Now make it consistent.' };
+  if (score >= 40) return { label: 'Developing', tone: 'The bones are there. Drill the fixes.' };
+  if (score >= 25) return { label: 'Rough', tone: 'Structure first. Then everything else.' };
   return { label: 'Early Days', tone: 'Every speaker starts here. Run the fixes.' };
 }
 
