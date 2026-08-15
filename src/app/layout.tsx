@@ -1,10 +1,21 @@
 import type { Metadata, Viewport } from 'next';
-import { Cormorant_Garamond, DM_Mono, Manrope } from 'next/font/google';
+import { DM_Mono, Manrope } from 'next/font/google';
+import localFont from 'next/font/local';
 import './globals.css';
 
-const serif = Cormorant_Garamond({
-  subsets: ['latin'],
-  weight: ['500', '600', '700'],
+/*
+ * Cormorant Garamond is self-hosted rather than fetched from Google at build
+ * time. Google republished the family and the woff2 URLs Next.js had cached
+ * started returning 404, which failed the production build on unchanged code.
+ * Shipping the files removes that dependency: the build can no longer be
+ * broken by a third party rotating a filename.
+ */
+const serif = localFont({
+  src: [
+    { path: './fonts/cormorant-garamond-500.woff2', weight: '500', style: 'normal' },
+    { path: './fonts/cormorant-garamond-600.woff2', weight: '600', style: 'normal' },
+    { path: './fonts/cormorant-garamond-700.woff2', weight: '700', style: 'normal' },
+  ],
   variable: '--font-serif-next',
   display: 'swap',
 });
