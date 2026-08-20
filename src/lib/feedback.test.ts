@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { extractScore, parseFeedback, scoreGrade } from './feedback';
+import { extractScore, isCompleteFeedbackReport, parseFeedback, sanitizeModelReport, scoreGrade } from './feedback';
 
 /**
  * parseFeedback turns the model's report into everything the results card
@@ -40,6 +40,7 @@ Your evidence is real and cited, which most speeches skip.
 
 const DEEP_REPORT = `🎧 DELIVERY ANALYSIS
 • Speaking speed: 141 words/min
+• Pauses: You left deliberate gaps after each key point.
 • Delivery score: 78/100
 
 📐 MARK BREAKDOWN
@@ -122,6 +123,7 @@ describe('parseFeedback on the deep report', () => {
   it('reads the differently-headed analysis section', () => {
     expect(parsed.analysisItems).toEqual([
       { label: 'Speaking speed', value: '141 words/min' },
+      { label: 'Pauses', value: 'You left deliberate gaps after each key point.' },
     ]);
   });
 
@@ -165,6 +167,36 @@ describe('parseFeedback heading tolerance', () => {
     expect(parsed.markBreakdown).toEqual([]);
     expect(parsed.fixes).toEqual([]);
     expect(parsed.brutalFeedback).toBe('');
+  });
+
+  it('discards closed reasoning before a valid report', () => {
+    const parsed = parseFeedback(`<think>Private scoring notes that must never render.</think>\n\n${STANDARD_REPORT}`);
+    expect(parsed.score).toBe(84);
+    expect(parsed.rawText).toBe(STANDARD_REPORT);
+    expect(parsed.rawText).not.toContain('Private scoring notes');
+  });
+
+  it('recovers a valid report after an unterminated reasoning block', () => {
+    const parsed = parseFeedback(`<think>Private notes without a closing tag.\n\n${STANDARD_REPORT}`);
+    expect(parsed.score).toBe(84);
+    expect(parsed.analysisItems).toHaveLength(2);
+    expect(parsed.rawText.startsWith('📊 ANALYSIS')).toBe(true);
+  });
+
+  it('turns reasoning-only output into an empty safe value', () => {
+    expect(sanitizeModelReport('<think>Internal chain of thought only.')).toBe('');
+  });
+});
+
+describe('isCompleteFeedbackReport', () => {
+  it('accepts both complete standard and deep reports', () => {
+    expect(isCompleteFeedbackReport(STANDARD_REPORT)).toBe(true);
+    expect(isCompleteFeedbackReport(DEEP_REPORT)).toBe(true);
+  });
+
+  it('rejects prose and incomplete reports before they reach the UI', () => {
+    expect(isCompleteFeedbackReport('<think>Reasoning only.')).toBe(false);
+    expect(isCompleteFeedbackReport('📊 ANALYSIS\n• Speaking speed: 140 words/min')).toBe(false);
   });
 });
 

@@ -7,6 +7,7 @@ import { fetchWithRetryLimited } from '@/lib/fetch';
 import { analyseVocalDelivery, formatVocalForPrompt } from '@/lib/gemini';
 import { requireSameOrigin } from '@/lib/identity';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
+import { isCompleteFeedbackReport, sanitizeModelReport } from '@/lib/feedback';
 import { DELIVERY_SCHEME, formatSchemeForPrompt } from '@/lib/scoring';
 import { computeSpeechMetrics, formatMetricsForPrompt } from '@/lib/speech-metrics';
 import { GENERAL_RUBRIC, getSpeechTemplate } from '@/lib/speech-config';
@@ -193,6 +194,7 @@ Never contradict the other report: it judged WHAT was said, you are judging HOW 
 
     let analysisData: ChatCompletionData = {};
     let succeeded = false;
+    let validatedReport = '';
 
     for (const model of ANALYSIS_MODELS) {
       const res = await fetchWithRetryLimited('chat', 'https://api.deepinfra.com/v1/openai/chat/completions', {
@@ -203,6 +205,8 @@ Never contradict the other report: it judged WHAT was said, you are judging HOW 
         },
         body: JSON.stringify({
           model,
+          chat_template_kwargs: { thinking: false },
+          reasoning_effort: 'none',
           messages: [
             {
               role: 'system',
@@ -276,7 +280,7 @@ Transcript (for reference only — do not re-judge the content):
 ${transcript.slice(0, 4000)}`,
             },
           ],
-          max_tokens: 900,
+          max_tokens: 1100,
           temperature: 0.3,
         }),
       }, 0, 0, 60000).catch(() => null);
@@ -284,7 +288,9 @@ ${transcript.slice(0, 4000)}`,
       if (!res) continue;
 
       analysisData = (await res.json().catch(() => ({}))) as ChatCompletionData;
-      if (res.ok && analysisData.choices?.[0]?.message?.content) {
+      const candidate = sanitizeModelReport(analysisData.choices?.[0]?.message?.content || '');
+      if (res.ok && isCompleteFeedbackReport(candidate)) {
+        validatedReport = candidate;
         succeeded = true;
         break;
       }
@@ -297,7 +303,7 @@ ${transcript.slice(0, 4000)}`,
       );
     }
 
-    const report = analysisData.choices?.[0]?.message?.content ?? '';
+    const report = validatedReport;
 
     // Best effort: a failed save should not lose the report the user is about
     // to read. It is returned either way.
