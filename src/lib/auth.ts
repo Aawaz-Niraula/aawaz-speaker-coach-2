@@ -1,11 +1,13 @@
 import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 
+import {
+  ACCOUNT_PASSWORD_MAX_LENGTH,
+  ACCOUNT_PASSWORD_MIN_LENGTH,
+  ACCOUNT_PASSWORD_REQUIREMENTS,
+  isValidAccountPassword,
+} from '@/lib/account-validation';
 import { getAuthDb } from '@/lib/auth-db';
-
-function passwordHasLetterAndNumber(password: unknown) {
-  return typeof password === 'string' && /[A-Za-z]/.test(password) && /\d/.test(password);
-}
 
 function getAuthBaseURL() {
   if (process.env.BETTER_AUTH_URL) {
@@ -83,8 +85,8 @@ function createAuth() {
     trustedOrigins: getTrustedOrigins(),
     emailAndPassword: {
       enabled: true,
-      minPasswordLength: 6,
-      maxPasswordLength: 128,
+      minPasswordLength: ACCOUNT_PASSWORD_MIN_LENGTH,
+      maxPasswordLength: ACCOUNT_PASSWORD_MAX_LENGTH,
       requireEmailVerification: false,
       autoSignIn: true,
     },
@@ -114,9 +116,9 @@ function createAuth() {
           return;
         }
 
-        if (!passwordHasLetterAndNumber(ctx.body?.password)) {
+        if (!isValidAccountPassword(ctx.body?.password)) {
           throw new APIError('BAD_REQUEST', {
-            message: 'Password must include at least one letter and one number.',
+            message: ACCOUNT_PASSWORD_REQUIREMENTS,
           });
         }
       }),

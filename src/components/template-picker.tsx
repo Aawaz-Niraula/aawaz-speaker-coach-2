@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import * as Label from '@radix-ui/react-label';
 import * as Select from '@radix-ui/react-select';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, ChevronDown, ImageIcon, ScrollText, X } from 'lucide-react';
+import { Check, ChevronDown, ImageIcon, Lightbulb, ScrollText, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
 
 import { CoachMascot } from '@/components/mascot';
 import { Button } from '@/components/ui/button';
@@ -17,7 +18,7 @@ import { cn } from '@/lib/utils';
 function FormatViewer({ template, onClose }: { template: SpeechTemplate; onClose: () => void }) {
   const [failed, setFailed] = useState(false);
 
-  return (
+  return createPortal(
     <>
       <motion.button
         type="button"
@@ -75,7 +76,8 @@ function FormatViewer({ template, onClose }: { template: SpeechTemplate; onClose
           )}
         </div>
       </motion.div>
-    </>
+    </>,
+    document.body,
   );
 }
 
@@ -141,6 +143,8 @@ export function TemplatePicker({
 }) {
   const selected = SPEECH_TEMPLATES.find((item) => item.id === value) ?? null;
   const [formatOpen, setFormatOpen] = useState(false);
+  const [tipsOpen, setTipsOpen] = useState(false);
+  const tipsId = useId();
 
   return (
     <div className="grid gap-4">
@@ -151,6 +155,7 @@ export function TemplatePicker({
           value={value ?? DEFAULT_TEMPLATE_ID}
           onValueChange={(next) => {
             sfx.select();
+            setTipsOpen(false);
             onChange(next as SpeechTemplateId);
           }}
           disabled={disabled}
@@ -193,7 +198,16 @@ export function TemplatePicker({
             transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
             className="glass-edge relative overflow-hidden rounded-[24px] border border-[#a78bfa]/20 bg-[linear-gradient(135deg,rgba(167,139,250,0.08),rgba(249,168,212,0.05))] p-4 [backdrop-filter:blur(20px)_saturate(140%)] [-webkit-backdrop-filter:blur(20px)_saturate(140%)] sm:rounded-[28px] sm:p-6"
           >
-            <Button variant="secondary" size="icon" className="absolute right-3 top-3 z-10 h-8 w-8 sm:right-4 sm:top-4" onClick={() => onChange(null)} aria-label="Clear template">
+            <Button
+              variant="secondary"
+              size="icon"
+              className="absolute right-3 top-3 z-10 h-8 w-8 sm:right-4 sm:top-4"
+              onClick={() => {
+                setTipsOpen(false);
+                onChange(null);
+              }}
+              aria-label="Clear template"
+            >
               <X className="h-4 w-4" />
             </Button>
             <motion.div
@@ -211,34 +225,61 @@ export function TemplatePicker({
                   <p className="truncate font-mono text-[10px] uppercase tracking-[0.18em] text-[#857ca2]">{selected.rubricTitle}</p>
                 </div>
               </div>
-              <ul className="mt-4 grid gap-2 sm:grid-cols-2">
-                {selected.hints.map((rule, i) => (
-                  <motion.li
-                    key={`${selected.id}-${i}`}
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.035, duration: 0.18, ease: 'easeOut' }}
-                    className="flex items-start gap-2.5 rounded-[14px] border border-white/8 bg-[#0b0b12]/45 px-3 py-2.5 text-[13px] leading-relaxed text-[#e6e1f7]"
-                  >
-                    <span className="mt-1.5 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#f9a8d4]"></span>
-                    {rule}
-                  </motion.li>
-                ))}
-              </ul>
-              <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2.5">
-                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#857ca2]">The coach judges your speech against this rubric.</p>
+              <div className="mt-4 flex flex-col gap-2.5 min-[420px]:flex-row">
+                <button
+                  type="button"
+                  onClick={() => {
+                    sfx.pop();
+                    setTipsOpen((open) => !open);
+                  }}
+                  aria-expanded={tipsOpen}
+                  aria-controls={tipsId}
+                  className="group inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-full border border-white/12 bg-white/5 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[#ddd6fe] transition hover:border-white/25 hover:bg-white/10 hover:text-white sm:flex-none sm:px-5"
+                >
+                  <Lightbulb className="h-3.5 w-3.5 text-[#f9a8d4] transition-transform group-hover:scale-110" />
+                  {tipsOpen ? 'Hide tips' : 'View tips'}
+                  <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', tipsOpen && 'rotate-180')} />
+                </button>
                 <button
                   type="button"
                   onClick={() => {
                     sfx.pop();
                     setFormatOpen(true);
                   }}
-                  className="group inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#a78bfa]/30 bg-[#a78bfa]/10 px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#ddd6fe] transition hover:border-[#a78bfa]/55 hover:bg-[#a78bfa]/20 hover:text-white"
+                  className="group inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-full border border-[#a78bfa]/30 bg-[#a78bfa]/10 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[#ddd6fe] transition hover:border-[#a78bfa]/55 hover:bg-[#a78bfa]/20 hover:text-white sm:flex-none sm:px-5"
                 >
                   <ImageIcon className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
                   View format
                 </button>
               </div>
+              <AnimatePresence initial={false}>
+                {tipsOpen ? (
+                  <motion.div
+                    id={tipsId}
+                    key={`${selected.id}-tips`}
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                    className="overflow-hidden"
+                  >
+                    <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+                      {selected.hints.map((rule, i) => (
+                        <motion.li
+                          key={`${selected.id}-${i}`}
+                          initial={{ opacity: 0, y: 5 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: i * 0.035, duration: 0.18, ease: 'easeOut' }}
+                          className="flex items-start gap-2.5 rounded-[14px] border border-white/8 bg-[#0b0b12]/45 px-3 py-2.5 text-[13px] leading-relaxed text-[#e6e1f7]"
+                        >
+                          <span className="mt-1.5 block h-1.5 w-1.5 shrink-0 rounded-full bg-[#f9a8d4]"></span>
+                          {rule}
+                        </motion.li>
+                      ))}
+                    </ul>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
             </motion.div>
           </motion.div>
         ) : null}

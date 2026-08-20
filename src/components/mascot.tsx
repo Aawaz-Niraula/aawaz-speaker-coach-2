@@ -93,7 +93,7 @@ export function CoachMascot({
   /** Tappable: boops, squeaks, and briefly cheers. */
   interactive?: boolean;
   /** Used by the customizer preview to render a specific look. */
-  styleOverride?: Pick<AawaxStyle, 'design' | 'color'>;
+  styleOverride?: Partial<Pick<AawaxStyle, 'design' | 'color' | 'accessory'>>;
   /**
    * 0–1 mouth openness, for lip-syncing to real audio. When provided (with
    * mood 'talk') the mouth follows this value instead of looping on its own.
@@ -112,6 +112,7 @@ export function CoachMascot({
 
   const design = styleOverride?.design ?? style.design;
   const palette = AAWAX_COLORS[styleOverride?.color ?? style.color];
+  const accessory = styleOverride?.accessory ?? style.accessory;
   const body = BODY_SHAPES[design];
   const effectiveMood: RenderMood = booped ? 'pleased' : mood;
 
@@ -309,6 +310,46 @@ export function CoachMascot({
       ) : (
         <path d="M52 76 Q60 83 68 76" stroke="#2a2140" strokeWidth="3.4" fill="none" strokeLinecap="round" />
       )}
+
+      {/* dress-up accessories */}
+      {accessory === 'crown' ? (
+        <g stroke="#fff7c2" strokeWidth="1.6" strokeLinejoin="round">
+          <path d="M37 35 L34 16 L48 25 L60 8 L72 25 L86 16 L83 35 Z" fill="#facc15" />
+          <path d="M38 31 H82" stroke="#fb923c" strokeWidth="4" />
+          <circle cx="60" cy="20" r="3" fill="#f472b6" stroke="none" />
+        </g>
+      ) : accessory === 'glasses' ? (
+        <g stroke="#171224" strokeWidth="3" strokeLinejoin="round">
+          <rect x="31" y="53" width="25" height="17" rx="6" fill="#312e81" fillOpacity="0.82" />
+          <rect x="64" y="53" width="25" height="17" rx="6" fill="#312e81" fillOpacity="0.82" />
+          <path d="M56 59 Q60 56 64 59" fill="none" />
+          <path d="M31 58 L24 55 M89 58 L96 55" fill="none" strokeLinecap="round" />
+          <path d="M35 56 L44 65 M68 56 L77 65" stroke="#ffffff" strokeWidth="1.6" opacity="0.45" />
+        </g>
+      ) : accessory === 'party-hat' ? (
+        <g strokeLinejoin="round">
+          <path d="M39 39 L62 6 L78 40 Z" fill="#22d3ee" stroke="#ddd6fe" strokeWidth="1.5" />
+          <path d="M45 31 L72 23" stroke="#f472b6" strokeWidth="5" />
+          <circle cx="62" cy="6" r="5" fill="#fde047" />
+          <circle cx="55" cy="24" r="2.5" fill="#ffffff" />
+          <path d="M38 39 Q59 34 79 40" stroke="#a78bfa" strokeWidth="4" fill="none" strokeLinecap="round" />
+        </g>
+      ) : accessory === 'flower' ? (
+        <g>
+          {[0, 60, 120, 180, 240, 300].map((rotation) => (
+            <ellipse
+              key={rotation}
+              cx="91"
+              cy="27"
+              rx="4.5"
+              ry="9"
+              fill="#f9a8d4"
+              transform={`rotate(${rotation} 91 38)`}
+            />
+          ))}
+          <circle cx="91" cy="38" r="6" fill="#fde047" stroke="#fff7c2" strokeWidth="1.5" />
+        </g>
+      ) : null}
 
       {/* snake tongue flick */}
       {design === 'snake' && effectiveMood !== 'listen' && effectiveMood !== 'sing' ? (

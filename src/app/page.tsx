@@ -31,6 +31,7 @@ import { AawaxCompanion } from '@/components/aawax-companion';
 import { AawaxCustomizer } from '@/components/aawax-customizer';
 import { AudioPlayer } from '@/components/audio-player';
 import { FeedbackReport, CollapsibleSection } from '@/components/feedback-report';
+import { GuidedRehearsal, RehearsalReadyCard } from '@/components/guided-rehearsal';
 import { CoachMascot, MascotHint } from '@/components/mascot';
 import { AvatarCustomizer, ProfileAvatar } from '@/components/profile-avatar';
 import { ProgressChart } from '@/components/progress-chart';
@@ -40,11 +41,20 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog, type ConfirmRequest } from '@/components/ui/confirm-dialog';
 import { Eyebrow, Shell } from '@/components/ui/shell';
 import { authClient } from '@/lib/auth-client';
+import {
+  ACCOUNT_PASSWORD_MAX_LENGTH,
+  ACCOUNT_PASSWORD_MIN_LENGTH,
+  ACCOUNT_PASSWORD_REQUIREMENTS,
+  isValidAccountEmail,
+  isValidAccountPassword,
+  normalizeAccountEmail,
+} from '@/lib/account-validation';
 import { formatClock, formatHistoryDate, scoreColor } from '@/lib/feedback';
 import { requestJson } from '@/lib/request';
+import type { RehearsalScript } from '@/lib/rehearsal';
 import { sfx } from '@/lib/sound';
 import { DEFAULT_ACCENT, EXAMPLE_ACCENTS, getAvailableAccents, type ExampleAccent } from '@/lib/elevenlabs';
-import { DEFAULT_TEMPLATE_ID, type SpeechTemplateId } from '@/lib/speech-config';
+import { DEFAULT_TEMPLATE_ID, getSpeechTemplate, type SpeechTemplateId } from '@/lib/speech-config';
 import { cn } from '@/lib/utils';
 
 /* ── Types ───────────────────────────────────────────────────────── */
@@ -65,13 +75,14 @@ type GeneratedSpeechItem = {
   id: string;
   created_at: string;
   topic: string;
+  template_id: string | null;
   template_label: string | null;
   word_count: number | null;
   speech: string;
 };
 type HistoryResponse = { history?: SpeechHistoryItem[] };
 type AnalyzeResponse = HistoryResponse & { transcript?: string; feedback?: string; isGuest?: boolean; guestRemaining?: number | null };
-type SpeechResponse = { speech?: string; isGuest?: boolean; guestRemaining?: number | null };
+type SpeechResponse = { speech?: string; speechId?: string; isGuest?: boolean; guestRemaining?: number | null };
 type InsightsResponse = { insights?: string[]; weaknesses?: string[] };
 type AccountProfile = { providerId: string; accountId: string };
 type AuthStatus = { accountAuthEnabled: boolean; googleEnabled: boolean; message?: string };
@@ -107,10 +118,6 @@ const ANALYZE_STAGES = [
   'Coach is listening closely…',
   'Scoring against the rubric…',
 ];
-
-function isValidAccountPassword(password: string) {
-  return password.length > 5 && /[A-Za-z]/.test(password) && /\d/.test(password);
-}
 
 /* ── Small stable components ─────────────────────────────────────── */
 function ActionBar({
@@ -272,6 +279,9 @@ export default function Home() {
   const [topic, setTopic] = useState('');
   const [wordCount, setWordCount] = useState(180);
   const [speech, setSpeech] = useState('');
+  const [generatedSpeechId, setGeneratedSpeechId] = useState<string | null>(null);
+  const [activeRehearsal, setActiveRehearsal] = useState<RehearsalScript | null>(null);
+  const [rehearsalOpen, setRehearsalOpen] = useState(false);
   const [speechAudio, setSpeechAudio] = useState<SpeechAudioState>({ url: '', isLoading: false });
   const [exampleVoice, setExampleVoice] = useState<SpeechExampleVoice>('female');
   const [exampleAccent, setExampleAccent] = useState<ExampleAccent>(DEFAULT_ACCENT);
@@ -534,7 +544,7 @@ export default function Home() {
   };
 
   /* ── Recording ─────────────────────────────────────────────────── */
-  const startRecording = async () => {
+  const startRecording = async (source: 'coach' | 'rehearsal' = 'coach') => {
     if (!identityReady) {
       toast.error('Still warming up. Give it a second and try again.');
       return;
@@ -543,6 +553,11 @@ export default function Home() {
     if (!('MediaRecorder' in window) || !navigator.mediaDevices?.getUserMedia) {
       toast.error('Audio recording is not supported in this browser.');
       return;
+    }
+
+    if (source === 'coach') {
+      setActiveRehearsal(null);
+      setRehearsalOpen(false);
     }
 
     try {
@@ -583,7 +598,15 @@ export default function Home() {
 
         const form = new FormData();
         form.append('file', blob, 'speech.webm');
-        if (selectedTemplateId) form.append('templateId', selectedTemplateId);
+        const recordingTemplateId = source === 'rehearsal' && activeRehearsal
+          ? activeRehearsal.templateId
+          : selectedTemplateId;
+        if (recordingTemplateId) form.append('templateId', recordingTemplateId);
+        if (source === 'rehearsal' && activeRehearsal) {
+          form.append('rehearsalMode', 'guided-read');
+          form.append('sourceSpeechId', activeRehearsal.speechId);
+          form.append('referenceScript', activeRehearsal.script);
+        }
         try {
           const data = await requestJson<AnalyzeResponse>('/api/transcribe-analyze', { method: 'POST', body: form }, 300000);
           setTranscript(data.transcript || '');
@@ -668,6 +691,8 @@ export default function Home() {
     lastRecordingRef.current = null;
     setSeconds(0);
     setSelectedTemplateId(DEFAULT_TEMPLATE_ID);
+    setActiveRehearsal(null);
+    setRehearsalOpen(false);
     setIsRecording(false);
     setIsAnalyzing(false);
     toast.success('Fresh slate. Ready when you are.');
@@ -700,7 +725,7 @@ export default function Home() {
       return;
     }
 
-    const email = authEmail.trim();
+    const email = normalizeAccountEmail(authEmail);
     const password = authPassword;
     const name = authName.trim() || email.split('@')[0] || 'Aawaz User';
 
@@ -709,8 +734,13 @@ export default function Home() {
       return;
     }
 
+    if (!isValidAccountEmail(email)) {
+      toast.error('Enter a valid email address.');
+      return;
+    }
+
     if (authMode === 'sign-up' && !isValidAccountPassword(password)) {
-      toast.error('Password must be longer than 5 characters and include letters and numbers.');
+      toast.error(ACCOUNT_PASSWORD_REQUIREMENTS);
       return;
     }
 
@@ -725,6 +755,8 @@ export default function Home() {
       }
 
       await refetchSession();
+      setAuthEmail(email);
+      setAuthPassword('');
       setAuthGreetingMode(authMode);
       setAuthPromptOpen(false);
       toast.success(authMode === 'sign-up' ? 'Account created. Welcome to the stage.' : 'Signed in. Welcome back.');
@@ -837,6 +869,7 @@ export default function Home() {
     }
     setIsGenerating(true);
     setSpeech('');
+    setGeneratedSpeechId(null);
     if (speechAudioRef.current.url) URL.revokeObjectURL(speechAudioRef.current.url);
     setSpeechAudio({ url: '', isLoading: false });
     setError('');
@@ -847,6 +880,7 @@ export default function Home() {
         body: JSON.stringify({ topic, wordCount, templateId: speechTemplateId }),
       }, 300000);
       setSpeech(data.speech || '');
+      setGeneratedSpeechId(data.speechId || null);
       trackGuestUse(data.guestRemaining);
       sfx.success();
       toast.success('Script ready. Make it yours.');
@@ -861,6 +895,39 @@ export default function Home() {
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  const launchGuidedRehearsal = ({
+    speechId,
+    rehearsalTopic,
+    script,
+    templateId,
+  }: {
+    speechId: string;
+    rehearsalTopic: string;
+    script: string;
+    templateId?: string | null;
+  }) => {
+    const template = getSpeechTemplate(templateId);
+    if (!template || !script.trim()) {
+      toast.error('This script is not ready to rehearse.');
+      return;
+    }
+
+    const rehearsal: RehearsalScript = {
+      speechId,
+      topic: rehearsalTopic || 'Practice speech',
+      script,
+      templateId: template.id,
+      templateLabel: template.label,
+    };
+
+    setSelectedTemplateId(template.id);
+    setActiveRehearsal(rehearsal);
+    setRehearsalOpen(true);
+    switchTab('coach');
+    sfx.pop();
+    toast.success(`${template.label} selected. Your rehearsal is ready.`);
   };
 
   const generateSpeechAudio = async () => {
@@ -1064,7 +1131,14 @@ export default function Home() {
 
   /* ── Auth controls (shared between Account tab and modal) ──────── */
   const authControls = (
-    <div className="grid gap-4">
+    <form
+      className="grid gap-4"
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        void submitAuth();
+      }}
+    >
       <div className="inline-flex w-full rounded-full border border-white/10 bg-white/5 p-1">
         {(['sign-up', 'sign-in'] as const).map((mode) => (
           <button
@@ -1087,6 +1161,8 @@ export default function Home() {
           value={authName}
           onChange={(event) => setAuthName(event.target.value)}
           placeholder="Your name"
+          aria-label="Your name"
+          autoComplete="name"
           className="h-12 rounded-[18px] border border-white/12 bg-[#0b0b12]/60 px-4 text-sm text-[#f2efff] outline-none transition placeholder:text-[#857ca2] focus:border-[#a78bfa]/50"
         />
       ) : null}
@@ -1095,6 +1171,12 @@ export default function Home() {
         onChange={(event) => setAuthEmail(event.target.value)}
         placeholder="Email"
         type="email"
+        aria-label="Email"
+        autoComplete="email"
+        autoCapitalize="none"
+        inputMode="email"
+        spellCheck={false}
+        required
         className="h-12 rounded-[18px] border border-white/12 bg-[#0b0b12]/60 px-4 text-sm text-[#f2efff] outline-none transition placeholder:text-[#857ca2] focus:border-[#a78bfa]/50"
       />
       <input
@@ -1102,20 +1184,25 @@ export default function Home() {
         onChange={(event) => setAuthPassword(event.target.value)}
         placeholder="Password"
         type="password"
+        aria-label="Password"
+        autoComplete={authMode === 'sign-up' ? 'new-password' : 'current-password'}
+        minLength={ACCOUNT_PASSWORD_MIN_LENGTH}
+        maxLength={ACCOUNT_PASSWORD_MAX_LENGTH}
+        required
         className="h-12 rounded-[18px] border border-white/12 bg-[#0b0b12]/60 px-4 text-sm text-[#f2efff] outline-none transition placeholder:text-[#857ca2] focus:border-[#a78bfa]/50"
       />
       {authMode === 'sign-up' ? (
-        <p className="font-mono text-[11px] leading-5 text-[#857ca2]">Password must be longer than 5 characters and include letters and numbers.</p>
+        <p className="font-mono text-[11px] leading-5 text-[#857ca2]">{ACCOUNT_PASSWORD_REQUIREMENTS}</p>
       ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
-        <Button onClick={submitAuth} disabled={isAuthBusy} className="h-12 rounded-[18px] font-mono text-xs uppercase tracking-[0.22em]">
+        <Button type="submit" disabled={isAuthBusy} className="h-12 rounded-[18px] font-mono text-xs uppercase tracking-[0.22em]">
           {isAuthBusy ? 'Working…' : authMode === 'sign-up' ? 'Create' : 'Login'}
         </Button>
         <Button type="button" variant="secondary" onClick={signInWithGoogle} disabled={isAuthBusy} className="h-12 rounded-[18px] font-mono text-xs uppercase tracking-[0.18em]">
           Google
         </Button>
       </div>
-    </div>
+    </form>
   );
 
   /* ── Account panel ─────────────────────────────────────────────── */
@@ -1123,6 +1210,9 @@ export default function Home() {
     const createdAt = accountUser ? new Date(accountUser.createdAt) : null;
     const isNew = createdAt ? Date.now() - createdAt.getTime() < 120000 : false;
     const displayName = accountUser?.name || accountUser?.email?.split('@')[0] || 'Aawaz User';
+    const loginMethod = accountProfile?.providerId === 'credential'
+      ? 'Email'
+      : accountProfile?.providerId || 'Email';
     const greeting = authGreetingMode === 'sign-up' || (!authGreetingMode && isNew)
       ? `Welcome ${displayName}`
       : `Welcome back ${displayName}`;
@@ -1175,7 +1265,7 @@ export default function Home() {
                 { label: 'User name', value: displayName },
                 { label: 'User email', value: accountUser.email },
                 { label: 'Account created', value: createdDate },
-                { label: 'Login method', value: accountProfile?.providerId || 'email' },
+                { label: 'Login method', value: loginMethod },
               ].map((item) => (
                 <div key={item.label} className="rounded-[18px] border border-white/10 bg-white/4 p-4">
                   <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#857ca2]">{item.label}</div>
@@ -1484,7 +1574,7 @@ export default function Home() {
               animate={isRecording && !reduceMotion ? { scale: [1, 1.045, 1] } : { scale: 1 }}
               transition={isRecording ? { duration: 1.8, repeat: Infinity } : { type: 'spring', stiffness: 320, damping: 18 }}
               style={{ transformPerspective: 700 }}
-              onClick={isRecording ? stopRecording : startRecording}
+              onClick={isRecording ? stopRecording : () => void startRecording('coach')}
               disabled={isAnalyzing}
               className={cn(
                 'relative flex h-full w-full items-center justify-center rounded-full border transition-shadow disabled:opacity-60',
@@ -1539,11 +1629,11 @@ export default function Home() {
   );
 
   return (
-    <div className="min-h-screen overflow-x-hidden text-[#f2efff]">
+    <div className="min-h-screen overflow-x-hidden text-[#f2efff] md:h-screen md:overflow-hidden">
       <Toaster position="top-right" richColors theme="dark" />
-      <div className="mx-auto flex min-h-screen max-w-[1440px]">
+      <div className="mx-auto flex min-h-screen max-w-[1440px] md:h-full md:min-h-0" aria-hidden={rehearsalOpen || undefined}>
         {/* ── Desktop sidebar ─────────────────────────────── */}
-        <aside className="sticky top-0 hidden h-screen w-72 shrink-0 flex-col border-r border-white/8 p-5 md:flex lg:w-80">
+        <aside className="hidden h-full w-72 shrink-0 flex-col overflow-y-auto overscroll-contain border-r border-white/8 p-5 md:flex lg:w-80">
           <div className="flex items-center gap-3 rounded-[24px] border border-white/10 bg-[linear-gradient(135deg,rgba(167,139,250,0.14),rgba(249,168,212,0.12))] p-4">
             <CoachMascot mood="idle" size={52} float={false} interactive className="shrink-0" />
             <div className="min-w-0">
@@ -1613,7 +1703,7 @@ export default function Home() {
         </aside>
 
         {/* ── Main column ─────────────────────────────────── */}
-        <main className="min-w-0 flex-1 px-3 pb-28 pt-5 sm:px-4 md:px-6 md:pb-14 md:pt-8 lg:px-8">
+        <main className="min-w-0 flex-1 px-3 pb-28 pt-5 sm:px-4 md:h-full md:min-h-0 md:overflow-y-auto md:overscroll-contain md:px-6 md:pb-14 md:pt-8 lg:px-8">
           {/* Mobile brand bar */}
           <div className="mb-4 flex items-center justify-between gap-3 md:hidden">
             <div className="flex min-w-0 items-center gap-2">
@@ -1697,7 +1787,18 @@ export default function Home() {
               {/* ── Coach tab ───────────────────────────── */}
               {activeTab === 'coach' && (
                 <>
-                  <TemplatePicker value={selectedTemplateId} onChange={setSelectedTemplateId} disabled={isRecording || isAnalyzing} />
+                  {activeRehearsal ? (
+                    <RehearsalReadyCard
+                      rehearsal={activeRehearsal}
+                      onOpen={() => setRehearsalOpen(true)}
+                      onDismiss={() => {
+                        setRehearsalOpen(false);
+                        setActiveRehearsal(null);
+                      }}
+                      disabled={isAnalyzing}
+                    />
+                  ) : null}
+                  <TemplatePicker value={selectedTemplateId} onChange={setSelectedTemplateId} disabled={isRecording || isAnalyzing || Boolean(activeRehearsal)} />
                   {renderRecorderCard()}
 
                   <AnimatePresence>
@@ -1834,6 +1935,24 @@ export default function Home() {
                         </div>
                       ) : (
                         <>
+                          <div className="mb-4 rounded-[18px] border border-[#a78bfa]/22 bg-[linear-gradient(135deg,rgba(167,139,250,0.13),rgba(249,168,212,0.08))] p-3 sm:flex sm:items-center sm:justify-between sm:gap-4 sm:p-4">
+                            <div className="min-w-0">
+                              <p className="font-serif text-lg tracking-tight text-white">Ready to say it out loud?</p>
+                              <p className="mt-1 text-sm leading-6 text-[#a79dc8]">Open it in Coach with this same format and a line-following teleprompter.</p>
+                            </div>
+                            <Button
+                              onClick={() => launchGuidedRehearsal({
+                                speechId: generatedSpeechId || 'current-generated-speech',
+                                rehearsalTopic: topic,
+                                script: speech,
+                                templateId: speechTemplateId,
+                              })}
+                              className="mt-3 h-11 w-full shrink-0 rounded-[15px] px-5 font-mono text-[11px] uppercase tracking-[0.16em] sm:mt-0 sm:w-auto"
+                            >
+                              <Mic className="h-4 w-4" />
+                              Try this in Coach
+                            </Button>
+                          </div>
                           {renderSpeechAudioActions()}
                           <p className="whitespace-pre-wrap break-words text-[15px] leading-7 text-[#f2efff] sm:leading-8">{speech}</p>
                           <ActionBar text={speech} label="Speech" onRegenerate={generateSpeech} copyText={copyText} speakText={speakText} />
@@ -1944,6 +2063,18 @@ export default function Home() {
                                         <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-7 text-[#f2efff] sm:leading-8">
                                           {item.speech}
                                         </p>
+                                        <Button
+                                          onClick={() => launchGuidedRehearsal({
+                                            speechId: item.id,
+                                            rehearsalTopic: item.topic,
+                                            script: item.speech,
+                                            templateId: item.template_id,
+                                          })}
+                                          className="mt-4 h-11 w-full rounded-[15px] px-5 font-mono text-[11px] uppercase tracking-[0.16em] sm:w-auto"
+                                        >
+                                          <Mic className="h-4 w-4" />
+                                          Try this in Coach
+                                        </Button>
                                         <ActionBar text={item.speech} label="Speech" copyText={copyText} speakText={speakText} />
                                       </motion.div>
                                     ) : null}
@@ -2149,6 +2280,7 @@ export default function Home() {
       <nav
         className="gpu-layer fixed inset-x-0 bottom-0 z-40 border-t border-white/12 bg-[#0b0b14]/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_-22px_55px_rgba(2,6,23,0.55)] backdrop-blur-2xl md:hidden"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)', backdropFilter: 'blur(24px) saturate(140%)', WebkitBackdropFilter: 'blur(24px) saturate(140%)' }}
+        aria-hidden={rehearsalOpen || undefined}
       >
         <div className="mx-auto flex max-w-md items-stretch justify-around px-1 py-1.5">
           {navItems.map(({ id, label, icon: Icon }) => {
@@ -2223,7 +2355,18 @@ export default function Home() {
       <AawaxCustomizer open={customizeOpen} onClose={() => setCustomizeOpen(false)} />
       <AvatarCustomizer open={avatarCustomizeOpen} onClose={() => setAvatarCustomizeOpen(false)} />
 
-      {!customizeOpen && !avatarCustomizeOpen && !authPromptOpen && !confirmRequest && activeTab !== 'aawax' ? (
+      <GuidedRehearsal
+        open={rehearsalOpen}
+        rehearsal={activeRehearsal}
+        isRecording={isRecording}
+        seconds={seconds}
+        maxSeconds={MAX_RECORDING_SECONDS}
+        onStart={() => startRecording('rehearsal')}
+        onStop={stopRecording}
+        onClose={() => setRehearsalOpen(false)}
+      />
+
+      {!customizeOpen && !avatarCustomizeOpen && !authPromptOpen && !confirmRequest && !rehearsalOpen && activeTab !== 'aawax' ? (
         <AawaxCompanion
           activeTab={activeTab}
           onTabChange={switchTab}

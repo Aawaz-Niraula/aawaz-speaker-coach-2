@@ -7,10 +7,12 @@ import { Check, Dices, Volume2, VolumeX, X } from 'lucide-react';
 import { CoachMascot, useAawax, type MascotMood } from '@/components/mascot';
 import { Button } from '@/components/ui/button';
 import {
+  AAWAX_ACCESSORIES,
   AAWAX_COLOR_IDS,
   AAWAX_COLORS,
   AAWAX_DESIGNS,
   randomAawaxStyle,
+  type AawaxAccessoryId,
   type AawaxColorId,
   type AawaxDesignId,
 } from '@/lib/aawax';
@@ -39,6 +41,13 @@ export function AawaxCustomizer({ open, onClose }: { open: boolean; onClose: () 
     sfx.select();
     setSpinKey((k) => k + 1);
     setStyle({ ...style, color });
+  };
+
+  const pickAccessory = (accessory: AawaxAccessoryId) => {
+    if (accessory === style.accessory) return;
+    sfx.select();
+    setSpinKey((k) => k + 1);
+    setStyle({ ...style, accessory });
   };
 
   const shuffle = () => {
@@ -74,7 +83,7 @@ export function AawaxCustomizer({ open, onClose }: { open: boolean; onClose: () 
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 12 }}
             transition={{ type: 'spring', stiffness: 300, damping: 26 }}
-            className="fixed left-1/2 top-1/2 z-[61] max-h-[88vh] w-[94vw] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[28px] border border-white/10 bg-[#0d0c16]/96 p-5 shadow-[0_30px_90px_rgba(2,6,23,0.8)] backdrop-blur-xl sm:p-6"
+            className="fixed left-1/2 top-1/2 z-[61] max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overscroll-contain overflow-y-auto rounded-[24px] border border-white/10 bg-[#0d0c16]/96 p-4 shadow-[0_30px_90px_rgba(2,6,23,0.8)] backdrop-blur-xl sm:max-h-[88vh] sm:rounded-[28px] sm:p-6"
           >
             {/* header */}
             <div className="flex items-start justify-between gap-3">
@@ -95,7 +104,7 @@ export function AawaxCustomizer({ open, onClose }: { open: boolean; onClose: () 
             </div>
 
             {/* stage / preview */}
-            <div className="relative mt-4 flex flex-col items-center overflow-hidden rounded-[22px] border border-white/10 bg-[radial-gradient(ellipse_at_50%_120%,rgba(167,139,250,0.22),transparent_70%),linear-gradient(180deg,rgba(255,255,255,0.045),transparent)] py-6">
+            <div className="relative mt-4 flex flex-col items-center overflow-hidden rounded-[22px] border border-white/10 bg-[radial-gradient(ellipse_at_50%_120%,rgba(167,139,250,0.22),transparent_70%),linear-gradient(180deg,rgba(255,255,255,0.045),transparent)] py-4 sm:py-6">
               <motion.div
                 key={`${spinKey}-${previewMood}`}
                 initial={{ scale: 0.7, rotate: -8, opacity: 0.4 }}
@@ -130,7 +139,7 @@ export function AawaxCustomizer({ open, onClose }: { open: boolean; onClose: () 
                       mood="idle"
                       size={44}
                       float={false}
-                      styleOverride={{ design: design.id, color: style.color }}
+                      styleOverride={{ design: design.id, color: style.color, accessory: 'none' }}
                       className="transition-transform duration-200 group-hover:scale-110"
                     />
                     <span className={cn('font-mono text-[9px] uppercase tracking-[0.12em]', active ? 'text-[#ddd6fe]' : 'text-[#857ca2]')}>
@@ -143,7 +152,7 @@ export function AawaxCustomizer({ open, onClose }: { open: boolean; onClose: () 
 
             {/* color picker */}
             <p className="mt-5 font-mono text-[10px] uppercase tracking-[0.24em] text-[#ddd6fe]">Color</p>
-            <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
+            <div className="mt-2.5 grid grid-cols-5 gap-1.5 sm:gap-2">
               {AAWAX_COLOR_IDS.map((colorId) => {
                 const palette = AAWAX_COLORS[colorId];
                 const active = style.color === colorId;
@@ -153,15 +162,17 @@ export function AawaxCustomizer({ open, onClose }: { open: boolean; onClose: () 
                     type="button"
                     onClick={() => pickColor(colorId)}
                     className={cn(
-                      'relative flex h-11 w-11 items-center justify-center rounded-full transition-transform hover:scale-110',
-                      active && 'scale-110',
+                      'group relative flex min-w-0 flex-col items-center gap-1 rounded-[14px] border px-1 py-2 transition hover:border-white/25 hover:bg-white/6',
+                      active
+                        ? 'border-[#a78bfa]/50 bg-[#a78bfa]/10'
+                        : 'border-transparent',
                     )}
                     aria-pressed={active}
                     aria-label={`${palette.label} color`}
                     title={palette.label}
                   >
                     <span
-                      className="block h-9 w-9 rounded-full border-2 border-white/15 shadow-[0_4px_14px_rgba(0,0,0,0.4)]"
+                      className="block h-8 w-8 rounded-full border-2 border-white/15 shadow-[0_4px_14px_rgba(0,0,0,0.4)] transition-transform group-hover:scale-110 sm:h-9 sm:w-9"
                       style={{ background: `linear-gradient(135deg, ${palette.from}, ${palette.to})` }}
                     />
                     <AnimatePresence>
@@ -170,7 +181,7 @@ export function AawaxCustomizer({ open, onClose }: { open: boolean; onClose: () 
                           initial={{ scale: 0, opacity: 0 }}
                           animate={{ scale: 1, opacity: 1 }}
                           exit={{ scale: 0, opacity: 0 }}
-                          className="absolute inset-0 flex items-center justify-center"
+                          className="absolute left-1/2 top-2 flex h-8 w-8 -translate-x-1/2 items-center justify-center sm:h-9 sm:w-9"
                         >
                           <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#06060b]/80">
                             <Check className="h-3 w-3 text-white" />
@@ -178,13 +189,50 @@ export function AawaxCustomizer({ open, onClose }: { open: boolean; onClose: () 
                         </motion.span>
                       ) : null}
                     </AnimatePresence>
+                    <span className={cn('max-w-full truncate font-mono text-[7px] uppercase tracking-[0.06em] sm:text-[8px]', active ? 'text-[#ddd6fe]' : 'text-[#857ca2]')}>
+                      {palette.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* accessory picker */}
+            <p className="mt-5 font-mono text-[10px] uppercase tracking-[0.24em] text-[#ddd6fe]">Accessories</p>
+            <div className="mt-2.5 grid grid-cols-3 gap-2 sm:grid-cols-5">
+              {AAWAX_ACCESSORIES.map((accessory) => {
+                const active = style.accessory === accessory.id;
+                return (
+                  <button
+                    key={accessory.id}
+                    type="button"
+                    onClick={() => pickAccessory(accessory.id)}
+                    className={cn(
+                      'group flex min-w-0 flex-col items-center gap-1 rounded-[16px] border px-1.5 py-2 transition',
+                      active
+                        ? 'border-[#f9a8d4]/45 bg-[linear-gradient(135deg,rgba(249,168,212,0.14),rgba(167,139,250,0.10))]'
+                        : 'border-white/10 bg-white/4 hover:border-white/25 hover:bg-white/8',
+                    )}
+                    aria-pressed={active}
+                    aria-label={`${accessory.label} accessory`}
+                  >
+                    <CoachMascot
+                      mood="idle"
+                      size={42}
+                      float={false}
+                      styleOverride={{ design: style.design, color: style.color, accessory: accessory.id }}
+                      className="transition-transform duration-200 group-hover:scale-110"
+                    />
+                    <span className={cn('max-w-full truncate font-mono text-[8px] uppercase tracking-[0.08em]', active ? 'text-[#fce7f3]' : 'text-[#857ca2]')}>
+                      {accessory.label}
+                    </span>
                   </button>
                 );
               })}
             </div>
 
             {/* footer actions */}
-            <div className="mt-6 flex items-center gap-2.5 border-t border-white/10 pt-4">
+            <div className="mt-6 flex flex-col items-stretch gap-2.5 border-t border-white/10 pt-4 min-[390px]:flex-row min-[390px]:items-center">
               <Button variant="secondary" onClick={shuffle} className="h-11 flex-1 rounded-[16px] font-mono text-[11px] uppercase tracking-[0.16em]">
                 <Dices className="h-4 w-4" />
                 Surprise me
