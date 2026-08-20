@@ -215,12 +215,13 @@ export function FeedbackReport({
   }, [celebrate, highScore]);
 
   if (!hasSections) {
+    const safeFeedback = parsed.rawText || 'The coach could not format this report. Please try this recording again.';
     return (
       <Shell>
         <Eyebrow className="mb-3">Coach Verdict</Eyebrow>
-        <p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 text-[#f2efff] sm:leading-8">{renderWithELP(feedback, openELP)}</p>
+        <p className="whitespace-pre-wrap break-words font-mono text-sm leading-7 text-[#f2efff] sm:leading-8">{renderWithELP(safeFeedback, openELP)}</p>
         <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
-          <TextActions value={feedback} label="Feedback" copyText={copyText} speakText={speakText} />
+          <TextActions value={safeFeedback} label="Feedback" copyText={copyText} speakText={speakText} />
         </div>
         <AnimatePresence>{elpOpen && <ELPPopup onClose={() => setElpOpen(false)} />}</AnimatePresence>
       </Shell>

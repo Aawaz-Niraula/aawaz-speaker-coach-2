@@ -3,13 +3,12 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 /**
- * Unit tests only. Everything covered here is a pure function, so the suite
- * needs no network, no database and no browser — it runs in about a second and
- * is safe to run on every change.
+ * Fast isolated tests only. Pure functions and server-rendered component
+ * checks need no network, database, or browser, so this is safe on every change.
  */
 export default defineConfig({
   test: {
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.{ts,tsx}'],
     environment: 'node',
   },
   resolve: {

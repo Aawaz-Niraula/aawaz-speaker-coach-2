@@ -8,9 +8,35 @@ export type ParsedFeedback = {
   rawText: string;
 };
 
+const EMOJI_REPORT_START = /^\s*(?:📊\s*ANALYSIS|🎧\s*DELIVERY\s+ANALYSIS)\b/im;
+const PLAIN_REPORT_START = /^\s*(?:DELIVERY\s+)?ANALYSIS\s*$/im;
+
+/**
+ * Some fallback chat models can emit private reasoning inside <think> tags.
+ * A report must never display or persist that reasoning. Prefer the first
+ * actual report heading when one exists, then strip any remaining tags. An
+ * unterminated reasoning block with no report becomes an empty string so the
+ * UI can show a concise retry message instead of a wall of internal notes.
+ */
+export function sanitizeModelReport(text: string) {
+  const source = String(text || '').trim();
+  if (!source) return '';
+
+  const emojiStart = source.search(EMOJI_REPORT_START);
+  const plainStart = emojiStart < 0 ? source.search(PLAIN_REPORT_START) : -1;
+  const reportStart = emojiStart >= 0 ? emojiStart : plainStart;
+  const candidate = reportStart >= 0 ? source.slice(reportStart) : source;
+
+  return candidate
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<think>[\s\S]*$/gi, '')
+    .replace(/<\/?think>/gi, '')
+    .trim();
+}
+
 export function extractScore(text: string) {
   // "Overall score" on the standard report, "Delivery score" on the deep one.
-  const match = text.match(/(?:overall|delivery) score[:\s-]*(\d+)\/100/i);
+  const match = sanitizeModelReport(text).match(/(?:overall|delivery) score[:\s-]*(\d+)\/100/i);
   return match ? Number(match[1]) : null;
 }
 
@@ -22,10 +48,11 @@ export function extractScore(text: string) {
  * HONEST FEEDBACK" and still parse.
  */
 export function parseFeedback(text: string): ParsedFeedback {
-  const score = extractScore(text);
+  const cleanText = sanitizeModelReport(text);
+  const score = extractScore(cleanText);
 
   const analysisItems: { label: string; value: string }[] = [];
-  const analysisMatch = text.match(
+  const analysisMatch = cleanText.match(
     /(?:📊|🎧)?\s*(?:DELIVERY\s+)?ANALYSIS[:\s]*\n([\s\S]*?)(?=\n(?:📐|🔥|🎯|MARK BREAKDOWN|BRUTALLY|HONEST|WHAT YOUR VOICE)|$)/i,
   );
   if (analysisMatch) {
@@ -45,7 +72,7 @@ export function parseFeedback(text: string): ParsedFeedback {
   /* Marking scheme breakdown. Shows how the total was arrived at, so a score
      can be explained rather than taken on trust. */
   const markBreakdown: { label: string; value: string }[] = [];
-  const breakdownMatch = text.match(/(?:📐\s*)?MARK BREAKDOWN[:\s]*\n([\s\S]*?)(?=\n(?:🔥|🎯|⚠|HONEST|WHAT YOUR VOICE|In every row)|$)/i);
+  const breakdownMatch = cleanText.match(/(?:📐\s*)?MARK BREAKDOWN[:\s]*\n([\s\S]*?)(?=\n(?:🔥|🎯|⚠|HONEST|WHAT YOUR VOICE|In every row)|$)/i);
   if (breakdownMatch) {
     for (const line of breakdownMatch[1].split('\n')) {
       const row = line.replace(/^[•\-*]\s*/, '').trim();
@@ -63,7 +90,7 @@ export function parseFeedback(text: string): ParsedFeedback {
   }
 
   let brutalFeedback = '';
-  const bodyMatch = text.match(
+  const bodyMatch = cleanText.match(
     /(?:🔥\s*)?(?:BRUTALLY\s+)?HONEST FEEDBACK[:\s]*\n([\s\S]*?)(?=\n(?:🛠|3 SPECIFIC)|$)/i,
   );
   if (bodyMatch) {
@@ -71,13 +98,13 @@ export function parseFeedback(text: string): ParsedFeedback {
   } else {
     // Deep report: the prose is split across a strengths and a weaknesses
     // section. Join them so the card shows the whole picture.
-    const good = text.match(/(?:🎯\s*)?WHAT YOUR VOICE DID WELL[:\s]*\n([\s\S]*?)(?=\n(?:⚠️?|WHAT HELD|🎤|3 DELIVERY)|$)/i);
-    const bad = text.match(/(?:⚠️?\s*)?WHAT HELD IT BACK[:\s]*\n([\s\S]*?)(?=\n(?:🎤|3 DELIVERY)|$)/i);
+    const good = cleanText.match(/(?:🎯\s*)?WHAT YOUR VOICE DID WELL[:\s]*\n([\s\S]*?)(?=\n(?:⚠️?|WHAT HELD|🎤|3 DELIVERY)|$)/i);
+    const bad = cleanText.match(/(?:⚠️?\s*)?WHAT HELD IT BACK[:\s]*\n([\s\S]*?)(?=\n(?:🎤|3 DELIVERY)|$)/i);
     brutalFeedback = [good?.[1]?.trim(), bad?.[1]?.trim()].filter(Boolean).join('\n\n');
   }
 
   const fixes: string[] = [];
-  const fixesMatch = text.match(/(?:🛠️?|🎤)?\s*3 (?:SPECIFIC FIXES|DELIVERY DRILLS)[:\s]*\n([\s\S]*?)$/i);
+  const fixesMatch = cleanText.match(/(?:🛠️?|🎤)?\s*3 (?:SPECIFIC FIXES|DELIVERY DRILLS)[:\s]*\n([\s\S]*?)$/i);
   if (fixesMatch) {
     const fixLines = fixesMatch[1]
       .split('\n')
@@ -88,7 +115,19 @@ export function parseFeedback(text: string): ParsedFeedback {
     fixes.push(...fixLines.slice(0, 3));
   }
 
-  return { analysisItems, score, brutalFeedback, markBreakdown, fixes, rawText: text };
+  return { analysisItems, score, brutalFeedback, markBreakdown, fixes, rawText: cleanText };
+}
+
+/** Only complete reports are safe to save and hand to the structured UI. */
+export function isCompleteFeedbackReport(text: string) {
+  const parsed = parseFeedback(text);
+  return (
+    parsed.score !== null
+    && parsed.analysisItems.length >= 2
+    && parsed.markBreakdown.length > 0
+    && Boolean(parsed.brutalFeedback)
+    && parsed.fixes.length === 3
+  );
 }
 
 /** Bands mirror the scoring rules sent to the coach in the analysis prompt. */

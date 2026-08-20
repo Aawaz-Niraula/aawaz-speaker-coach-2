@@ -272,7 +272,11 @@ export default function Home() {
   const [deepAnalysis, setDeepAnalysis] = useState<string | null>(null);
   const [isGoingDeeper, setIsGoingDeeper] = useState(false);
   const [canGoDeeper, setCanGoDeeper] = useState(false);
-  const lastRecordingRef = useRef<{ blob: Blob; sessionId: string | null } | null>(null);
+  const lastRecordingRef = useRef<{
+    blob: Blob;
+    sessionId: string | null;
+    templateId: SpeechTemplateId | null;
+  } | null>(null);
   const [deletingSessionIds, setDeletingSessionIds] = useState<Set<string>>(new Set());
   const [selectedTemplateId, setSelectedTemplateId] = useState<SpeechTemplateId | null>(DEFAULT_TEMPLATE_ID);
   const [speechTemplateId, setSpeechTemplateId] = useState<SpeechTemplateId | null>(DEFAULT_TEMPLATE_ID);
@@ -616,7 +620,11 @@ export default function Home() {
           // Keep the recording in memory so "Go deeper" can re-read it for a
           // delivery report. It never touches the server unless the user asks,
           // and it is dropped as soon as they record again.
-          lastRecordingRef.current = { blob, sessionId: data.history?.[0]?.id ?? null };
+          lastRecordingRef.current = {
+            blob,
+            sessionId: data.history?.[0]?.id ?? null,
+            templateId: recordingTemplateId,
+          };
           setDeepAnalysis(null);
           setCanGoDeeper(true);
           trackGuestUse(data.guestRemaining);
@@ -835,7 +843,7 @@ export default function Home() {
     const form = new FormData();
     form.append('file', recording.blob, 'speech.webm');
     if (recording.sessionId) form.append('sessionId', recording.sessionId);
-    if (selectedTemplateId) form.append('templateId', selectedTemplateId);
+    if (recording.templateId) form.append('templateId', recording.templateId);
 
     try {
       const data = await requestJson<{ deepAnalysis?: string; degraded?: boolean }>(

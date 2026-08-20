@@ -8,7 +8,7 @@ import { insertSpeechSession, listRecentSpeechSessions } from '@/lib/db';
 import { fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
 import { formatSchemeForPrompt, getScoringScheme, totalFromBreakdown } from '@/lib/scoring';
-import { parseFeedback } from '@/lib/feedback';
+import { isCompleteFeedbackReport, parseFeedback, sanitizeModelReport } from '@/lib/feedback';
 import { computeSpeechMetrics, formatMetricsForPrompt } from '@/lib/speech-metrics';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
 import { GENERAL_RUBRIC, getSpeechTemplate } from '@/lib/speech-config';
@@ -33,7 +33,9 @@ function buildHistoryContext(history: Awaited<ReturnType<typeof listRecentSpeech
   return history
     .slice(0, 4)
     .map((session, index) => {
-      const feedbackSnippet = session.feedback.replace(/\s+/g, ' ').slice(0, 260);
+      const feedbackSnippet = (sanitizeModelReport(session.feedback) || 'Previous report unavailable.')
+        .replace(/\s+/g, ' ')
+        .slice(0, 260);
       return [
         `Session ${index + 1}:`,
         `- Date: ${session.created_at}`,
@@ -261,6 +263,7 @@ export async function POST(req: NextRequest) {
   let analysisStatus = 503;
   let analysisMessage: string | undefined;
   let analysisSucceeded = false;
+  let validatedFeedback = '';
 
   for (const model of ANALYSIS_MODELS) {
     const analysisRes = await fetchWithRetryLimited('chat', 'https://api.deepinfra.com/v1/openai/chat/completions', {
@@ -271,6 +274,10 @@ export async function POST(req: NextRequest) {
     },
     body: JSON.stringify({
       model,
+      // Fallback models can otherwise spend the whole response on private
+      // reasoning and never reach the report the UI is built to display.
+      chat_template_kwargs: { thinking: false },
+      reasoning_effort: 'none',
       messages: [
         {
           role: 'system',
@@ -378,7 +385,7 @@ Transcript:
 ${transcript}`,
         },
       ],
-      max_tokens: 900,
+      max_tokens: 1100,
       temperature: 0.3,
     }),
     }, 0, 0, 60000).catch(() => null);
@@ -406,6 +413,15 @@ ${transcript}`,
       break;
     }
 
+    const candidate = sanitizeModelReport(analysisData.choices?.[0]?.message?.content || '');
+    if (!isCompleteFeedbackReport(candidate)) {
+      analysisStatus = 503;
+      analysisMessage = 'The coach returned an incomplete report.';
+      if (model !== ANALYSIS_MODELS[ANALYSIS_MODELS.length - 1]) continue;
+      break;
+    }
+
+    validatedFeedback = candidate;
     analysisSucceeded = true;
     break;
   }
@@ -422,7 +438,7 @@ ${transcript}`,
     });
   }
 
-  const rawFeedback = analysisData.choices?.[0]?.message?.content || 'No feedback from coach.';
+  const rawFeedback = validatedFeedback;
   /* The prompt tells the model to copy the measured filler count verbatim,
      because left to itself it recounts from the transcript and contradicts the
      audio. That instruction sometimes survives into the reply, so strip it. */
