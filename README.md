@@ -20,9 +20,18 @@ Create a `.env.local` file with:
 DEEPINFRA_API_KEY=your_deepinfra_api_key
 TURSO_DATABASE_URL=your_turso_database_url
 TURSO_AUTH_TOKEN=your_turso_auth_token
+BETTER_AUTH_SECRET=a_long_random_secret
+BETTER_AUTH_URL=http://localhost:3000
+GOOGLE_CLIENT_ID=your_google_oauth_client_id
+GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
 ```
 
-You can also copy from `.env.example`.
+For Google sign-in, configure the OAuth client as a **Web application** and add these authorized redirect URIs:
+
+- `https://speaker-coach.aawax.me/api/auth/callback/google` for production
+- `http://localhost:3000/api/auth/callback/google` for local development
+
+Add the matching origins (`https://speaker-coach.aawax.me` and `http://localhost:3000`) under authorized JavaScript origins. The redirect URI must match exactly, including the protocol, hostname, port, and `/api/auth/callback/google` path.
 
 ## Turso setup
 
