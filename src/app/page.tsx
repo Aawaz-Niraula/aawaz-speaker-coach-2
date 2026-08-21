@@ -320,6 +320,7 @@ export default function Home() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const feedbackRef = useRef<HTMLDivElement | null>(null);
   const speechAudioRef = useRef(speechAudio);
+  const speechAudioAbortRef = useRef<AbortController | null>(null);
   const claimedForRef = useRef<string | null>(null);
 
   /* ── Identity bootstrap (server-issued guest cookie) ───────────── */
@@ -500,6 +501,7 @@ export default function Home() {
       if (timerRef.current) clearInterval(timerRef.current);
       mediaRecorderRef.current = null;
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      speechAudioAbortRef.current?.abort();
       if (speechAudioRef.current.url) URL.revokeObjectURL(speechAudioRef.current.url);
     };
   }, []);
@@ -868,6 +870,26 @@ export default function Home() {
   };
 
   /* ── Speech generation ─────────────────────────────────────────── */
+  const clearSpeechAudio = () => {
+    speechAudioAbortRef.current?.abort();
+    speechAudioAbortRef.current = null;
+    if (speechAudioRef.current.url) URL.revokeObjectURL(speechAudioRef.current.url);
+    const clearedAudio = { url: '', isLoading: false };
+    speechAudioRef.current = clearedAudio;
+    setSpeechAudio(clearedAudio);
+  };
+
+  const startNewSpeech = () => {
+    if (isGenerating) return;
+    clearSpeechAudio();
+    setSpeech('');
+    setGeneratedSpeechId(null);
+    setTopic('');
+    setError('');
+    sfx.select();
+    window.requestAnimationFrame(() => document.getElementById('speech-topic')?.focus());
+  };
+
   const generateSpeech = async () => {
     if (isGenerating) return;
 
@@ -878,8 +900,7 @@ export default function Home() {
     setIsGenerating(true);
     setSpeech('');
     setGeneratedSpeechId(null);
-    if (speechAudioRef.current.url) URL.revokeObjectURL(speechAudioRef.current.url);
-    setSpeechAudio({ url: '', isLoading: false });
+    clearSpeechAudio();
     setError('');
     try {
       const data = await requestJson<SpeechResponse>('/api/generate-speech', {
@@ -952,13 +973,13 @@ export default function Home() {
     form.append('exampleVoice', exampleVoice);
     form.append('exampleAccent', exampleAccent);
 
-    if (speechAudioRef.current.url) {
-      URL.revokeObjectURL(speechAudioRef.current.url);
-    }
-
-    setSpeechAudio({ url: '', isLoading: true });
+    clearSpeechAudio();
+    const loadingAudio = { url: '', isLoading: true };
+    speechAudioRef.current = loadingAudio;
+    setSpeechAudio(loadingAudio);
 
     const controller = new AbortController();
+    speechAudioAbortRef.current = controller;
     const timeout = window.setTimeout(() => controller.abort(), 300000);
 
     try {
@@ -985,6 +1006,7 @@ export default function Home() {
 
       const blob = await res.blob();
       if (!blob.size) throw new Error('The voice model returned an empty audio file.');
+      if (speechAudioAbortRef.current !== controller) return;
       const url = URL.createObjectURL(blob);
       setSpeechAudio((current) => {
         if (current.url) URL.revokeObjectURL(current.url);
@@ -994,6 +1016,7 @@ export default function Home() {
       sfx.pop();
       toast.success('Example speech ready.');
     } catch (err) {
+      if (controller.signal.aborted && speechAudioAbortRef.current !== controller) return;
       if (handleSpecialError(err)) {
         setSpeechAudio((current) => ({ ...current, isLoading: false }));
         return;
@@ -1008,6 +1031,7 @@ export default function Home() {
       setSpeechAudio((current) => ({ ...current, isLoading: false }));
     } finally {
       window.clearTimeout(timeout);
+      if (speechAudioAbortRef.current === controller) speechAudioAbortRef.current = null;
     }
   };
 
@@ -1929,9 +1953,21 @@ export default function Home() {
 
                   {(speech || isGenerating) && (
                     <Shell>
-                      <div className="mb-4 flex items-center justify-between">
+                      <div className="mb-4 flex items-center justify-between gap-3">
                         <Eyebrow>Sample Speech</Eyebrow>
-                        {!isGenerating && <Button variant="ghost" size="icon" onClick={generateSpeech} title="Regenerate speech"><RefreshCw className="h-4 w-4" /></Button>}
+                        {!isGenerating ? (
+                          <div className="flex shrink-0 items-center gap-2">
+                            <Button
+                              variant="secondary"
+                              onClick={startNewSpeech}
+                              className="h-11 rounded-[15px] px-3 font-mono text-[10px] uppercase tracking-[0.14em] sm:px-4"
+                            >
+                              <Plus className="h-4 w-4" />
+                              New speech
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={generateSpeech} className="h-11 w-11" title="Regenerate speech" aria-label="Regenerate speech"><RefreshCw className="h-4 w-4" /></Button>
+                          </div>
+                        ) : null}
                       </div>
                       {isGenerating ? (
                         <div className="flex items-start gap-4">
