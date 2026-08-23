@@ -196,7 +196,9 @@ export function TemplatePicker({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-            className="glass-edge relative overflow-hidden rounded-[24px] border border-[#a78bfa]/20 bg-[linear-gradient(135deg,rgba(167,139,250,0.08),rgba(249,168,212,0.05))] p-4 [backdrop-filter:blur(20px)_saturate(140%)] [-webkit-backdrop-filter:blur(20px)_saturate(140%)] sm:rounded-[28px] sm:p-6"
+            // glass-surface rather than an inline backdrop-filter: this card
+            // scrolls with the page, so the blur has to be droppable on touch.
+            className="glass-edge glass-surface relative overflow-hidden rounded-[24px] border border-[#a78bfa]/20 bg-[linear-gradient(135deg,rgba(167,139,250,0.08),rgba(249,168,212,0.05))] p-4 sm:rounded-[28px] sm:p-6"
           >
             <Button
               variant="secondary"

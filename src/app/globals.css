@@ -137,7 +137,10 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans-next, "Manrope"), "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+  /* text-rendering: optimizeLegibility is deliberately NOT set. It forces the
+     full kerning/ligature path on every text run, which is a measurable text
+     layout cost on phones and buys nothing here — browsers already kern
+     OpenType text by default. */
   overscroll-behavior-y: none;
   -webkit-tap-highlight-color: transparent;
 }
@@ -155,6 +158,44 @@ body {
 .gpu-layer {
   transform: translateZ(0);
   backface-visibility: hidden;
+}
+
+/* Fixed chrome that sits ON TOP of scrolling content: the mobile bottom nav
+   and the floating Aawax button.
+
+   This is the worst possible place for backdrop-filter. The element never
+   moves, but everything behind it does, so the compositor has to re-sample
+   and re-blur its whole backdrop on every single scroll frame — for the
+   entire time you are scrolling. `.glass-surface` already makes this trade
+   for cards; these two escaped it because their blur was written inline,
+   where no media query can reach it.
+
+   Pointer devices keep the blur. Touch devices get an opaque tint, which over
+   a dark backdrop is very close to identical and costs nothing per frame.
+
+   Only the standard property is authored below. Writing the -webkit- alias
+   alongside it makes the CSS build collapse the pair down to the alias alone,
+   and Chrome has since dropped -webkit-backdrop-filter, so the rule would
+   silently do nothing. Letting the build add prefixes keeps both. */
+.chrome-blur {
+  backdrop-filter: blur(24px) saturate(140%);
+}
+
+@media not all and (hover: hover) {
+  .chrome-blur {
+    backdrop-filter: none;
+    /* Fully opaque, not a high alpha. Translucency only reads as glass while
+       something is blurring behind it; with the blur gone, even 4% lets page
+       text ghost through the bar and just looks like a bug. */
+    background-color: var(--chrome-solid, #0c0c15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chrome-blur {
+    backdrop-filter: none;
+    background-color: var(--chrome-solid, #0c0c15);
+  }
 }
 
 /* Glass card surface.
@@ -190,11 +231,25 @@ body {
   }
 }
 
+/* ── Fixed background layers ───────────────────────────────────────────────
+   Every one of these is sized in viewport units, never in percentages.
+   A percentage inset on a fixed element resolves against the initial
+   containing block, which mobile browsers grow and shrink by 60–100px as the
+   URL bar hides and shows — continuously, while your finger is still on the
+   screen. Under `inset: -30%` that meant re-running a 60px blur and re-tiling
+   a noise texture in the middle of a drag, which is exactly what made
+   reversing scroll direction or holding a downward drag stutter. vw and vh
+   are pinned to the large viewport and never move, so these layers are
+   rasterised once and only ever composited after that. */
+
 /* Layered aurora backdrop */
 body::before {
   content: "";
   position: fixed;
-  inset: -20%;
+  top: -20vh;
+  left: -20vw;
+  width: 140vw;
+  height: 140vh;
   pointer-events: none;
   background:
     radial-gradient(ellipse 42% 34% at 18% 8%, rgba(167, 139, 250, 0.16), transparent 70%),
@@ -202,14 +257,19 @@ body::before {
     radial-gradient(ellipse 50% 40% at 50% 110%, rgba(124, 92, 222, 0.10), transparent 70%);
   z-index: -3;
   animation: aurora-drift 26s ease-in-out infinite alternate;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 /* Soft animated gradient mesh — drifting colour blobs give the dark backdrop
-   real depth so glass surfaces have something to refract. GPU-friendly
-   (transform/opacity only). Rendered via a div in the layout. */
+   real depth so glass surfaces have something to refract. Rendered via a div
+   in the layout. */
 .bg-mesh {
   position: fixed;
-  inset: -30%;
+  top: -30vh;
+  left: -30vw;
+  width: 160vw;
+  height: 160vh;
   z-index: -2;
   pointer-events: none;
   filter: blur(60px) saturate(125%);
@@ -221,6 +281,7 @@ body::before {
     radial-gradient(30% 26% at 30% 82%, rgba(221, 214, 254, 0.16), transparent 60%);
   animation: mesh-drift 30s var(--ease-spring) infinite alternate;
   will-change: transform;
+  backface-visibility: hidden;
 }
 
 @keyframes mesh-drift {
@@ -232,6 +293,51 @@ body::before {
   }
   100% {
     transform: translate3d(3%, -2%, 0) scale(1.04) rotate(-2deg);
+  }
+}
+
+/* Touch devices get the same look for a fraction of the cost.
+   Scaling or rotating a filtered layer re-rasterises the blur on every frame;
+   translating one is pure compositor work. The layer is also smaller and the
+   blur radius shorter, which matters because blur cost scales with area times
+   radius, and at this softness the difference is not visible. */
+@media not all and (hover: hover) {
+  body::before {
+    top: -12vh;
+    left: -12vw;
+    width: 124vw;
+    height: 124vh;
+    animation-name: aurora-drift-flat;
+  }
+
+  .bg-mesh {
+    top: -12vh;
+    left: -12vw;
+    width: 124vw;
+    height: 124vh;
+    filter: blur(40px) saturate(125%);
+    animation-name: mesh-drift-flat;
+  }
+}
+
+@keyframes mesh-drift-flat {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(-3%, 2%, 0);
+  }
+  100% {
+    transform: translate3d(3%, -2%, 0);
+  }
+}
+
+@keyframes aurora-drift-flat {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(2%, 3%, 0);
   }
 }
 
@@ -264,14 +370,20 @@ body::before {
   will-change: transform;
 }
 
-/* Fine grain so flat surfaces don't band */
+/* Fine grain so flat surfaces don't band. Same rule as above: viewport units,
+   and promoted so it composites with the page instead of repainting into it. */
 body::after {
   content: "";
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
   pointer-events: none;
   z-index: -1;
   opacity: 0.5;
+  transform: translateZ(0);
+  backface-visibility: hidden;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='0.045'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
