@@ -385,6 +385,35 @@ body::after {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='0.045'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
+/* Per-card paint cost on touch.
+
+   The two long views — a generated speech, a full evaluation report — put the
+   entire body of text inside ONE card, so that card is often three or four
+   thousand pixels tall. Two things are drawn across the whole of it:
+
+   - `.glass-edge::before`, the gradient hairline, which is a pseudo-element
+     covering the card and composited from two mask layers with xor;
+   - a `0 20px 70px` drop shadow, whose blur is rastered around the full
+     perimeter of that same very tall box.
+
+   Neither is noticeable on a short card. On a 4000px one, scrolling a new
+   strip into view means rasterising more of both, which is exactly the
+   "stutters when I scroll down slightly" on those views and nowhere else.
+
+   The hairline is replaced by an inset top highlight, which costs nothing and
+   keeps the lit-edge read, and the shadow is pulled in to a normal radius. */
+@media not all and (hover: hover) {
+  .glass-edge::before {
+    display: none;
+  }
+
+  .glass-surface {
+    box-shadow:
+      0 6px 18px rgba(2, 6, 23, 0.38),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  }
+}
+
 /* The rest of the touch budget. This block has to sit AFTER the rules it
    turns off — media queries add no specificity, so an override placed above
    its own target simply loses. */
