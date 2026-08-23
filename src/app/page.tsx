@@ -1662,13 +1662,22 @@ export default function Home() {
   );
 
   return (
-    /* min-h-svh, not min-h-screen. `100vh` on a phone is the URL-bar-hidden
-       height, so a short page was always ~80px taller than the visible area
-       and stayed scrollable with nothing to scroll to — every stray swipe
-       engaged the URL bar and its resize. svh is the visible height. */
-    <div className="min-h-svh overflow-x-hidden text-[#f2efff] md:h-screen md:overflow-hidden">
+    /* The document itself does not scroll — `<main>` does, at every width.
+       Desktop already worked this way and has been smooth throughout; mobile
+       scrolled the document, and that is the one difference that survives
+       every other fix. Scrolling the document on a phone is what drives the
+       URL bar, and a collapsing URL bar moves the visual viewport out from
+       under everything anchored to it, which reads as the layout jumping.
+       It also only ever happens on the views long enough to scroll, and mostly
+       downward, because browsers retract the bar gradually on the way down
+       and snap it back on the way up.
+
+       With a fixed-height shell and an inner scroller the bar never moves, so
+       there is nothing left to jump. The cost is that the URL bar now stays
+       on screen instead of hiding as you read. */
+    <div className="h-svh overflow-hidden text-[#f2efff]">
       <Toaster position="top-right" richColors theme="dark" />
-      <div className="mx-auto flex min-h-svh max-w-[1440px] md:h-full md:min-h-0" aria-hidden={rehearsalOpen || undefined}>
+      <div className="mx-auto flex h-full min-h-0 max-w-[1440px]" aria-hidden={rehearsalOpen || undefined}>
         {/* ── Desktop sidebar ─────────────────────────────── */}
         <aside className="hidden h-full w-72 shrink-0 flex-col overflow-y-auto overscroll-contain border-r border-white/8 p-5 md:flex lg:w-80">
           <div className="flex items-center gap-3 rounded-[24px] border border-white/10 bg-[linear-gradient(135deg,rgba(167,139,250,0.14),rgba(249,168,212,0.12))] p-4">
@@ -1740,7 +1749,7 @@ export default function Home() {
         </aside>
 
         {/* ── Main column ─────────────────────────────────── */}
-        <main className="min-w-0 flex-1 px-3 pb-28 pt-5 sm:px-4 md:h-full md:min-h-0 md:overflow-y-auto md:overscroll-contain md:px-6 md:pb-14 md:pt-8 lg:px-8">
+        <main className="aawax-scroll h-full min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-28 pt-5 sm:px-4 md:px-6 md:pb-14 md:pt-8 lg:px-8">
           {/* Mobile brand bar */}
           <div className="mb-4 flex items-center justify-between gap-3 md:hidden">
             <div className="flex min-w-0 items-center gap-2">
