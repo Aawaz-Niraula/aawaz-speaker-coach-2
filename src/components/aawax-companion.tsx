@@ -626,7 +626,9 @@ export function AawaxCompanion({ activeTab, onTabChange, onOpenChat, flags }: Aa
         animate={companionMotion.animate}
         transition={companionMotion.transition}
         whileTap={{ scale: 0.92 }}
-        className="gpu-layer fixed bottom-[calc(5.2rem+env(safe-area-inset-bottom))] right-3 z-30 flex h-14 w-14 items-center justify-center rounded-full border border-[#a78bfa]/30 bg-[#0d0c16]/90 text-[#ddd6fe] shadow-[0_16px_45px_rgba(2,6,23,0.5)] backdrop-blur-xl md:hidden"
+        // chrome-blur: fixed over scrolling content, so the blur is gated by a
+        // media query and dropped on touch. Same reason as the bottom nav.
+        className="gpu-layer chrome-blur fixed bottom-[calc(5.2rem+env(safe-area-inset-bottom))] right-3 z-30 flex h-14 w-14 items-center justify-center rounded-full border border-[#a78bfa]/30 bg-[#0d0c16]/90 text-[#ddd6fe] shadow-[0_16px_45px_rgba(2,6,23,0.5)] md:hidden"
         aria-label="Open Aawax chat"
       >
         <CoachMascot mood={mascotMood} size={42} float={false} />
@@ -644,7 +646,11 @@ export function AawaxCompanion({ activeTab, onTabChange, onOpenChat, flags }: Aa
               exit={{ opacity: 0 }}
               transition={{ duration: 0.25 }}
               onClick={completeTour}
-              className="fixed inset-0 z-[65] bg-[#06060b]/55 backdrop-blur-[2px]"
+              // The page still scrolls behind the tour, so a full-viewport
+              // backdrop-filter here would re-sample the whole screen every
+              // frame. A 2px blur was doing nothing a slightly deeper dim
+              // cannot do.
+              className="fixed inset-0 z-[65] bg-[#06060b]/65"
               aria-hidden
             />
 

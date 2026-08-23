@@ -480,7 +480,8 @@ export function MascotHint({
   return (
     <div className={cn('flex items-center gap-3 sm:gap-4', className)}>
       <CoachMascot mood={mood} size={size} className="shrink-0" />
-      <div className="relative min-w-0 rounded-2xl rounded-bl-md border border-white/10 bg-white/6 px-4 py-3 backdrop-blur-sm">
+      {/* No backdrop-blur: this bubble scrolls with the page. */}
+      <div className="relative min-w-0 rounded-2xl rounded-bl-md border border-white/10 bg-white/[0.08] px-4 py-3">
         {title ? <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.22em] text-[#ddd6fe]">{title}</p> : null}
         <div className="text-sm leading-6 text-[#cfc8e8]">{children}</div>
       </div>

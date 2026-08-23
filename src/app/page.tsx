@@ -166,7 +166,8 @@ function PopupIconButton({
       type="button"
       onClick={onClick}
       className={cn(
-        'flex h-9 w-9 items-center justify-center rounded-full border border-[#a78bfa]/30 bg-white/5 text-[#ddd6fe] shadow-[0_0_18px_rgba(167,139,250,0.22)] backdrop-blur-sm transition hover:bg-white/10 hover:text-[#f2efff]',
+        // Sits in the scrolling mobile header, so no backdrop-filter.
+        'flex h-9 w-9 items-center justify-center rounded-full border border-[#a78bfa]/30 bg-white/[0.07] text-[#ddd6fe] shadow-[0_0_18px_rgba(167,139,250,0.22)] transition hover:bg-white/10 hover:text-[#f2efff]',
         className,
       )}
       aria-label={label}
@@ -1661,9 +1662,13 @@ export default function Home() {
   );
 
   return (
-    <div className="min-h-screen overflow-x-hidden text-[#f2efff] md:h-screen md:overflow-hidden">
+    /* min-h-svh, not min-h-screen. `100vh` on a phone is the URL-bar-hidden
+       height, so a short page was always ~80px taller than the visible area
+       and stayed scrollable with nothing to scroll to — every stray swipe
+       engaged the URL bar and its resize. svh is the visible height. */
+    <div className="min-h-svh overflow-x-hidden text-[#f2efff] md:h-screen md:overflow-hidden">
       <Toaster position="top-right" richColors theme="dark" />
-      <div className="mx-auto flex min-h-screen max-w-[1440px] md:h-full md:min-h-0" aria-hidden={rehearsalOpen || undefined}>
+      <div className="mx-auto flex min-h-svh max-w-[1440px] md:h-full md:min-h-0" aria-hidden={rehearsalOpen || undefined}>
         {/* ── Desktop sidebar ─────────────────────────────── */}
         <aside className="hidden h-full w-72 shrink-0 flex-col overflow-y-auto overscroll-contain border-r border-white/8 p-5 md:flex lg:w-80">
           <div className="flex items-center gap-3 rounded-[24px] border border-white/10 bg-[linear-gradient(135deg,rgba(167,139,250,0.14),rgba(249,168,212,0.12))] p-4">
@@ -2320,10 +2325,14 @@ export default function Home() {
         </main>
       </div>
 
-      {/* ── Mobile bottom nav ───────────────────────────── */}
+      {/* ── Mobile bottom nav ─────────────────────────────
+          The blur lives in `.chrome-blur`, not in an inline style, so a media
+          query can reach it. A fixed blurred bar over scrolling content makes
+          the compositor re-sample its whole backdrop every scroll frame, so
+          touch devices get an opaque tint instead. */}
       <nav
-        className="gpu-layer fixed inset-x-0 bottom-0 z-40 border-t border-white/12 bg-[#0b0b14]/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_-22px_55px_rgba(2,6,23,0.55)] backdrop-blur-2xl md:hidden"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)', backdropFilter: 'blur(24px) saturate(140%)', WebkitBackdropFilter: 'blur(24px) saturate(140%)' }}
+        className="gpu-layer chrome-blur fixed inset-x-0 bottom-0 z-40 border-t border-white/12 bg-[#0b0b14]/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_-22px_55px_rgba(2,6,23,0.55)] md:hidden"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         aria-hidden={rehearsalOpen || undefined}
       >
         <div className="mx-auto flex max-w-md items-stretch justify-around px-1 py-1.5">

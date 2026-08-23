@@ -11,8 +11,12 @@ const buttonVariants = cva(
       variant: {
         primary:
           'bg-[linear-gradient(135deg,#a78bfa_0%,#f9a8d4_100%)] text-[#06060b] shadow-[0_14px_36px_rgba(167,139,250,0.30)] hover:shadow-[0_18px_46px_rgba(167,139,250,0.42)] hover:brightness-110',
+        // No backdrop-blur here. Secondary buttons scroll with the page and
+        // there are several on screen at once, and a backdrop-filter on a
+        // moving element is re-sampled every frame. At a 4px radius it was
+        // invisible anyway; a marginally denser tint reads the same.
         secondary:
-          'border border-white/10 bg-white/5 text-[#f2efff] backdrop-blur-sm hover:border-white/20 hover:bg-white/10',
+          'border border-white/10 bg-white/[0.07] text-[#f2efff] hover:border-white/20 hover:bg-white/10',
         ghost:
           'text-[#ddd6fe] hover:bg-white/10',
         danger:
