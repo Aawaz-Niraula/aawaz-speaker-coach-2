@@ -296,18 +296,28 @@ body::before {
   }
 }
 
-/* Touch devices get the same look for a fraction of the cost.
-   Scaling or rotating a filtered layer re-rasterises the blur on every frame;
-   translating one is pure compositor work. The layer is also smaller and the
-   blur radius shorter, which matters because blur cost scales with area times
-   radius, and at this softness the difference is not visible. */
+/* Touch devices: the backdrop stops moving and stops being blurred.
+
+   Making the drift translate-only was not enough. The layer still carried
+   `filter: blur(40px)` over roughly one and a half viewports, held live by
+   `will-change`, and it animated forever. On a phone that is a large permanent
+   texture plus a multi-pass blur that the compositor has to keep valid for the
+   entire life of the page, and it is competing with the scroll.
+
+   So on touch there is no filter, no animation and no promotion — the mesh
+   becomes an ordinary painted gradient. These are already soft radial
+   gradients fading to transparent, so dropping the blur costs very little;
+   the stops are widened and the opacity trimmed to make up the difference.
+   The drift is decorative and, at 30s, invisible during a scroll anyway. */
 @media not all and (hover: hover) {
   body::before {
     top: -12vh;
     left: -12vw;
     width: 124vw;
     height: 124vh;
-    animation-name: aurora-drift-flat;
+    animation: none;
+    transform: none;
+    will-change: auto;
   }
 
   .bg-mesh {
@@ -315,30 +325,18 @@ body::before {
     left: -12vw;
     width: 124vw;
     height: 124vh;
-    filter: blur(40px) saturate(125%);
-    animation-name: mesh-drift-flat;
+    filter: none;
+    animation: none;
+    transform: none;
+    will-change: auto;
+    opacity: 0.5;
+    background:
+      radial-gradient(52% 44% at 22% 28%, rgba(167, 139, 250, 0.26), transparent 78%),
+      radial-gradient(48% 42% at 80% 22%, rgba(249, 168, 212, 0.20), transparent 78%),
+      radial-gradient(54% 46% at 68% 78%, rgba(124, 92, 222, 0.22), transparent 80%),
+      radial-gradient(44% 38% at 30% 82%, rgba(221, 214, 254, 0.14), transparent 78%);
   }
-}
 
-@keyframes mesh-drift-flat {
-  0% {
-    transform: translate3d(0, 0, 0);
-  }
-  50% {
-    transform: translate3d(-3%, 2%, 0);
-  }
-  100% {
-    transform: translate3d(3%, -2%, 0);
-  }
-}
-
-@keyframes aurora-drift-flat {
-  0% {
-    transform: translate3d(0, 0, 0);
-  }
-  100% {
-    transform: translate3d(2%, 3%, 0);
-  }
 }
 
 /* Hero mic — layered glow halo that breathes. */
@@ -385,6 +383,26 @@ body::after {
   transform: translateZ(0);
   backface-visibility: hidden;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='0.045'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* The rest of the touch budget. This block has to sit AFTER the rules it
+   turns off — media queries add no specificity, so an override placed above
+   its own target simply loses. */
+@media not all and (hover: hover) {
+  /* A fixed, full-screen, high-frequency noise texture is the one layer where
+     a single pixel of compositor drift is plainly visible: fine grain sliding
+     under the content reads as the whole screen shimmering. It is there to
+     stop gradients banding, which the flattened mesh no longer does. */
+  body::after {
+    display: none;
+  }
+
+  /* Halo behind the record button: an infinite scale + opacity loop, held live
+     by will-change, on screen the entire time you are on the Coach tab. */
+  .mic-glow {
+    animation: none;
+    will-change: auto;
+  }
 }
 
 @keyframes aurora-drift {

@@ -11,6 +11,7 @@ import {
   type AawaxStyle,
 } from '@/lib/aawax';
 import { setSoundEnabled, sfx } from '@/lib/sound';
+import { useCoarsePointer } from '@/lib/use-coarse-pointer';
 import { cn } from '@/lib/utils';
 
 export type MascotMood =
@@ -110,6 +111,17 @@ export function CoachMascot({
   const reduceMotion = useReducedMotion();
   const animated = !reduceMotion;
 
+  /* `animated` is not enough on a phone. Framer Motion drives these from a
+     main-thread rAF loop that writes inline transforms on SVG nodes every
+     frame, forever — the antenna pulse and the float never stop, at any mood,
+     on every mascot on screen. That is main-thread work on precisely the
+     frames a touch scroll needs, which is why scrolling stuttered while
+     nothing appeared to be happening. Mood loops ('think', 'cheer', 'sing')
+     stay on: they are short-lived and they are real feedback. The two
+     permanent decorative loops come off. */
+  const coarsePointer = useCoarsePointer();
+  const idleAnimated = animated && !coarsePointer;
+
   const design = styleOverride?.design ?? style.design;
   const palette = AAWAX_COLORS[styleOverride?.color ?? style.color];
   const accessory = styleOverride?.accessory ?? style.accessory;
@@ -163,8 +175,12 @@ export function CoachMascot({
             cy="15"
             r="5"
             fill={effectiveMood === 'cheer' ? '#fde68a' : palette.to}
-            animate={effectiveMood === 'cheer' ? { scale: [1, 1.35, 1] } : { scale: [1, 1.12, 1] }}
-            transition={{ duration: effectiveMood === 'cheer' ? 0.7 : 2.4, repeat: animated ? Infinity : 0, ease: 'easeInOut' }}
+            /* The cheer pulse is a mood, so it survives on touch. The 2.4s
+               idle pulse is the one that ran forever on every mascot. */
+            animate={effectiveMood === 'cheer' ? { scale: [1, 1.35, 1] } : idleAnimated ? { scale: [1, 1.12, 1] } : { scale: 1 }}
+            transition={effectiveMood === 'cheer'
+              ? { duration: 0.7, repeat: animated ? Infinity : 0, ease: 'easeInOut' }
+              : { duration: 2.4, repeat: idleAnimated ? Infinity : 0, ease: 'easeInOut' }}
             style={{ transformOrigin: '70px 15px' }}
           />
         </g>
@@ -435,11 +451,11 @@ export function CoachMascot({
         onClick={boop}
         className={cn('cursor-pointer select-none border-none bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-[#a78bfa]/60 rounded-full', className)}
         style={{ width: size, height: size }}
-        animate={booped ? { rotate: [0, -4, 4, -2, 0], y: [0, -4, 0, -2, 0], scale: [1, 1.05, 1] } : float && animated ? { y: [0, -4, 0] } : { y: 0 }}
+        animate={booped ? { rotate: [0, -4, 4, -2, 0], y: [0, -4, 0, -2, 0], scale: [1, 1.05, 1] } : float && idleAnimated ? { y: [0, -4, 0] } : { y: 0 }}
         transition={booped
           ? { duration: 0.6, ease: 'easeOut' }
-          : float
-            ? { duration: 3.4, repeat: animated ? Infinity : 0, ease: 'easeInOut' }
+          : float && idleAnimated
+            ? { duration: 3.4, repeat: Infinity, ease: 'easeInOut' }
             : undefined}
         whileTap={{ scale: 0.92 }}
         aria-label="Boop Aawax"
@@ -454,8 +470,8 @@ export function CoachMascot({
     <motion.div
       className={cn('pointer-events-none select-none', className)}
       style={{ width: size, height: size }}
-      animate={float && animated ? { y: [0, -4, 0] } : undefined}
-      transition={float && animated ? { duration: 3.4, repeat: Infinity, ease: 'easeInOut' } : undefined}
+      animate={float && idleAnimated ? { y: [0, -4, 0] } : undefined}
+      transition={float && idleAnimated ? { duration: 3.4, repeat: Infinity, ease: 'easeInOut' } : undefined}
       aria-hidden
     >
       {svg}
