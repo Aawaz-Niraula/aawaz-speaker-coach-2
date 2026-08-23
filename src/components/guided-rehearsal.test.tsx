@@ -1,13 +1,15 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { RehearsalScript } from '@/lib/rehearsal';
+
 import { GuidedRehearsal } from './guided-rehearsal';
 
-const rehearsal = {
+const rehearsal: RehearsalScript = {
   speechId: 'test-speech',
   script: '[breathe] Begin with a clear idea. Then make the idea useful. End with one memorable action.',
   topic: 'A clear rehearsal',
-  templateId: 'general',
+  templateId: 'general-public-speaking',
   templateLabel: 'General Public Speaking',
 };
 
