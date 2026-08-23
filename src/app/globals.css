@@ -310,13 +310,22 @@ body::before {
    the stops are widened and the opacity trimmed to make up the difference.
    The drift is decorative and, at 30s, invisible during a scroll anyway. */
 @media not all and (hover: hover) {
+  /* Both of these stay promoted. Stopping the animation must NOT be done by
+     zeroing the transform: these are position:fixed and full-screen, so a
+     layer of their own is the only thing keeping them still while the document
+     scrolls underneath. Without it the browser has to repaint the whole
+     viewport on every scroll frame — which is worse than the animation ever
+     was, and worst going down, where mobile browsers slide the URL bar away
+     gradually instead of snapping it back the way they do on the way up.
+     translateZ(0) holds the layer; will-change is dropped because nothing
+     animates any more and it only costs memory to hint at it. */
   body::before {
     top: -12vh;
     left: -12vw;
     width: 124vw;
     height: 124vh;
     animation: none;
-    transform: none;
+    transform: translateZ(0);
     will-change: auto;
   }
 
@@ -327,7 +336,7 @@ body::before {
     height: 124vh;
     filter: none;
     animation: none;
-    transform: none;
+    transform: translateZ(0);
     will-change: auto;
     opacity: 0.5;
     background:
