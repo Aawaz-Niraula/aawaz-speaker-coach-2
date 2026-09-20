@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
-import { DailyQuotaError, GuestLimitError, IdentityError, dailyQuotaResponse, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
+import { DailyQuotaError, QuotaUnavailableError, quotaUnavailableResponse, GuestLimitError, IdentityError, consumeUsage, dailyQuotaResponse, guestLimitResponse, identityErrorResponse, resolveIdentity } from '@/lib/app-user';
+import { MAX_JSON_BYTES, readFormData } from '@/lib/body';
 import { fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
@@ -87,7 +88,10 @@ export async function POST(req: NextRequest) {
   if (originError) return originError;
 
   try {
-    const form = await req.formData();
+    // A script is a few kilobytes of text; the JSON cap is ample here too.
+    const { form, response: bodyError } = await readFormData(req, MAX_JSON_BYTES);
+    if (bodyError) return bodyError;
+
     const text = cleanText(form.get('text'));
     const requestedVoice = String(form.get('exampleVoice') || 'female') as ExampleVoice;
     const requestedAccent = String(form.get('exampleAccent') || DEFAULT_ACCENT) as ExampleAccent;
@@ -117,7 +121,8 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: 'Server configuration error: missing API key.' }, { status: 500 });
     }
 
-    const { userId } = await resolveAppUser(req, true, 'generate-speech-audio');
+    const identity = await resolveIdentity(req);
+    const { userId } = identity;
     const rateKey = `generate-speech-audio:${getClientKey(req, userId)}`;
     const rateLimit = checkRateLimit(rateKey, 8, 10 * 60 * 1000);
     if (!rateLimit.allowed) {
@@ -135,6 +140,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Charged only now, once every free check has passed: a request the
+    // limiter turns away never costs a database write or a unit of quota.
+    await consumeUsage(req, identity, 'generate-speech-audio');
+
     const audio = await synthesize(voiceId, text, ELEVENLABS_API_KEY);
 
     return new Response(audio, {
@@ -145,6 +154,7 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
+    if (error instanceof QuotaUnavailableError) return quotaUnavailableResponse();
     if (error instanceof DailyQuotaError) {
       return dailyQuotaResponse();
     }

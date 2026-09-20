@@ -1,0 +1,243 @@
+<template>
+  <div
+    data-composition-id="s5-teach"
+    data-width="1080"
+    data-height="1920"
+    data-duration="9.6"
+    style="position: absolute; inset: 0"
+  >
+    <style>
+      [data-composition-id="s5-teach"] {
+        --paper: #071A10;
+        --accent: #3DDC84;
+        --accent-dp: #12A45C;
+        --fg: #E6F5EA;
+      }
+      [data-composition-id="s5-teach"] .fill {
+        position: absolute;
+        inset: 0;
+        background: var(--paper);
+      }
+      [data-composition-id="s5-teach"] .glow {
+        position: absolute;
+        left: -15%;
+        top: 10%;
+        width: 130%;
+        height: 60%;
+        background: radial-gradient(ellipse at 50% 50%, rgba(61, 220, 132, 0.30), rgba(61, 220, 132, 0) 64%);
+      }
+      [data-composition-id="s5-teach"] .grid-bg {
+        position: absolute;
+        inset: 0;
+        background-image: linear-gradient(rgba(61, 220, 132, 0.10) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(61, 220, 132, 0.10) 1px, transparent 1px);
+        background-size: 108px 108px;
+      }
+      [data-composition-id="s5-teach"] .mathghost {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 4%;
+        text-align: center;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 96px;
+        font-weight: 700;
+        color: rgba(61, 220, 132, 0.17);
+      }
+
+      /* ── curriculum ladder (first half) ── */
+      [data-composition-id="s5-teach"] .ladder {
+        position: absolute;
+        left: 84px;
+        right: 84px;
+        top: 430px;
+        display: flex;
+        flex-direction: column;
+        gap: 26px;
+      }
+      [data-composition-id="s5-teach"] .step {
+        display: flex;
+        align-items: center;
+        gap: 28px;
+        background: #0C2317;
+        border: 2px solid rgba(61, 220, 132, 0.22);
+        border-radius: 22px;
+        padding: 30px 36px;
+        box-shadow: 0 12px 34px rgba(0, 0, 0, 0.45);
+      }
+      [data-composition-id="s5-teach"] .num {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 34px;
+        font-weight: 700;
+        color: #05100A;
+        background: var(--accent);
+        border-radius: 12px;
+        min-width: 64px;
+        height: 64px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex: none;
+      }
+      [data-composition-id="s5-teach"] .steptext {
+        font-family: "Archivo Black", sans-serif;
+        font-size: 50px;
+        letter-spacing: -0.03em;
+        color: var(--fg);
+        margin: 0;
+        line-height: 1.05;
+      }
+      [data-composition-id="s5-teach"] .kicker {
+        position: absolute;
+        left: 84px;
+        right: 84px;
+        top: 300px;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 34px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        color: var(--accent-dp);
+        margin: 0;
+        text-transform: uppercase;
+      }
+
+      /* ── photo montage (second half) ── */
+      [data-composition-id="s5-teach"] .stage {
+        position: absolute;
+        inset: 0;
+      }
+      [data-composition-id="s5-teach"] .shot {
+        position: absolute;
+        left: 70px;
+        top: 300px;
+        width: 940px;
+        height: 1250px;
+        border-radius: 26px;
+        overflow: hidden;
+        box-shadow: 0 26px 70px rgba(5, 16, 10, 0.3);
+        background: #05100A;
+      }
+      /* bias the crop upward — faces sit in the top half of these photos and a
+         centred cover crop slices heads off */
+      [data-composition-id="s5-teach"] .shot img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: 50% 32%;
+      }
+      /* the wide group shot must not be cropped to a sliver of faces */
+      [data-composition-id="s5-teach"] .shot img.contain {
+        object-fit: contain;
+        background: #05100A;
+      }
+      [data-composition-id="s5-teach"] .caption {
+        position: absolute;
+        left: 70px;
+        right: 70px;
+        bottom: 300px;
+        text-align: center;
+        font-family: "Archivo Black", sans-serif;
+        font-size: 68px;
+        letter-spacing: -0.03em;
+        color: var(--fg);
+        margin: 0;
+      }
+      [data-composition-id="s5-teach"] .caption .hi {
+        color: var(--accent-dp);
+      }
+    </style>
+
+    <div class="fill"></div>
+    <div class="glow" id="s5-glow"></div>
+    <div class="grid-bg" id="s5-grid"></div>
+    <div class="mathghost" id="s5-math">Σ w·x + b</div>
+
+    <p class="kicker" id="s5-kick">WHAT WE LEARN</p>
+    <div class="ladder">
+      <div class="step" id="s5-st1">
+        <span class="num">01</span>
+        <p class="steptext">The smallest algorithms</p>
+      </div>
+      <div class="step" id="s5-st2">
+        <span class="num">02</span>
+        <p class="steptext">How a network learns</p>
+      </div>
+      <div class="step" id="s5-st3">
+        <span class="num">03</span>
+        <p class="steptext">Attention, inside every chatbot</p>
+      </div>
+      <div class="step" id="s5-st4">
+        <span class="num">04</span>
+        <p class="steptext">How to stand up and explain it</p>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="shot" id="s5-sh1"><img src="assets/photos/p2.jpg" alt="" /></div>
+      <div class="shot" id="s5-sh2"><img src="assets/photos/p6.jpg" alt="" /></div>
+      <div class="shot" id="s5-sh3"><img src="assets/photos/p3.jpg" alt="" /></div>
+      <div class="shot" id="s5-sh4"><img src="assets/photos/p4.jpg" alt="" /></div>
+      <div class="shot" id="s5-sh5"><img src="assets/photos/p5.jpg" alt="" /></div>
+      <div class="shot" id="s5-sh6"><img src="assets/photos/p7.jpg" alt="" /></div>
+      <div class="shot" id="s5-sh7"><img src="assets/photos/p8.jpg" alt="" /></div>
+      <div class="shot" id="s5-sh8"><img src="assets/photos/p9.jpg" alt="" /></div>
+      <div class="shot" id="s5-sh9"><img class="contain" src="assets/photos/p1.jpg" alt="" /></div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      tl.fromTo("#s5-glow", { scale: 0.96, opacity: 0.8 }, { scale: 1.07, opacity: 1, duration: 4.8, ease: "sine.inOut", yoyo: true, repeat: 1 }, 0);
+      tl.fromTo("#s5-grid", { y: 0 }, { y: -80, duration: 9.6, ease: "none" }, 0);
+      tl.fromTo("#s5-math", { x: 16 }, { x: -16, duration: 9.6, ease: "sine.inOut" }, 0);
+
+      const steps = ["#s5-st1", "#s5-st2", "#s5-st3", "#s5-st4"];
+      const shots = ["#s5-sh1", "#s5-sh2", "#s5-sh3", "#s5-sh4", "#s5-sh5", "#s5-sh6", "#s5-sh7", "#s5-sh8", "#s5-sh9"];
+
+      tl.set(steps, { autoAlpha: 0 }, 0);
+      tl.set(shots, { autoAlpha: 0 }, 0);
+
+      // ── Ladder builds (0.0 – 3.4) ──
+      tl.fromTo("#s5-kick", { autoAlpha: 0, x: -24 }, { autoAlpha: 1, x: 0, duration: 0.42, ease: "power3.out" }, 0.15);
+      steps.forEach((sel, i) => {
+        tl.fromTo(sel, { y: 40, scale: 0.97 }, { y: 0, scale: 1, autoAlpha: 1, duration: 0.4, ease: "power3.out" }, 0.3 + i * 0.34);
+      });
+
+      // clear the ladder for the montage
+      tl.to(["#s5-kick", ".ladder"], { autoAlpha: 0, y: -30, duration: 0.35, ease: "power2.in" }, 2.9);
+
+      // ── Photo montage: one flip every 0.5s, snappier than a page turn ──
+      const START = 3.3;
+      const STEP = 0.5;
+      shots.forEach((sel, i) => {
+        const at = START + i * STEP;
+        // later photos stack above earlier ones so each new page lands ON TOP
+        // of the one it replaces, hiding it the way a real page turn would
+        tl.set(sel, { zIndex: 10 + i }, 0);
+        // each photo flips in like a turned page — fully opaque for its whole
+        // entrance so it covers the outgoing one instead of dissolving through it
+        tl.fromTo(
+          sel,
+          { autoAlpha: 1, rotationY: -46, scale: 0.94, x: 70, transformPerspective: 900 },
+          { autoAlpha: 1, rotationY: 0, scale: 1, x: 0, duration: 0.36, ease: "power3.out" },
+          at,
+        );
+        // the outgoing page is killed instantly once covered. a slow fade here
+        // cross-dissolves two photos and reads as a mistake, not a page turn
+        if (i < shots.length - 1) {
+          tl.set(sel, { autoAlpha: 0 }, at + STEP + 0.14);
+        }
+      });
+
+      // the group shot is the payoff, so it holds a beat longer than a cut but
+      // never long enough to feel stranded
+      const lastAt = START + (shots.length - 1) * STEP;
+      tl.to("#s5-sh9", { scale: 1.03, duration: 1.5, ease: "sine.out" }, lastAt + 0.3);
+      tl.to("#s5-sh9", { autoAlpha: 0, duration: 0.4, ease: "power2.in" }, lastAt + 1.8);
+
+      window.__timelines["s5-teach"] = tl;
+    </script>
+  </div>
+</template>

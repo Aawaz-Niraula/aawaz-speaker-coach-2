@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 
 import { auth } from '@/lib/auth';
-import { ensureAuthSchema } from '@/lib/db';
+import { ensureSchema } from '@/lib/db';
+import { enforceRateLimit } from '@/lib/rate-limit';
 
 export async function GET(req: NextRequest) {
   const session = await auth.api.getSession({ headers: req.headers });
@@ -9,7 +10,10 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const db = await ensureAuthSchema();
+  const limited = enforceRateLimit(req, session.user.id, { name: 'account:profile', limit: 60, windowMs: 60 * 1000 });
+  if (limited) return limited;
+
+  const db = await ensureSchema();
   if (!db) {
     return Response.json({ account: null });
   }

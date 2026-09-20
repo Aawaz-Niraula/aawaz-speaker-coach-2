@@ -1,0 +1,191 @@
+<template>
+  <div
+    data-composition-id="s6-proof"
+    data-width="1080"
+    data-height="1920"
+    data-duration="8.1"
+    style="position: absolute; inset: 0"
+  >
+    <style>
+      [data-composition-id="s6-proof"] {
+        --paper: #071A10;
+        --accent: #3DDC84;
+        --accent-dp: #12A45C;
+        --fg: #E6F5EA;
+      }
+      [data-composition-id="s6-proof"] .fill {
+        position: absolute;
+        inset: 0;
+        background: var(--paper);
+      }
+      [data-composition-id="s6-proof"] .glow {
+        position: absolute;
+        left: -15%;
+        top: 14%;
+        width: 130%;
+        height: 58%;
+        background: radial-gradient(ellipse at 50% 50%, rgba(61, 220, 132, 0.28), rgba(61, 220, 132, 0) 63%);
+      }
+      [data-composition-id="s6-proof"] .grid-bg {
+        position: absolute;
+        inset: 0;
+        background-image: linear-gradient(rgba(61, 220, 132, 0.10) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(61, 220, 132, 0.10) 1px, transparent 1px);
+        background-size: 108px 108px;
+      }
+      /* dimmed photo grid behind the numbers — the proof under the claim */
+      [data-composition-id="s6-proof"] .photogrid {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        grid-template-rows: repeat(3, 1fr);
+        gap: 10px;
+        padding: 10px;
+        box-sizing: border-box;
+      }
+      [data-composition-id="s6-proof"] .photogrid img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: 12px;
+        filter: saturate(0.75) brightness(0.85);
+      }
+      [data-composition-id="s6-proof"] .veil {
+        position: absolute;
+        inset: 0;
+        background: rgba(5, 16, 10, 0.72);
+      }
+
+      [data-composition-id="s6-proof"] .center {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 30px;
+        padding: 0 84px;
+        box-sizing: border-box;
+      }
+      [data-composition-id="s6-proof"] .statblock {
+        text-align: center;
+      }
+      /* both counters share one optical size so 9 and 500 read as a pair */
+      [data-composition-id="s6-proof"] .num {
+        font-family: "Archivo Black", sans-serif;
+        font-size: 220px;
+        line-height: 0.9;
+        letter-spacing: -0.05em;
+        color: var(--accent-dp);
+        margin: 0;
+        font-variant-numeric: tabular-nums;
+      }
+      [data-composition-id="s6-proof"] .num .plus {
+        font-size: 130px;
+        vertical-align: super;
+      }
+      [data-composition-id="s6-proof"] .cap {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 40px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        color: var(--fg);
+        margin: 10px 0 0 0;
+        text-transform: uppercase;
+      }
+      [data-composition-id="s6-proof"] .free {
+        display: block;
+        font-family: "Archivo Black", sans-serif;
+        font-size: 92px;
+        letter-spacing: -0.035em;
+        color: var(--fg);
+        margin: 0;
+        text-align: center;
+        line-height: 1.04;
+      }
+      [data-composition-id="s6-proof"] .free .hi {
+        color: var(--accent-dp);
+      }
+      [data-composition-id="s6-proof"] .subfree {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 34px;
+        font-weight: 700;
+        color: rgba(5, 16, 10, 0.6);
+        margin: 14px 0 0 0;
+        text-align: center;
+        letter-spacing: 0.06em;
+      }
+    </style>
+
+    <div class="fill"></div>
+    <div class="photogrid" id="s6-pg">
+      <img src="assets/photos/p1.jpg" alt="" />
+      <img src="assets/photos/p2.jpg" alt="" />
+      <img src="assets/photos/p3.jpg" alt="" />
+      <img src="assets/photos/p4.jpg" alt="" />
+      <img src="assets/photos/p5.jpg" alt="" />
+      <img src="assets/photos/p6.jpg" alt="" />
+      <img src="assets/photos/p7.jpg" alt="" />
+      <img src="assets/photos/p8.jpg" alt="" />
+      <img src="assets/photos/p9.jpg" alt="" />
+    </div>
+    <div class="veil"></div>
+    <div class="glow" id="s6-glow"></div>
+    <div class="grid-bg" id="s6-grid"></div>
+
+    <div class="center">
+      <div class="statblock" id="s6-b1">
+        <p class="num"><span id="s6-n1">0</span></p>
+        <p class="cap">Schools reached</p>
+      </div>
+      <div class="statblock" id="s6-b2">
+        <p class="num"><span id="s6-n2">0</span><span class="plus">+</span></p>
+        <p class="cap">Students taught</p>
+      </div>
+      <div id="s6-b3">
+        <p class="free">Completely <span class="hi">free</span>.</p>
+        <p class="subfree">SCHOOLS PAY NOTHING</p>
+      </div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      tl.fromTo("#s6-glow", { scale: 0.96, opacity: 0.8 }, { scale: 1.07, opacity: 1, duration: 4.05, ease: "sine.inOut", yoyo: true, repeat: 1 }, 0);
+      tl.fromTo("#s6-grid", { y: 0 }, { y: -54, duration: 8.1, ease: "none" }, 0);
+      tl.fromTo("#s6-pg", { scale: 1.06 }, { scale: 1, duration: 8.1, ease: "sine.out" }, 0);
+
+      tl.set(["#s6-b1", "#s6-b2", "#s6-b3"], { autoAlpha: 0 }, 0);
+
+      function countUp(sel, to, at, dur) {
+        const o = { v: 0 };
+        tl.to(o, {
+          v: to,
+          duration: dur,
+          ease: "power2.out",
+          onUpdate() {
+            document.querySelector(sel).textContent = Math.round(o.v);
+          },
+        }, at);
+      }
+
+      // 9 schools
+      tl.fromTo("#s6-b1", { y: 40, scale: 0.94 }, { y: 0, scale: 1, autoAlpha: 1, duration: 0.5, ease: "back.out(1.7)" }, 0.3);
+      countUp("#s6-n1", 9, 0.45, 0.9);
+
+      // 500+ students
+      tl.fromTo("#s6-b2", { y: 40, scale: 0.94 }, { y: 0, scale: 1, autoAlpha: 1, duration: 0.5, ease: "back.out(1.7)" }, 2.2);
+      countUp("#s6-n2", 500, 2.35, 1.2);
+
+      // free
+      tl.fromTo("#s6-b3", { y: 36 }, { y: 0, autoAlpha: 1, duration: 0.5, ease: "power3.out" }, 4.4);
+
+      tl.to(".center", { autoAlpha: 0, y: -28, duration: 0.45, ease: "power2.in" }, 7.6);
+
+      window.__timelines["s6-proof"] = tl;
+    </script>
+  </div>
+</template>

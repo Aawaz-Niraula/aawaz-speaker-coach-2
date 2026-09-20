@@ -1,12 +1,18 @@
 import { NextRequest } from 'next/server';
 
 import { IdentityError, resolveAppUser } from '@/lib/app-user';
-import { deleteSpeechSession, listRecentSpeechSessions } from '@/lib/db';
+import { isSafeId, readJsonObject } from '@/lib/body';
+import { deleteSpeechSessionAndList, listRecentSpeechSessions } from '@/lib/db';
 import { requireSameOrigin } from '@/lib/identity';
+import { enforceRateLimit } from '@/lib/rate-limit';
 
 export async function GET(req: NextRequest) {
   try {
     const { userId } = await resolveAppUser(req, false);
+
+    const limited = enforceRateLimit(req, userId, { name: 'history:get', limit: 120, windowMs: 60 * 1000 });
+    if (limited) return limited;
+
     const history = await listRecentSpeechSessions(userId);
     return Response.json({ history });
   } catch (error) {
@@ -22,10 +28,11 @@ export async function DELETE(req: NextRequest) {
   const originError = requireSameOrigin(req);
   if (originError) return originError;
 
-  const body = await req.json().catch(() => null) as { sessionId?: unknown } | null;
-  const sessionId = typeof body?.sessionId === 'string' ? body.sessionId.trim().slice(0, 128) : '';
+  const { body, response } = await readJsonObject(req);
+  if (response) return response;
 
-  if (!sessionId) {
+  const sessionId = body.sessionId;
+  if (!isSafeId(sessionId)) {
     return Response.json({ ok: false, error: 'Missing sessionId.' }, { status: 400 });
   }
 
@@ -39,8 +46,11 @@ export async function DELETE(req: NextRequest) {
     throw error;
   }
 
-  const deleted = await deleteSpeechSession(userId, sessionId);
-  const history = await listRecentSpeechSessions(userId);
+  const limited = enforceRateLimit(req, userId, { name: 'history:delete', limit: 60, windowMs: 15 * 60 * 1000 });
+  if (limited) return limited;
+
+  // The delete and the refreshed list travel in one round trip.
+  const { deleted, history } = await deleteSpeechSessionAndList(userId, sessionId);
 
   if (!deleted) {
     return Response.json({ ok: false, error: 'Could not delete session.', history }, { status: 404 });

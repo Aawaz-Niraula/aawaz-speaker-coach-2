@@ -1,0 +1,21 @@
+<svg id="assembleLogo" viewBox="0 0 420 300" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="DECLARE logo assembling">
+  <!-- Exact brand blue from the source logo. Do not recolour. -->
+  <g stroke="#4EA9F0" stroke-width="15" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- antenna -->
+    <path id="pt-antenna" d="M210 18 L210 52"/>
+    <!-- head outline, drawn as one continuous rounded rect -->
+    <path id="pt-head" d="M138 52 h144 a26 26 0 0 1 26 26 v104 a26 26 0 0 1 -26 26 h-144 a26 26 0 0 1 -26 -26 v-104 a26 26 0 0 1 26 -26 z"/>
+    <!-- ear bars -->
+    <path id="pt-ear-l" d="M84 96 L84 148"/>
+    <path id="pt-ear-r" d="M336 96 L336 148"/>
+    <!-- mouth divider -->
+    <path id="pt-mouth" d="M112 150 L308 150"/>
+    <!-- speech bubble tail -->
+    <path id="pt-tail" d="M186 206 L210 250 L234 206"/>
+  </g>
+  <!-- eyes, filled not stroked -->
+  <g fill="#4EA9F0">
+    <circle id="pt-eye-l" cx="176" cy="112" r="13"/>
+    <circle id="pt-eye-r" cx="244" cy="112" r="13"/>
+  </g>
+</svg>

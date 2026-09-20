@@ -1,0 +1,788 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DECLARE · AI literacy workshops for Nepali schools</title>
+<meta name="description" content="A student led campaign teaching students how AI actually works. Free workshops in Nepali schools. 9 schools, 500+ students so far.">
+<meta property="og:title" content="DECLARE · We teach students how AI actually works">
+<meta property="og:description" content="Free AI literacy workshops in Nepali schools. 9 schools, 500+ students.">
+<meta property="og:image" content="img/school-1.webp">
+<meta property="og:type" content="website">
+<link rel="icon" href="img/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;1,6..72,300;1,6..72,400&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --black:#080B09;
+  --black-2:#0E1310;
+  --line-d:rgba(255,255,255,.11);
+  --white:#FFFFFF;
+  --off:#F1F4F2;
+  --line-l:#E2E7E4;
+  --green:#00C853;
+  --green-ink:#0A7A38;
+  --fg-d:#F4F8F5;
+  --mut-d:#8FA396;
+  --fg-l:#080B09;
+  --mut-l:#5A6B61;
+  --display:'Archivo',system-ui,sans-serif;
+  --serif:'Newsreader',Georgia,serif;
+  --mono:'Roboto Mono',ui-monospace,monospace;
+  --wrap:1240px;
+  --e:cubic-bezier(.16,1,.3,1);
+}
+*,*::before,*::after{box-sizing:border-box}
+html{
+  scroll-behavior:smooth;background:var(--black);
+  -webkit-text-size-adjust:100%;text-size-adjust:100%;
+  scroll-padding-top:76px;
+}
+body{
+  margin:0;background:var(--black);color:var(--fg-d);
+  font-family:var(--display);font-weight:400;font-size:17px;line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+  /* clip, not hidden: hidden propagates a scroll container to the viewport and
+     upsets position:sticky on iOS. clip contains the overflow without one. */
+  overflow-x:clip;
+  -webkit-tap-highlight-color:transparent;
+}
+@supports not (overflow:clip){body{overflow-x:hidden}}
+img{max-width:100%;display:block}
+p{margin:0}
+a{color:inherit;text-decoration:none;touch-action:manipulation}
+button{touch-action:manipulation}
+.wrap{max-width:var(--wrap);margin:0 auto;padding:0 28px}
+h1,h2,h3{margin:0;font-family:var(--display);font-weight:900;letter-spacing:-.045em;line-height:.92}
+.mega{font-size:clamp(52px,11.5vw,168px);text-transform:uppercase}
+.big{font-size:clamp(38px,6.6vw,92px);text-transform:uppercase}
+.tag{
+  font-family:var(--mono);font-size:11px;letter-spacing:.3em;text-transform:uppercase;
+  color:var(--green);margin:0 0 22px;display:block;
+}
+.tag--l{color:var(--green-ink)}
+.lede{font-family:var(--serif);font-weight:300;font-size:clamp(19px,2.3vw,27px);line-height:1.5;color:var(--mut-d);max-width:34ch}
+.lede--l{color:var(--mut-l)}
+em{font-family:var(--serif);font-style:italic;font-weight:300;text-transform:none;letter-spacing:-.02em}
+:where(a,button):focus-visible{outline:3px solid var(--green);outline-offset:4px;border-radius:4px}
+
+/* No mix-blend-mode here. A blended fixed layer forces the whole page to be
+   re-composited on every scroll frame, which is what wrecks scrolling on
+   phones. The two light sections flip the nav colour with a class instead. */
+.nav{
+  position:fixed;top:0;left:0;right:0;z-index:60;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:18px 28px;color:#fff;pointer-events:none;
+  transition:color .3s var(--e);
+}
+.nav a{pointer-events:auto}
+.nav.is-light{color:var(--fg-l)}
+.nav__b{font-family:var(--mono);font-size:12px;letter-spacing:.26em;color:currentColor;text-transform:uppercase}
+.nav__r{display:flex;gap:26px;align-items:center}
+.nav__r a{font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:currentColor;opacity:.62;transition:opacity .2s}
+.nav.is-light .nav__r a{opacity:.72}
+@media(max-width:760px){.nav__r a:not(.nav__book){display:none}.nav{padding:14px 20px}}
+
+.rail{
+  position:fixed;top:0;left:0;right:0;height:2px;background:var(--green);z-index:70;
+  transform:scaleX(0);transform-origin:0 50%;will-change:transform;pointer-events:none;
+}
+
+/* 1. assemble hero
+   The sticky panel is sized in svh, the *small* viewport height. dvh would
+   relayout on every frame the mobile URL bar animates, and vh leaves the
+   bottom of the panel under the bar. svh never changes, so the panel is
+   dead still while you scroll. The strip below it is the same black. */
+.assemble{position:relative;height:400vh;background:var(--black)}
+.assemble__s{position:sticky;top:0;height:100vh;height:100svh;overflow:hidden;display:grid;place-items:center}
+.assemble__grid{
+  position:absolute;inset:0;opacity:.5;
+  background-image:linear-gradient(var(--line-d) 1px,transparent 1px),linear-gradient(90deg,var(--line-d) 1px,transparent 1px);
+  background-size:88px 88px;
+  -webkit-mask-image:radial-gradient(ellipse 65% 55% at 50% 50%,#000 30%,transparent 78%);
+  mask-image:radial-gradient(ellipse 65% 55% at 50% 50%,#000 30%,transparent 78%);
+  transform:translateZ(0);backface-visibility:hidden;
+}
+.assemble__glow{
+  position:absolute;left:50%;top:50%;width:min(70vw,780px);aspect-ratio:1;
+  transform:translate(-50%,-50%) translateZ(0);border-radius:50%;
+  background:radial-gradient(circle,rgba(0,200,83,.16),transparent 66%);
+  opacity:0;
+}
+#assembleLogo{width:min(56vw,440px);height:auto;overflow:visible;position:relative;z-index:2;transform:scale(.92)}
+/* will-change only while the hero is actually on screen, so phones are not
+   holding these layers in memory for the whole page. */
+.assemble.hot .assemble__grid{will-change:transform}
+.assemble.hot .assemble__glow{will-change:opacity}
+.assemble.hot #assembleLogo{will-change:transform}
+.assemble__cap{
+  position:absolute;left:0;right:0;bottom:9%;text-align:center;z-index:3;
+  font-family:var(--mono);font-size:11px;letter-spacing:.3em;text-transform:uppercase;color:var(--mut-d);
+}
+.assemble__word{
+  position:absolute;left:0;right:0;top:calc(50% + min(28vw,225px));text-align:center;z-index:3;
+  font-family:var(--display);font-weight:900;letter-spacing:.5em;
+  font-size:clamp(20px,4.2vw,50px);color:#fff;opacity:0;text-transform:uppercase;
+  contain:layout style;
+}
+
+/* 2. statement */
+.state{background:var(--black);padding:22vh 0}
+.state h2{color:#fff}
+.state .l{display:block;overflow:hidden}
+.state .l>span{display:block;transform:translateY(105%)}
+.state__note{margin-top:44px;max-width:40ch}
+
+/* 3. gap + charts */
+.gap{background:var(--off);color:var(--fg-l);padding:16vh 0}
+.gap h2{color:var(--fg-l)}
+.chartwrap{margin-top:70px;display:grid;grid-template-columns:1.25fr .75fr;gap:60px;align-items:end}
+@media(max-width:900px){.chartwrap{grid-template-columns:1fr;gap:52px;align-items:start}}
+.cols{display:flex;align-items:flex-end;gap:clamp(20px,5vw,64px);height:340px}
+@media(max-width:560px){.cols{height:240px}}
+.col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%}
+.col__v{font-family:var(--display);font-weight:900;font-size:clamp(26px,4.4vw,58px);letter-spacing:-.04em;line-height:1.02;margin-bottom:14px;color:var(--green-ink);text-align:center;font-variant-numeric:tabular-nums}
+.col__v.dim{color:#8A9992;font-size:clamp(20px,3vw,34px)}
+/* Grown with scaleY rather than height: animating height relayouts the whole
+   column for 1.5s, right as the section scrolls into view. */
+.col__bar{
+  width:100%;border-radius:8px 8px 0 0;background:var(--green);
+  height:var(--h,0%);transform:scaleY(0);transform-origin:50% 100%;
+  transition:transform 1.4s var(--e);
+}
+.col__bar.grew{transform:none}
+.col__bar.dim{background:#C6D0CA}
+.col__l{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--mut-l);margin-top:16px;text-align:center}
+.donut{display:flex;flex-direction:column;align-items:center;gap:18px}
+.donut svg{width:min(70vw,220px);height:auto}
+.donut__t{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--mut-l);text-align:center;max-width:26ch;line-height:1.7}
+.ring-bg{fill:none;stroke:#DDE4E0;stroke-width:14}
+.ring-fg{fill:none;stroke:var(--green);stroke-width:14;stroke-linecap:round;stroke-dasharray:314.16 314.16;stroke-dashoffset:314.16;transform:rotate(-90deg);transform-origin:center;transition:stroke-dashoffset 1.6s var(--e)}
+.donut__n{font-family:var(--display);font-weight:900;font-size:46px;letter-spacing:-.04em;fill:var(--fg-l)}
+.src{font-family:var(--mono);font-size:11px;line-height:1.85;color:#7C8B83;margin-top:56px;max-width:78ch}
+
+/* 4. horizontal curriculum */
+.track{background:var(--black);position:relative;height:340vh}
+.track__s{position:sticky;top:0;height:100vh;height:100svh;overflow:hidden;display:flex;flex-direction:column;justify-content:center}
+.track__h{padding:0 28px;max-width:var(--wrap);margin:0 auto 46px;width:100%}
+.track__rail{display:flex;gap:26px;padding:0 28px;transform:translate3d(0,0,0)}
+.track.hot .track__rail{will-change:transform}
+.card{
+  flex:0 0 min(78vw,430px);background:var(--black-2);border:1px solid var(--line-d);
+  border-radius:20px;padding:40px 36px;min-height:380px;display:flex;flex-direction:column;
+}
+.card__n{font-family:var(--mono);font-size:11px;letter-spacing:.24em;color:var(--green);margin-bottom:auto}
+.card h3{font-size:clamp(25px,3.2vw,38px);color:#fff;margin:44px 0 16px;text-transform:uppercase}
+.card p{color:var(--mut-d);font-size:16px;line-height:1.62}
+.card__f{margin-top:26px;font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:#5E7266;text-transform:uppercase}
+
+/* 5. bento proof */
+.proof{background:var(--black);padding:16vh 0}
+.bento{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:64px}
+.tile{
+  background:var(--black-2);border:1px solid var(--line-d);border-radius:20px;
+  padding:38px 30px;display:flex;flex-direction:column;justify-content:space-between;min-height:220px;
+  transition:border-color .3s var(--e),background .3s var(--e);
+}
+.tile--wide{grid-column:span 2}
+.tile--photo{padding:0;overflow:hidden;position:relative;min-height:220px}
+.tile--photo img{width:100%;height:100%;object-fit:cover;position:absolute;inset:0;transition:transform .8s var(--e)}
+.tile__n{font-family:var(--display);font-weight:900;font-size:clamp(44px,5.6vw,80px);letter-spacing:-.05em;line-height:1;color:var(--green);font-variant-numeric:tabular-nums}
+.tile__l{font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--mut-d);margin-top:18px}
+.spark{width:100%;height:50px;margin-top:20px;overflow:visible}
+.spark path{fill:none;stroke:var(--green);stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+.spark circle{fill:var(--green)}
+@media(max-width:960px){.bento{grid-template-columns:repeat(2,1fr)}.tile--wide{grid-column:span 2}}
+@media(max-width:560px){.bento{grid-template-columns:1fr}.tile--wide{grid-column:span 1}}
+
+/* 6. marquee */
+.gal{background:var(--black);padding:6vh 0 16vh;overflow:hidden;contain:paint}
+.gal__h{padding:0 28px;max-width:var(--wrap);margin:0 auto 52px}
+/* Paused until the strip is actually on screen. An always-running animation on
+   a layer this wide keeps the compositor busy through the whole page. */
+.marq{display:flex;gap:16px;width:max-content;animation:slide 52s linear infinite;animation-play-state:paused}
+.marq.run{animation-play-state:running}
+@keyframes slide{from{transform:translate3d(0,0,0)}to{transform:translate3d(-50%,0,0)}}
+.marq figure{margin:0;flex:0 0 auto;width:clamp(240px,30vw,400px);border-radius:16px;overflow:hidden;background:var(--black-2)}
+.marq img{width:100%;aspect-ratio:4/3;object-fit:cover}
+
+/* 7. film */
+.film{background:var(--off);color:var(--fg-l);padding:16vh 0}
+.film h2{color:var(--fg-l)}
+.film__box{border-radius:22px;overflow:hidden;background:#000;border:1px solid var(--line-l)}
+.film__box video{width:100%;display:block}
+.film__row{display:grid;grid-template-columns:1fr 400px;gap:70px;align-items:center}
+@media(max-width:900px){.film__row{grid-template-columns:1fr;gap:44px}}
+.list{list-style:none;padding:0;margin:34px 0 0;display:grid;gap:14px}
+.list li{display:flex;gap:14px;align-items:flex-start;color:var(--mut-l);font-size:16px}
+.list svg{width:18px;height:18px;flex:none;margin-top:4px;color:var(--green-ink)}
+
+/* 8. cta */
+.cta{background:var(--black);padding:20vh 0;text-align:center;position:relative;overflow:hidden}
+.cta__glow{position:absolute;left:50%;top:50%;width:min(90vw,900px);aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle,rgba(0,200,83,.14),transparent 65%)}
+.cta__in{position:relative;z-index:2}
+.cta h2{color:#fff}
+.btn{
+  display:inline-flex;align-items:center;gap:12px;padding:20px 40px;border-radius:100px;
+  font-family:var(--display);font-weight:600;font-size:17px;cursor:pointer;border:1px solid transparent;
+  transition:transform .25s var(--e),background .25s var(--e),border-color .25s var(--e);
+}
+.btn--p{background:var(--green);color:#04160A}
+.btn--g{border-color:rgba(255,255,255,.26);color:#fff}
+.btn--d{background:var(--green-ink);color:#fff}
+.btn svg{width:18px;height:18px}
+.btn:active{transform:scale(.97)}
+.cta__row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+.cta__h{font-family:var(--mono);font-size:13px;letter-spacing:.2em;color:var(--mut-d);margin-top:34px}
+
+.foot{background:var(--black);border-top:1px solid var(--line-d);padding:44px 0}
+.foot__r{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--mut-d)}
+.foot a{color:var(--green)}
+
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.rv{opacity:0;transform:translate3d(0,28px,0);transition:opacity .9s var(--e),transform .9s var(--e)}
+.rv.in{opacity:1;transform:none}
+
+/* Every hover effect lives here. On a touch screen :hover latches after a tap
+   and leaves elements repainting long after your finger is gone. */
+@media(hover:hover) and (pointer:fine){
+  .nav__r a:hover{opacity:1}
+  .tile:hover{border-color:rgba(0,200,83,.4);background:#101711}
+  .tile--photo:hover img{transform:scale(1.05)}
+  .marq:hover{animation-play-state:paused}
+  .btn:hover{transform:translateY(-2px)}
+  .btn--p:hover{background:#25E56E}
+  .btn--g:hover{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.5)}
+  .btn--d:hover{background:#095F2C}
+}
+
+/* Scrolling a phone costs far more thumb than a wheel does, so the two scroll
+   driven sections are shorter here. Both are measured at runtime, not assumed. */
+@media(max-width:760px){
+  .assemble{height:300vh}
+  .track{height:270vh}
+  .marq{animation-duration:38s}
+}
+
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation:none!important;transition-duration:.001ms!important}
+  .rv{opacity:1;transform:none}
+  .assemble{height:100vh}
+  .assemble__s{height:auto;min-height:100svh}
+  .track{height:auto}
+  .track__s{position:static;height:auto;padding:12vh 0}
+  .track__rail{flex-wrap:wrap;justify-content:center;gap:20px;transform:none}
+  .card{flex:0 0 min(92vw,430px)}
+  .marq{animation:none;flex-wrap:wrap;width:auto;justify-content:center}
+  .state .l>span{transform:none}
+  #assembleLogo{transform:none}
+}
+</style>
+</head>
+<body>
+
+<div class="rail" id="rail"></div>
+
+<nav class="nav">
+  <a class="nav__b" href="#top">DECLARE</a>
+  <div class="nav__r">
+    <a href="#gap">The gap</a>
+    <a href="#teach">Teaching</a>
+    <a href="#proof">Proof</a>
+    <a class="nav__book" href="https://instagram.com/declare_now" target="_blank" rel="noopener">Book us</a>
+  </div>
+</nav>
+
+<!-- 1. LOGO ASSEMBLES ON SCROLL -->
+<header class="assemble" id="top">
+  <div class="assemble__s">
+    <div class="assemble__grid" id="aGrid"></div>
+    <div class="assemble__glow" id="aGlow"></div>
+
+    <svg id="assembleLogo" viewBox="0 0 420 300" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The DECLARE logo assembling piece by piece as you scroll">
+      <g stroke="#4EA9F0" stroke-width="15" stroke-linecap="round" stroke-linejoin="round" fill="none">
+        <path id="pt-head" d="M138 52 h144 a26 26 0 0 1 26 26 v104 a26 26 0 0 1 -26 26 h-144 a26 26 0 0 1 -26 -26 v-104 a26 26 0 0 1 26 -26 z"/>
+        <path id="pt-mouth" d="M112 150 L308 150"/>
+        <path id="pt-ear-l" d="M84 96 L84 148"/>
+        <path id="pt-ear-r" d="M336 96 L336 148"/>
+        <path id="pt-antenna" d="M210 18 L210 52"/>
+        <path id="pt-tail" d="M186 206 L210 250 L234 206"/>
+      </g>
+      <g fill="#4EA9F0">
+        <circle id="pt-eye-l" cx="176" cy="112" r="13"/>
+        <circle id="pt-eye-r" cx="244" cy="112" r="13"/>
+      </g>
+    </svg>
+
+    <h1 class="sr">DECLARE. We teach students how AI actually works, with free workshops in Nepali schools.</h1>
+    <div class="assemble__word" id="aWord" aria-hidden="true">DECLARE</div>
+    <p class="assemble__cap" id="aCap">Scroll to build it</p>
+  </div>
+</header>
+
+<!-- 2. STATEMENT -->
+<section class="state">
+  <div class="wrap">
+    <span class="tag rv">The problem</span>
+    <h2 class="mega">
+      <span class="l"><span>AI is not</span></span>
+      <span class="l"><span>magic. It is</span></span>
+      <span class="l"><span><em>arithmetic</em>.</span></span>
+    </h2>
+    <p class="lede state__note rv">
+      Nobody teaches that part. So students hear about AI every day and never find out
+      what is behind it.
+    </p>
+  </div>
+</section>
+
+<!-- 3. THE GAP -->
+<section class="gap" id="gap">
+  <div class="wrap">
+    <span class="tag tag--l rv">The gap</span>
+    <h2 class="big rv">Who gets taught<br>how AI works</h2>
+
+    <div class="chartwrap">
+      <div class="rv">
+        <div class="cols" id="cols">
+          <div class="col">
+            <div class="col__v" data-count="60" data-suffix="%">0%</div>
+            <div class="col__bar" style="--h:86%"></div>
+            <div class="col__l">United States</div>
+          </div>
+          <div class="col">
+            <div class="col__v dim">Almost none</div>
+            <div class="col__bar dim" style="--h:7%"></div>
+            <div class="col__l">Nepal</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="donut rv" id="donut">
+        <svg viewBox="0 0 120 120" role="img" aria-label="Nine schools reached out of a target of thirty">
+          <circle class="ring-bg" cx="60" cy="60" r="50"></circle>
+          <circle class="ring-fg" id="ring" cx="60" cy="60" r="50"></circle>
+          <text class="donut__n" x="60" y="61" text-anchor="middle" dominant-baseline="middle">9</text>
+        </svg>
+        <p class="donut__t">Schools reached of our next target of 30</p>
+      </div>
+    </div>
+
+    <p class="src rv">
+      United States: Code.org State of AI and CS Education 2025, share of public high schools
+      offering foundational computer science. Nepal: AISCliteracy, arXiv:2506.23321, schools
+      rated low on providing AI education. The two studies measure different things, so the
+      Nepal side is shown without a fabricated number.
+    </p>
+  </div>
+</section>
+
+<!-- 4. CURRICULUM -->
+<section class="track" id="teach">
+  <div class="track__s">
+    <div class="track__h">
+      <span class="tag">What we teach</span>
+      <h2 class="big" style="color:#fff">From arithmetic<br>to attention</h2>
+    </div>
+    <div class="track__rail" id="rail4">
+      <article class="card">
+        <div class="card__n">01</div>
+        <h3>The smallest algorithm</h3>
+        <p>Linear regression, small enough to work through on paper. Students watch a model learn before they hear the word model.</p>
+        <div class="card__f">Day one</div>
+      </article>
+      <article class="card">
+        <div class="card__n">02</div>
+        <h3>How a network learns</h3>
+        <p>Weights, error, and the loop that makes a prediction improve. This is where it stops looking like magic.</p>
+        <div class="card__f">Day one</div>
+      </article>
+      <article class="card">
+        <div class="card__n">03</div>
+        <h3>Attention</h3>
+        <p>The mechanism running inside every chatbot they already use, in real depth rather than hand waved.</p>
+        <div class="card__f">Day two</div>
+      </article>
+      <article class="card">
+        <div class="card__n">04</div>
+        <h3>Say it out loud</h3>
+        <p>Public speaking, so students can teach what they learned to their families, their friends and their own classrooms.</p>
+        <div class="card__f">Day three</div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- 5. PROOF -->
+<section class="proof" id="proof">
+  <div class="wrap">
+    <span class="tag rv">Where we are</span>
+    <h2 class="big rv" style="color:#fff">Nine schools,<br>and counting</h2>
+
+    <div class="bento">
+      <div class="tile rv">
+        <div class="tile__n" data-count="9">0</div>
+        <div>
+          <svg class="spark" viewBox="0 0 120 40" aria-hidden="true"><path d="M2 36 L26 32 L50 25 L74 18 L98 9 L116 4"/><circle cx="116" cy="4" r="4"/></svg>
+          <div class="tile__l">Schools reached</div>
+        </div>
+      </div>
+      <div class="tile rv">
+        <div class="tile__n" data-count="500" data-suffix="+">0</div>
+        <div class="tile__l">Students taught</div>
+      </div>
+      <div class="tile tile--photo rv"><img src="img/school-1.webp" alt="Students and staff gathered for a group photo after a DECLARE workshop" loading="lazy" decoding="async"></div>
+      <div class="tile rv">
+        <div class="tile__n">Rs 0</div>
+        <div class="tile__l">Cost to the school</div>
+      </div>
+      <div class="tile tile--photo rv"><img src="img/school-6.webp" alt="A full hall of students seated during a DECLARE session" loading="lazy" decoding="async"></div>
+      <div class="tile tile--wide rv">
+        <div class="tile__n" data-count="30">0</div>
+        <div class="tile__l">Schools we are aiming for next</div>
+      </div>
+      <div class="tile rv">
+        <div class="tile__n" data-count="3">0</div>
+        <div class="tile__l">Days per school</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 6. GALLERY -->
+<section class="gal">
+  <div class="gal__h">
+    <span class="tag rv">The schools</span>
+    <h2 class="big rv" style="color:#fff">Classrooms<br>across Nepal</h2>
+  </div>
+  <div class="marq" id="marq">
+    <figure><img src="img/school-2.webp" alt="A DECLARE session at the whiteboard covering types of AI and machine learning" loading="lazy"></figure>
+    <figure><img src="img/school-3.webp" alt="Students listening during a DECLARE workshop" loading="lazy"></figure>
+    <figure><img src="img/school-4.webp" alt="Students watching a DECLARE presentation" loading="lazy"></figure>
+    <figure><img src="img/school-5.webp" alt="A session explaining how a single neuron computes" loading="lazy"></figure>
+    <figure><img src="img/school-7.webp" alt="A classroom session with a presentation on screen" loading="lazy"></figure>
+    <figure><img src="img/school-8.webp" alt="Students at desks during a DECLARE workshop" loading="lazy"></figure>
+    <figure><img src="img/school-9.webp" alt="A linear regression worked example on the board" loading="lazy"></figure>
+    <figure><img src="img/school-6.webp" alt="A full hall of students at a DECLARE session" loading="lazy"></figure>
+  </div>
+</section>
+
+<!-- 7. FILM AND TOOL -->
+<section class="film">
+  <div class="wrap">
+    <div class="film__row">
+      <div>
+        <span class="tag tag--l rv">The campaign</span>
+        <h2 class="big rv">They keep a coach<br>after we leave</h2>
+        <p class="lede lede--l rv" style="margin-top:26px">
+          Speaking improves through repetition, and we are only in a school for a few days.
+          Every student gets a free tool that listens to them and answers back in plain language.
+        </p>
+        <ul class="list rv">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Record against a public speaking rubric</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Feedback on structure, pace, pauses and clarity</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Written in plain words, not speech jargon</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Progress tracked across sessions</li>
+        </ul>
+        <p style="margin-top:34px" class="rv">
+          <a class="btn btn--d" href="https://speaker-coach.aawax.me" target="_blank" rel="noopener">Open the practice tool</a>
+        </p>
+      </div>
+      <div class="film__box rv">
+        <video src="img/campaign-reel.mp4" poster="img/school-2.webp" preload="none" playsinline controls aria-label="The DECLARE campaign film"></video>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 8. CTA -->
+<section class="cta" id="book">
+  <div class="cta__glow" aria-hidden="true"></div>
+  <div class="wrap cta__in">
+    <span class="tag rv">Book a workshop</span>
+    <h2 class="mega rv">Bring us to<br>your <em>school</em></h2>
+    <p class="lede rv" style="margin:30px auto 0;text-align:center">
+      We cover our own costs. You provide a room and students. That is the whole arrangement.
+    </p>
+    <div class="cta__row rv" style="margin-top:44px">
+      <a class="btn btn--p" href="https://instagram.com/declare_now" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.5 8.5 0 0 1-3.9-.9L3 21l1.9-5.1A8.4 8.4 0 0 1 4 11.5a8.4 8.4 0 0 1 9-8.4 8.4 8.4 0 0 1 8 8.4z"/></svg>
+        Message us
+      </a>
+      <a class="btn btn--g" href="https://speaker-coach.aawax.me" target="_blank" rel="noopener">Try the tool</a>
+    </div>
+    <p class="cta__h rv">@declare_now</p>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="wrap foot__r">
+    <span>DECLARE</span>
+    <span>Insights for everyone</span>
+    <span><a href="https://instagram.com/declare_now" target="_blank" rel="noopener">@declare_now</a></span>
+  </div>
+</footer>
+
+<script>
+(function(){
+'use strict';
+var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+var coarse = matchMedia('(pointer:coarse)').matches;
+function clamp(v,a,b){return v<a?a:(v>b?b:v);}
+/* Quantise before writing. Sub-pixel churn re-rasterises SVG and masked layers
+   for changes nobody can see. */
+function q(v,n){return Math.round(v*n)/n;}
+
+var rail=document.getElementById('rail');
+var nav=document.querySelector('.nav');
+
+var io=new IntersectionObserver(function(es){
+  es.forEach(function(e){ if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);} });
+},{rootMargin:'0px 0px -10% 0px',threshold:.06});
+document.querySelectorAll('.rv').forEach(function(n){io.observe(n);});
+
+var lineIO=new IntersectionObserver(function(es){
+  es.forEach(function(e){
+    if(!e.isIntersecting) return;
+    e.target.querySelectorAll('.l>span').forEach(function(sp,i){
+      sp.style.transition='transform 1s cubic-bezier(.16,1,.3,1) '+(i*.09)+'s';
+      sp.style.transform='translateY(0)';
+    });
+    lineIO.unobserve(e.target);
+  });
+},{threshold:.3});
+document.querySelectorAll('.state h2').forEach(function(n){lineIO.observe(n);});
+
+/* ---- logo assembly ---- */
+var hero=document.getElementById('top');
+var heroS=hero&&hero.querySelector('.assemble__s');
+var glow=document.getElementById('aGlow');
+var grid=document.getElementById('aGrid');
+var word=document.getElementById('aWord');
+var cap=document.getElementById('aCap');
+var svg=document.getElementById('assembleLogo');
+
+var PARTS=[
+  {id:'pt-head',    a:0.02,b:0.30, dx:0,   dy:0,   rot:0,  draw:true},
+  {id:'pt-mouth',   a:0.24,b:0.44, dx:-140,dy:0,   rot:0,  draw:true},
+  {id:'pt-eye-l',   a:0.36,b:0.52, dx:-90, dy:-70, rot:0,  draw:false},
+  {id:'pt-eye-r',   a:0.40,b:0.56, dx:90,  dy:-70, rot:0,  draw:false},
+  {id:'pt-ear-l',   a:0.48,b:0.66, dx:-120,dy:0,   rot:-24,draw:true},
+  {id:'pt-ear-r',   a:0.52,b:0.70, dx:120, dy:0,   rot:24, draw:true},
+  {id:'pt-antenna', a:0.62,b:0.78, dx:0,   dy:-90, rot:0,  draw:true},
+  {id:'pt-tail',    a:0.70,b:0.88, dx:0,   dy:90,  rot:0,  draw:true}
+];
+PARTS.forEach(function(p){
+  p.el=document.getElementById(p.id);
+  p.last=-1;
+  if(!p.el) return;
+  if(p.draw && p.el.getTotalLength){
+    p.len=p.el.getTotalLength();
+    p.el.style.strokeDasharray=p.len;
+    p.el.style.strokeDashoffset=p.len;
+  } else { p.el.style.opacity=0; }
+  p.el.style.transformBox='fill-box';
+  p.el.style.transformOrigin='center';
+});
+
+var track=document.getElementById('teach');
+var trackS=track&&track.querySelector('.track__s');
+var rail4=document.getElementById('rail4');
+
+/* ---- geometry, measured once ----------------------------------------------
+   This is the whole mobile fix. A phone grows and shrinks its viewport by
+   60 to 100px as the URL bar hides and shows, and it does that continuously
+   while you scroll, hardest when you reverse direction or hold a drag. Every
+   scroll driven value here used to be derived from innerHeight or a fresh
+   getBoundingClientRect, so each of those wobbles dragged the sticky logo and
+   the card track backwards and forwards. Now every measurement is cached and
+   only refreshed on a real layout change, and the scroll frame reads nothing
+   from the DOM at all. Reading rail4.scrollWidth per frame also forced a
+   synchronous layout on every single frame, which is gone for the same reason. */
+var M={doc:1,heroTop:0,heroSpan:1,trackTop:0,trackSpan:1,dist:0,gridK:coarse?0.06:0.14,zones:[]};
+
+function measure(){
+  var y=window.pageYOffset;
+  M.doc=Math.max(1,document.documentElement.scrollHeight-innerHeight);
+  if(hero&&heroS){
+    M.heroTop=hero.getBoundingClientRect().top+y;
+    M.heroSpan=Math.max(1,hero.offsetHeight-heroS.offsetHeight);
+  }
+  if(track&&trackS&&rail4){
+    M.trackTop=track.getBoundingClientRect().top+y;
+    M.trackSpan=Math.max(1,track.offsetHeight-trackS.offsetHeight);
+    M.dist=Math.max(0,rail4.scrollWidth-innerWidth+56);
+  }
+  M.zones=[];
+  Array.prototype.forEach.call(document.querySelectorAll('.gap,.film'),function(n){
+    var r=n.getBoundingClientRect();
+    M.zones.push([r.top+y,r.bottom+y]);
+  });
+}
+
+/* Last written value for everything, so a frame only touches what moved. */
+var C={t:-1,tt:-1,rail:-1,glow:-1,word:-1,cap:-1,grid:-1,logo:-1,light:null};
+function resetCache(){
+  C.t=-1;C.tt=-1;C.rail=-1;C.glow=-1;C.word=-1;C.cap=-1;C.grid=-1;C.logo=-1;
+  for(var i=0;i<PARTS.length;i++) PARTS[i].last=-1;
+}
+
+function paintHero(t){
+  for(var i=0;i<PARTS.length;i++){
+    var p=PARTS[i];
+    if(!p.el) continue;
+    var k=clamp((t-p.a)/(p.b-p.a),0,1);
+    var e=q(1-Math.pow(1-k,3),1000);
+    if(e===p.last) continue;          /* settled pieces stop repainting */
+    p.last=e;
+    if(p.draw && p.len) p.el.style.strokeDashoffset=q(p.len*(1-e),100);
+    else p.el.style.opacity=e;
+    p.el.style.transform='translate('+q(p.dx*(1-e),100)+'px,'+q(p.dy*(1-e),100)+'px) rotate('+q(p.rot*(1-e),100)+'deg)';
+  }
+  var g=q(clamp((t-0.55)/0.3,0,1),100);
+  if(g!==C.glow){C.glow=g;glow.style.opacity=g;}
+
+  var wk=q(clamp((t-0.80)/0.16,0,1),100);
+  if(wk!==C.word){
+    C.word=wk;
+    word.style.opacity=wk;
+    /* letter-spacing relayouts, so it is contained and only written on change */
+    word.style.letterSpacing=q(0.5-0.26*wk,1000)+'em';
+  }
+  var c=q(clamp(1-t/0.18,0,1),100);
+  if(c!==C.cap){C.cap=c;cap.style.opacity=c;}
+
+  var gs=q(1+t*M.gridK,1000);
+  if(gs!==C.grid){C.grid=gs;grid.style.transform='scale('+gs+') translateZ(0)';}
+
+  var ls=q(0.92+t*0.08,1000);
+  if(ls!==C.logo){C.logo=ls;svg.style.transform='scale('+ls+')';}
+}
+
+/* ---- counters, bars, donut ---- */
+function countUp(el){
+  var to=parseFloat(el.dataset.count), sfx=el.dataset.suffix||'', prev=null;
+  if(reduce){el.textContent=to+sfx;return;}
+  var t0=0;
+  requestAnimationFrame(function tick(ts){
+    if(!t0)t0=ts;
+    var k=Math.min(1,(ts-t0)/1400), e=1-Math.pow(1-k,3);
+    var v=Math.round(to*e);
+    if(v!==prev){prev=v;el.textContent=v+sfx;}   /* skip writes that read the same */
+    if(k<1) requestAnimationFrame(tick);
+  });
+}
+var dataIO=new IntersectionObserver(function(es){
+  es.forEach(function(e){
+    if(!e.isIntersecting) return;
+    e.target.querySelectorAll('[data-count]').forEach(countUp);
+    e.target.querySelectorAll('.col__bar').forEach(function(b){b.classList.add('grew');});
+    var ring=e.target.querySelector('#ring');
+    if(ring) ring.style.strokeDashoffset=q(2*Math.PI*50*(1-9/30),100);
+    dataIO.unobserve(e.target);
+  });
+},{threshold:.35});
+['#cols','#donut','.bento'].forEach(function(s){var n=document.querySelector(s);if(n)dataIO.observe(n);});
+
+/* ---- marquee loop ---- */
+var marq=document.getElementById('marq');
+if(marq && !reduce){
+  var copy=marq.innerHTML;
+  marq.innerHTML=copy+copy;
+  var all=marq.querySelectorAll('figure');
+  for(var i=all.length/2;i<all.length;i++) all[i].setAttribute('aria-hidden','true');
+  Array.prototype.forEach.call(marq.querySelectorAll('img'),function(im){im.decoding='async';});
+  new IntersectionObserver(function(es){
+    es.forEach(function(e){marq.classList.toggle('run',e.isIntersecting);});
+  },{rootMargin:'150px 0px'}).observe(marq);
+}
+
+/* will-change is expensive to hold, so it is only on while the section is near */
+if(!reduce){
+  var hotIO=new IntersectionObserver(function(es){
+    es.forEach(function(e){e.target.classList.toggle('hot',e.isIntersecting);});
+  },{rootMargin:'25% 0px'});
+  if(hero)hotIO.observe(hero);
+  if(track)hotIO.observe(track);
+}
+
+/* ---- the scroll frame: reads pageYOffset and nothing else ---- */
+var queued=false;
+function frame(){
+  queued=false;
+  var y=window.pageYOffset;
+
+  /* scaleX, not width. A percentage width relayouts the bar every frame. */
+  var p=q(clamp(y/M.doc,0,1),1000);
+  if(p!==C.rail){C.rail=p;rail.style.transform='scaleX('+p+')';}
+
+  if(nav){
+    var probe=y+34, lit=false, z=M.zones;
+    for(var i=0;i<z.length;i++){ if(probe>=z[i][0]&&probe<z[i][1]){lit=true;break;} }
+    if(lit!==C.light){C.light=lit;nav.classList.toggle('is-light',lit);}
+  }
+
+  if(reduce) return;
+
+  if(hero&&heroS){
+    var t=q(clamp((y-M.heroTop)/M.heroSpan,0,1),10000);
+    if(t!==C.t){C.t=t;paintHero(t);}   /* past the hero t pins at 1 and this stops */
+  }
+  if(rail4&&M.dist>0){
+    var tt=q(clamp((y-M.trackTop)/M.trackSpan,0,1),10000);
+    if(tt!==C.tt){C.tt=tt;rail4.style.transform='translate3d('+q(-M.dist*tt,10)+'px,0,0)';}
+  }
+}
+function onScroll(){
+  if(queued) return; queued=true;
+  requestAnimationFrame(frame);
+}
+addEventListener('scroll',onScroll,{passive:true});
+
+/* ---- when to re-measure ----
+   Not on every resize. On a phone the URL bar fires resize constantly with a
+   height only change, and re-measuring there is precisely what makes the
+   sticky sections jump. Only a width change or a big height change counts. */
+var lastW=innerWidth, lastH=innerHeight, rid=0;
+function remeasure(){
+  clearTimeout(rid);
+  rid=setTimeout(function(){measure();resetCache();onScroll();},100);
+}
+addEventListener('resize',function(){
+  var w=innerWidth, h=innerHeight;
+  if(w===lastW && Math.abs(h-lastH)<160) return;
+  lastW=w;lastH=h;
+  remeasure();
+},{passive:true});
+addEventListener('orientationchange',function(){setTimeout(remeasure,300);},{passive:true});
+/* body height is in vh units, which mobile chrome does not touch, so this only
+   ever fires on a genuine layout change */
+if(window.ResizeObserver) new ResizeObserver(remeasure).observe(document.body);
+if(document.fonts&&document.fonts.ready) document.fonts.ready.then(remeasure);
+addEventListener('load',remeasure);
+
+if(reduce){
+  PARTS.forEach(function(p){
+    if(!p.el) return;
+    if(p.len) p.el.style.strokeDashoffset=0;
+    p.el.style.opacity=1; p.el.style.transform='none';
+  });
+  glow.style.opacity=1; word.style.opacity=1; word.style.letterSpacing='.24em';
+  cap.style.display='none';
+  if(rail4) rail4.style.transform='none';
+}
+measure();
+onScroll();
+
+var film=document.querySelector('.film__box video');
+if(film){
+  new IntersectionObserver(function(es){
+    es.forEach(function(e){ if(!e.isIntersecting && !film.paused) film.pause(); });
+  },{threshold:0}).observe(film);
+}
+})();
+</script>
+</body>
+</html>

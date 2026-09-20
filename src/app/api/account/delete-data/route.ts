@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server';
 
 import { auth } from '@/lib/auth';
-import { ensureSpeechSchema } from '@/lib/db';
+import { deleteUserSpeechData, ensureSchema } from '@/lib/db';
 import { requireSameOrigin } from '@/lib/identity';
+import { enforceRateLimit } from '@/lib/rate-limit';
 
 export async function DELETE(req: NextRequest) {
   const originError = requireSameOrigin(req);
@@ -13,26 +14,19 @@ export async function DELETE(req: NextRequest) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const userId = session.user.id;
-  const db = await ensureSpeechSchema();
-  if (!db) {
+  const limited = enforceRateLimit(req, session.user.id, { name: 'account:delete-data', limit: 5, windowMs: 15 * 60 * 1000 });
+  if (limited) return limited;
+
+  if (!(await ensureSchema())) {
     return Response.json({ error: 'Database unavailable' }, { status: 503 });
   }
 
   try {
-    await db.execute({ sql: 'DELETE FROM speech_sessions WHERE user_id = ?', args: [userId] });
-    // The voice-sample feature is gone, but old rows may still exist on
-    // databases created before it was removed. Ignore a missing table.
-    await db
-      .execute({ sql: 'DELETE FROM speech_voice_samples WHERE user_id = ?', args: [userId] })
-      .catch(() => null);
-    await db
-      .execute({ sql: 'DELETE FROM generated_speeches WHERE user_id = ?', args: [userId] })
-      .catch(() => null);
+    await deleteUserSpeechData(session.user.id);
     return Response.json({ ok: true });
   } catch (error) {
     console.error('Failed to delete user data', error);
-    return Response.json({ error: 'Some of your data could not be deleted. Please try again.' }, { status: 500 });
+    return Response.json({ error: 'Your data could not be deleted. Nothing was removed. Please try again.' }, { status: 500 });
   }
 }
 

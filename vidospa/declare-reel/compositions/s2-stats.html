@@ -1,0 +1,253 @@
+<template>
+  <div
+    data-composition-id="s2-stats"
+    data-width="1080"
+    data-height="1920"
+    data-duration="14.5"
+    style="position: absolute; inset: 0"
+  >
+    <style>
+      [data-composition-id="s2-stats"] {
+        --ink: #05100A;
+        --ink-soft: #0C1E14;
+        --alarm: #3DDC84;
+        --fg: #E6F5EA;
+        --muted: rgba(230, 245, 234, 0.55);
+      }
+      [data-composition-id="s2-stats"] .fill {
+        position: absolute;
+        inset: 0;
+        background: var(--ink);
+      }
+      [data-composition-id="s2-stats"] .glow {
+        position: absolute;
+        left: -10%;
+        top: 20%;
+        width: 120%;
+        height: 55%;
+        background: radial-gradient(ellipse at 50% 50%, rgba(79, 107, 88, 0.16), rgba(79, 107, 88, 0) 65%);
+      }
+      [data-composition-id="s2-stats"] .grid-bg {
+        position: absolute;
+        inset: 0;
+        background-image: linear-gradient(rgba(230, 245, 234, 0.045) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(230, 245, 234, 0.045) 1px, transparent 1px);
+        background-size: 90px 90px;
+      }
+      [data-composition-id="s2-stats"] .ghost {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 3%;
+        text-align: center;
+        font-family: "Archivo Black", sans-serif;
+        font-size: 200px;
+        color: rgba(230, 245, 234, 0.13);
+        letter-spacing: -0.04em;
+      }
+
+      /* each stat owns the full frame and is vertically centred — pinning them
+         to a fixed top left a dead half-screen under every number */
+      [data-composition-id="s2-stats"] .panel {
+        position: absolute;
+        left: 76px;
+        right: 76px;
+        top: 0;
+        bottom: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 18px;
+      }
+      [data-composition-id="s2-stats"] .label {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 30px;
+        font-weight: 700;
+        color: var(--muted);
+        letter-spacing: 0.04em;
+        margin: 0;
+      }
+      [data-composition-id="s2-stats"] .value {
+        font-family: "Archivo Black", sans-serif;
+        font-size: 210px;
+        line-height: 0.86;
+        letter-spacing: -0.05em;
+        color: var(--alarm);
+        margin: 0;
+        font-variant-numeric: tabular-nums;
+      }
+      [data-composition-id="s2-stats"] .value .pct {
+        font-size: 96px;
+        vertical-align: super;
+        letter-spacing: -0.02em;
+      }
+      [data-composition-id="s2-stats"] .headline {
+        font-family: "Archivo Black", sans-serif;
+        font-size: 62px;
+        line-height: 1.06;
+        letter-spacing: -0.03em;
+        color: var(--fg);
+        margin: 0;
+      }
+      [data-composition-id="s2-stats"] .track {
+        position: relative;
+        height: 34px;
+        background: var(--ink-soft);
+        border-radius: 17px;
+        overflow: hidden;
+        width: 100%;
+      }
+      [data-composition-id="s2-stats"] .bar {
+        display: block;
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 100%;
+        background: linear-gradient(90deg, var(--alarm), #7DEBAF);
+        border-radius: 17px;
+        transform-origin: left center;
+      }
+      [data-composition-id="s2-stats"] .src {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 24px;
+        color: rgba(230, 245, 234, 0.42);
+        margin: 0;
+        letter-spacing: 0.01em;
+      }
+
+      /* deepfake growth chart */
+      /* reserve room under the columns for the year labels, so they never
+         collide with the source line below */
+      [data-composition-id="s2-stats"] .chart {
+        position: relative;
+        height: 300px;
+        width: 100%;
+        margin-bottom: 76px;
+      }
+      [data-composition-id="s2-stats"] .col {
+        position: absolute;
+        bottom: 0;
+        width: 150px;
+        background: linear-gradient(180deg, var(--alarm), #12A45C);
+        border-radius: 10px 10px 0 0;
+        transform-origin: bottom center;
+      }
+      [data-composition-id="s2-stats"] .coltag {
+        position: absolute;
+        bottom: 100%;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-family: "JetBrains Mono", monospace;
+        font-weight: 700;
+        font-size: 34px;
+        color: var(--fg);
+        padding-bottom: 14px;
+      }
+      [data-composition-id="s2-stats"] .colyear {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 26px;
+        color: var(--muted);
+        padding-top: 12px;
+      }
+    </style>
+
+    <div class="fill"></div>
+    <div class="glow" id="s2-glow"></div>
+    <div class="grid-bg" id="s2-grid"></div>
+    <div class="ghost" id="s2-ghost">DOUBT</div>
+
+    <!-- Stat 1 — nervousness -->
+    <div class="panel" id="s2-p1">
+      <p class="label">GLOBALLY, PEOPLE WHO SAY</p>
+      <p class="headline">AI makes them nervous</p>
+      <p class="value"><span id="s2-n1">0</span><span class="pct">%</span></p>
+      <div class="track"><span class="bar" id="s2-bar1"></span></div>
+      <p class="src">SOURCE — IPSOS / STANFORD AI INDEX 2026</p>
+    </div>
+
+    <!-- Stat 2 — jobs -->
+    <div class="panel" id="s2-p2">
+      <p class="label">AND PEOPLE WHO BELIEVE</p>
+      <p class="headline">AI will cut the number of jobs</p>
+      <p class="value"><span id="s2-n2">0</span><span class="pct">%</span></p>
+      <div class="track"><span class="bar" id="s2-bar2"></span></div>
+      <p class="src">SOURCE — QUINNIPIAC UNIVERSITY POLL, 2026</p>
+    </div>
+
+    <!-- Stat 3 — deepfakes -->
+    <div class="panel" id="s2-p3">
+      <p class="label">DEEPFAKE VIDEOS ONLINE</p>
+      <p class="headline">Half a million, to eight million</p>
+      <div class="chart">
+        <div class="col" id="s2-col1" style="left: 90px; height: 60px">
+          <span class="coltag">500K</span>
+          <span class="colyear">2023</span>
+        </div>
+        <div class="col" id="s2-col2" style="left: 560px; height: 290px">
+          <span class="coltag">8M</span>
+          <span class="colyear">2025</span>
+        </div>
+      </div>
+      <p class="src">SOURCE — EUROPEAN PARLIAMENTARY RESEARCH SERVICE</p>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // ambient
+      tl.fromTo("#s2-glow", { scale: 0.95, opacity: 0.75 }, { scale: 1.07, opacity: 1, duration: 7.25, ease: "sine.inOut", yoyo: true, repeat: 1 }, 0);
+      tl.fromTo("#s2-grid", { y: 0 }, { y: 90, duration: 14.5, ease: "none" }, 0);
+      tl.fromTo("#s2-ghost", { x: 24 }, { x: -24, duration: 14.5, ease: "sine.inOut" }, 0);
+
+      // panels start hidden (non-clip wrappers, so autoAlpha is allowed)
+      tl.set(["#s2-p1", "#s2-p2", "#s2-p3"], { autoAlpha: 0 }, 0);
+      tl.set(["#s2-bar1", "#s2-bar2"], { scaleX: 0 }, 0);
+      tl.set(["#s2-col1", "#s2-col2"], { scaleY: 0 }, 0);
+
+      // counter helper — drives a plain integer readout deterministically
+      function countUp(target, sel, to, at, dur) {
+        const o = { v: 0 };
+        target.to(o, {
+          v: to,
+          duration: dur,
+          ease: "power2.out",
+          onUpdate() {
+            document.querySelector(sel).textContent = Math.round(o.v);
+          },
+        }, at);
+      }
+
+      // ── Stat 1 (0.0 – 4.3) ──
+      tl.to("#s2-p1", { autoAlpha: 1, duration: 0.35 }, 0.15);
+      tl.fromTo("#s2-p1", { y: 44 }, { y: 0, duration: 0.55, ease: "power3.out" }, 0.15);
+      countUp(tl, "#s2-n1", 52, 0.4, 1.15);
+      tl.to("#s2-bar1", { scaleX: 0.52, duration: 1.15, ease: "power2.out" }, 0.4);
+      tl.to("#s2-p1", { autoAlpha: 0, y: -34, duration: 0.4, ease: "power2.in" }, 4.25);
+
+      // ── Stat 2 (4.3 – 8.5) ──
+      tl.to("#s2-p2", { autoAlpha: 1, duration: 0.35 }, 4.7);
+      tl.fromTo("#s2-p2", { y: 44 }, { y: 0, duration: 0.55, ease: "power3.out" }, 4.7);
+      countUp(tl, "#s2-n2", 79, 4.95, 1.15);
+      tl.to("#s2-bar2", { scaleX: 0.79, duration: 1.15, ease: "power2.out" }, 4.95);
+      tl.to("#s2-p2", { autoAlpha: 0, y: -34, duration: 0.4, ease: "power2.in" }, 8.9);
+
+      // ── Stat 3 (8.5 – 13.4) ──
+      tl.to("#s2-p3", { autoAlpha: 1, duration: 0.35 }, 9.4);
+      tl.fromTo("#s2-p3", { y: 44 }, { y: 0, duration: 0.55, ease: "power3.out" }, 9.4);
+      tl.to("#s2-col1", { scaleY: 1, duration: 0.5, ease: "power3.out" }, 9.75);
+      // the second column overshoots — the growth is the point
+      tl.to("#s2-col2", { scaleY: 1, duration: 1.15, ease: "power4.out" }, 10.25);
+      tl.to("#s2-p3", { autoAlpha: 0, duration: 0.45, ease: "power2.in" }, 13.95);
+
+      window.__timelines["s2-stats"] = tl;
+    </script>
+  </div>
+</template>

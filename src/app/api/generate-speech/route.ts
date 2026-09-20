@@ -2,7 +2,8 @@ import { randomUUID } from 'crypto';
 import { after, NextRequest } from 'next/server';
 
 import { getProviderErrorMessage, isAbortTimeout, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
-import { DailyQuotaError, GuestLimitError, IdentityError, dailyQuotaResponse, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
+import { DailyQuotaError, QuotaUnavailableError, quotaUnavailableResponse, GuestLimitError, IdentityError, consumeUsage, dailyQuotaResponse, guestLimitResponse, identityErrorResponse, resolveIdentity } from '@/lib/app-user';
+import { readJsonObject } from '@/lib/body';
 import { insertGeneratedSpeech } from '@/lib/db';
 import { fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
@@ -92,9 +93,11 @@ export async function POST(req: NextRequest) {
   if (originError) return originError;
 
   try {
-    const body = await req.json().catch(() => null);
-    const topic = typeof body?.topic === 'string' ? body.topic.trim().slice(0, 180) : '';
-    const templateId = typeof body?.templateId === 'string' ? body.templateId.trim().slice(0, 80) : '';
+    const { body, response: bodyError } = await readJsonObject(req);
+    if (bodyError) return bodyError;
+
+    const topic = typeof body.topic === 'string' ? body.topic.trim().slice(0, 180) : '';
+    const templateId = typeof body.templateId === 'string' ? body.templateId.trim().slice(0, 80) : '';
     const template = getSpeechTemplate(templateId || null);
     // The same marking scheme the coach will grade against, so the writer aims
     // at the actual target rather than a general idea of "good".
@@ -103,7 +106,7 @@ export async function POST(req: NextRequest) {
     // same table, so the writer cannot be told about a cue that would later be
     // stripped, or miss one that is legal.
     const cueList = formatCueListForPrompt();
-    const requestedWordCount = Number(body?.wordCount);
+    const requestedWordCount = Number(body.wordCount);
     const targetWordCount = Number.isFinite(requestedWordCount) ? Math.min(500, Math.max(80, Math.round(requestedWordCount))) : 180;
     const lowerWordCount = Math.max(70, targetWordCount - 10);
     const upperWordCount = targetWordCount + 10;
@@ -118,7 +121,8 @@ export async function POST(req: NextRequest) {
       return Response.json({ speech: '', error: 'Server configuration error: missing API key.' }, { status: 500 });
     }
 
-    const { userId, isGuest, guestRemaining } = await resolveAppUser(req, true, 'generate-speech');
+    const identity = await resolveIdentity(req);
+    const { userId } = identity;
     const rateKey = `generate-speech:${getClientKey(req, userId)}`;
     const rateLimit = checkRateLimit(rateKey, 20, 10 * 60 * 1000);
     if (!rateLimit.allowed) {
@@ -135,6 +139,10 @@ export async function POST(req: NextRequest) {
         { status: 429, headers: { 'Retry-After': String(globalRateLimit.retryAfterSeconds) } },
       );
     }
+
+    // Charged only now, once every free check has passed: a request the
+    // limiter turns away never costs a database write or a unit of quota.
+    const { isGuest, guestRemaining } = await consumeUsage(req, identity, 'generate-speech');
 
     let lastStatus = 503;
     let lastMessage = 'Failed to generate speech script.';
@@ -274,6 +282,7 @@ FORMATTING — this is spoken text, not a document.
       { status: lastStatus },
     );
   } catch (error) {
+    if (error instanceof QuotaUnavailableError) return quotaUnavailableResponse();
     if (error instanceof DailyQuotaError) {
       return dailyQuotaResponse();
     }

@@ -1,0 +1,263 @@
+<template>
+  <div
+    data-composition-id="s7-cta"
+    data-width="1080"
+    data-height="1920"
+    data-duration="10.5"
+    style="position: absolute; inset: 0"
+  >
+    <style>
+      [data-composition-id="s7-cta"] {
+        --ink: #05100A;
+        --paper: #071A10;
+        --accent: #3DDC84;
+        --accent-dp: #12A45C;
+        --fg: #E6F5EA;
+      }
+      [data-composition-id="s7-cta"] .fill {
+        position: absolute;
+        inset: 0;
+        background: var(--paper);
+      }
+      [data-composition-id="s7-cta"] .glow {
+        position: absolute;
+        left: -15%;
+        top: 16%;
+        width: 130%;
+        height: 58%;
+        background: radial-gradient(ellipse at 50% 50%, rgba(61, 220, 132, 0.30), rgba(61, 220, 132, 0) 63%);
+      }
+      [data-composition-id="s7-cta"] .grid-bg {
+        position: absolute;
+        inset: 0;
+        background-image: linear-gradient(rgba(61, 220, 132, 0.10) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(61, 220, 132, 0.10) 1px, transparent 1px);
+        background-size: 108px 108px;
+      }
+      [data-composition-id="s7-cta"] .mathghost {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 5%;
+        text-align: center;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 92px;
+        font-weight: 700;
+        color: rgba(61, 220, 132, 0.17);
+      }
+
+      [data-composition-id="s7-cta"] .center {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 44px;
+        padding: 0 84px;
+        box-sizing: border-box;
+      }
+      /* reserve each element's slot from the first frame so the stack does not
+         drift upward as later items fade in */
+      [data-composition-id="s7-cta"] .center > * {
+        flex: none;
+      }
+      [data-composition-id="s7-cta"] .sharewrap {
+        min-height: 268px;
+      }
+      [data-composition-id="s7-cta"] .action {
+        min-height: 112px;
+      }
+      [data-composition-id="s7-cta"] .logo {
+        min-height: 300px;
+      }
+      /* one short line, not a paragraph */
+      /* the logo states the name; this is the closing line under it, sized to
+         support rather than compete */
+      [data-composition-id="s7-cta"] .thesis {
+        font-family: "Archivo Black", sans-serif;
+        font-size: 58px;
+        line-height: 1.06;
+        letter-spacing: -0.03em;
+        color: var(--fg);
+        margin: 0;
+        text-align: center;
+      }
+      [data-composition-id="s7-cta"] .thesis .hi {
+        color: var(--accent);
+      }
+      [data-composition-id="s7-cta"] .logo {
+        display: block;
+        width: 500px;
+        height: auto;
+      }
+
+      /* the share affordance: an Instagram-style paper-plane button that a
+         cursor moves to and taps */
+      [data-composition-id="s7-cta"] .sharewrap {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+      }
+      [data-composition-id="s7-cta"] .sharebtn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 190px;
+        height: 190px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 16px 44px rgba(61, 220, 132, 0.34);
+      }
+      [data-composition-id="s7-cta"] .sharebtn svg {
+        display: block;
+        width: 96px;
+        height: 96px;
+        /* nudge the plane so it sits optically centred in the circle */
+        margin-left: -6px;
+      }
+      [data-composition-id="s7-cta"] .sharelabel {
+        font-family: "Archivo Black", sans-serif;
+        font-size: 52px;
+        letter-spacing: -0.03em;
+        color: var(--fg);
+        margin: 0;
+        text-align: center;
+      }
+      /* the ring that pings outward on the tap */
+      [data-composition-id="s7-cta"] .ping {
+        position: absolute;
+        top: 0;
+        left: 50%;
+        margin-left: -95px;
+        width: 190px;
+        height: 190px;
+        border-radius: 50%;
+        border: 5px solid var(--accent);
+      }
+      /* the cursor that travels in and clicks */
+      [data-composition-id="s7-cta"] .cursor {
+        position: absolute;
+        top: 0;
+        left: 50%;
+        width: 68px;
+        height: 68px;
+        z-index: 5;
+      }
+
+      [data-composition-id="s7-cta"] .action {
+        display: block;
+        font-family: "Archivo Black", sans-serif;
+        font-size: 56px;
+        letter-spacing: -0.03em;
+        color: var(--accent);
+        background: transparent;
+        border: 5px solid var(--accent);
+        border-radius: 20px;
+        padding: 24px 48px;
+        margin: 0;
+        text-align: center;
+        box-sizing: border-box;
+      }
+      /* the handle is the only contact route in the video, so it gets a
+         message icon and enough weight to actually register */
+      [data-composition-id="s7-cta"] .handlewrap {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        min-height: 64px;
+      }
+      [data-composition-id="s7-cta"] .dmicon {
+        display: block;
+        width: 46px;
+        height: 46px;
+        flex: none;
+      }
+      [data-composition-id="s7-cta"] .handletext {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 52px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        color: var(--accent);
+        margin: 0;
+        text-align: center;
+      }
+    </style>
+
+    <div class="fill"></div>
+    <div class="glow" id="s7-glow"></div>
+    <div class="grid-bg" id="s7-grid"></div>
+
+    <div class="center">
+      <div class="sharewrap">
+        <span class="ping" id="s7-ping"></span>
+        <div class="sharebtn" id="s7-share">
+          <!-- Instagram-style paper plane -->
+          <svg viewBox="0 0 24 24" fill="none" stroke="#05100A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </div>
+        <!-- arrow cursor -->
+        <svg class="cursor" id="s7-cursor" viewBox="0 0 24 24" fill="#E6F5EA" stroke="#05100A" stroke-width="1.2" stroke-linejoin="round">
+          <path d="M4 2 L4 19 L8.6 14.6 L11.4 21 L14.2 19.7 L11.5 13.6 L18 13.4 Z"></path>
+        </svg>
+        <p class="sharelabel" id="s7-sharelabel">Share this video</p>
+      </div>
+
+      <p class="action" id="s7-a2">DM us to book your school</p>
+      <div class="handlewrap" id="s7-handle">
+        <svg class="dmicon" viewBox="0 0 24 24" fill="none" stroke="#3DDC84" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.5 8.5 0 0 1-3.9-.9L3 21l1.9-5.1A8.4 8.4 0 0 1 4 11.5a8.4 8.4 0 0 1 9-8.4 8.4 8.4 0 0 1 8 8.4z"></path>
+        </svg>
+        <p class="handletext">@declare_now</p>
+      </div>
+
+      <img class="logo" id="s7-logo" src="assets/logo-truecolor.png" alt="DECLARE" />
+      <p class="thesis" id="s7-thesis">Insights for <span class="hi">everyone</span></p>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      tl.fromTo("#s7-glow", { scale: 0.96, opacity: 0.8 }, { scale: 1.08, opacity: 1, duration: 5.25, ease: "sine.inOut", yoyo: true, repeat: 1 }, 0);
+      tl.fromTo("#s7-grid", { y: 0 }, { y: -70, duration: 10.5, ease: "none" }, 0);
+
+      tl.set(["#s7-thesis", "#s7-share", "#s7-sharelabel", "#s7-a2", "#s7-handle", "#s7-logo", "#s7-cursor", "#s7-ping"], { autoAlpha: 0 }, 0);
+
+      // the share action leads, since it is the thing we want them to do
+      tl.fromTo("#s7-share", { y: 34, scale: 0.9 }, { y: 0, scale: 1, autoAlpha: 1, duration: 0.5, ease: "back.out(1.7)" }, 0.3);
+      tl.fromTo("#s7-sharelabel", { y: 20 }, { y: 0, autoAlpha: 1, duration: 0.4, ease: "power3.out" }, 0.7);
+
+      // cursor travels in from the lower right, then taps the button
+      tl.fromTo(
+        "#s7-cursor",
+        { autoAlpha: 0, x: 300, y: 330 },
+        { autoAlpha: 1, x: 30, y: 92, duration: 1.05, ease: "power2.inOut" },
+        2.4,
+      );
+      // the click: cursor dips, button squashes, ring pings outward
+      tl.to("#s7-cursor", { scale: 0.84, duration: 0.12, ease: "power2.in" }, 2.4);
+      tl.to("#s7-cursor", { scale: 1, duration: 0.18, ease: "back.out(3)" }, 2.52);
+      tl.to("#s7-share", { scale: 0.9, duration: 0.12, ease: "power2.in" }, 2.42);
+      tl.to("#s7-share", { scale: 1, duration: 0.3, ease: "back.out(3.2)" }, 2.54);
+      tl.fromTo("#s7-ping", { autoAlpha: 0.9, scale: 1 }, { autoAlpha: 0, scale: 1.75, duration: 0.72, ease: "power2.out" }, 2.46);
+      // cursor drifts back out so it doesn't sit on the end card
+      tl.to("#s7-cursor", { autoAlpha: 0, x: 150, y: 210, duration: 0.5, ease: "power2.in" }, 3.2);
+
+      // the second ask, handle, lockup
+      tl.fromTo("#s7-a2", { y: 32, scale: 0.97 }, { y: 0, scale: 1, autoAlpha: 1, duration: 0.45, ease: "back.out(1.6)" }, 3.9);
+      tl.fromTo("#s7-handle", { y: 22 }, { y: 0, autoAlpha: 1, duration: 0.4, ease: "power3.out" }, 4.5);
+      tl.fromTo("#s7-logo", { y: 28, scale: 0.94 }, { y: 0, scale: 1, autoAlpha: 1, duration: 0.6, ease: "back.out(1.5)" }, 5.4);
+
+      tl.fromTo("#s7-thesis", { y: 22 }, { y: 0, autoAlpha: 1, duration: 0.5, ease: "power3.out" }, 6.1);
+
+      // hold to the end; the last frame is the card
+      window.__timelines["s7-cta"] = tl;
+    </script>
+  </div>
+</template>

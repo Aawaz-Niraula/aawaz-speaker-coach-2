@@ -309,7 +309,12 @@ export function CoachMascot({
           cx="60"
           cy="78"
           rx="5.2"
+          ry="1.6"
           fill="#2a2140"
+          // framer-motion needs an explicit starting ry. With only the DOM
+          // attribute, its first frame still writes ry="undefined", which logs an
+          // SVG error on every load; `initial` is what takes that to zero.
+          initial={{ ry: 1.6 }}
           animate={{ ry: [1.6, 6.2, 2.6, 5.4, 1.8, 4.8, 2.2] }}
           transition={{ duration: 1.15, repeat: animated ? Infinity : 0, ease: 'easeInOut' }}
         />

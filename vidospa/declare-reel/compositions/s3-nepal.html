@@ -1,0 +1,242 @@
+<template>
+  <div
+    data-composition-id="s3-nepal"
+    data-width="1080"
+    data-height="1920"
+    data-duration="12.4"
+    style="position: absolute; inset: 0"
+  >
+    <style>
+      [data-composition-id="s3-nepal"] {
+        --ink: #05100A;
+        --ink-soft: #0C1E14;
+        --alarm: #7E9C88;
+        --accent: #3DDC84;
+        --fg: #E6F5EA;
+        --muted: rgba(230, 245, 234, 0.55);
+      }
+      [data-composition-id="s3-nepal"] .fill {
+        position: absolute;
+        inset: 0;
+        background: var(--ink);
+      }
+      [data-composition-id="s3-nepal"] .glow {
+        position: absolute;
+        left: -10%;
+        top: 12%;
+        width: 120%;
+        height: 60%;
+        background: radial-gradient(ellipse at 50% 50%, rgba(61, 220, 132, 0.14), rgba(61, 220, 132, 0) 65%);
+      }
+      [data-composition-id="s3-nepal"] .grid-bg {
+        position: absolute;
+        inset: 0;
+        background-image: linear-gradient(rgba(230, 245, 234, 0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(230, 245, 234, 0.04) 1px, transparent 1px);
+        background-size: 90px 90px;
+      }
+      [data-composition-id="s3-nepal"] .ghost {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 3%;
+        text-align: center;
+        font-family: "Archivo Black", sans-serif;
+        font-size: 175px;
+        color: rgba(230, 245, 234, 0.13);
+        letter-spacing: -0.04em;
+      }
+
+      [data-composition-id="s3-nepal"] .wrap {
+        position: absolute;
+        left: 76px;
+        right: 76px;
+        top: 0;
+        bottom: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+      [data-composition-id="s3-nepal"] .kicker {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 32px;
+        font-weight: 700;
+        color: var(--accent);
+        letter-spacing: 0.08em;
+        margin: 0 0 44px 0;
+        text-transform: uppercase;
+      }
+
+      /* side by side comparison columns */
+      [data-composition-id="s3-nepal"] .compare {
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        gap: 70px;
+        height: 720px;
+        margin-bottom: 34px;
+      }
+      [data-composition-id="s3-nepal"] .colwrap {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-end;
+        height: 100%;
+      }
+      [data-composition-id="s3-nepal"] .pct {
+        font-family: "Archivo Black", sans-serif;
+        font-size: 140px;
+        line-height: 0.88;
+        letter-spacing: -0.05em;
+        margin: 0 0 22px 0;
+        font-variant-numeric: tabular-nums;
+      }
+      [data-composition-id="s3-nepal"] .pct.us {
+        color: var(--accent);
+      }
+      [data-composition-id="s3-nepal"] .pct.np {
+        color: var(--alarm);
+      }
+      [data-composition-id="s3-nepal"] .bar {
+        display: block;
+        width: 100%;
+        border-radius: 18px 18px 0 0;
+        transform-origin: bottom center;
+      }
+      [data-composition-id="s3-nepal"] .bar.us {
+        height: 420px;
+        background: linear-gradient(180deg, var(--accent), #0E8B4E);
+      }
+      [data-composition-id="s3-nepal"] .bar.np {
+        height: 56px;
+        background: linear-gradient(180deg, var(--alarm), #3A5242);
+      }
+      [data-composition-id="s3-nepal"] .place {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 38px;
+        font-weight: 700;
+        color: var(--fg);
+        margin: 26px 0 0 0;
+        letter-spacing: 0.06em;
+      }
+      [data-composition-id="s3-nepal"] .caption {
+        font-family: "Archivo Black", sans-serif;
+        font-size: 54px;
+        line-height: 1.12;
+        letter-spacing: -0.03em;
+        color: var(--fg);
+        margin: 0 0 22px 0;
+        text-align: center;
+        min-height: 132px;
+      }
+      [data-composition-id="s3-nepal"] .src {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 21px;
+        color: rgba(230, 245, 234, 0.42);
+        margin: 0;
+        text-align: center;
+        line-height: 1.55;
+        min-height: 98px;
+      }
+
+      [data-composition-id="s3-nepal"] .verdict {
+        position: absolute;
+        left: 76px;
+        right: 76px;
+        top: 0;
+        bottom: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+      [data-composition-id="s3-nepal"] .verdict p {
+        font-family: "Archivo Black", sans-serif;
+        font-size: 92px;
+        line-height: 1.05;
+        letter-spacing: -0.04em;
+        color: var(--fg);
+        margin: 0;
+      }
+      [data-composition-id="s3-nepal"] .verdict .hi {
+        color: var(--accent);
+      }
+    </style>
+
+    <div class="fill"></div>
+    <div class="glow" id="s3-glow"></div>
+    <div class="grid-bg" id="s3-grid"></div>
+    <div class="ghost" id="s3-ghost">NEPAL</div>
+
+    <div class="wrap" id="s3-wrap">
+      <p class="kicker" id="s3-kick">Schools that teach how AI works</p>
+
+      <div class="compare">
+        <div class="colwrap" id="s3-cus">
+          <p class="pct us"><span id="s3-nus">0</span>%</p>
+          <span class="bar us" id="s3-bar-us"></span>
+          <p class="place">USA</p>
+        </div>
+        <div class="colwrap" id="s3-cnp">
+          <p class="pct np" id="s3-nplabel">few</p>
+          <span class="bar np" id="s3-bar-np"></span>
+          <p class="place">NEPAL</p>
+        </div>
+      </div>
+
+      <p class="caption" id="s3-cap">Hardly any of us get taught how it works.</p>
+      <p class="src" id="s3-src">
+        USA: CODE.ORG STATE OF AI + CS 2025, HIGH SCHOOLS OFFERING CS/AI.
+        NEPAL: AISCliteracy arXiv:2506.23321, SCHOOLS RATED LOW ON
+        PROVIDING AI EDUCATION.
+      </p>
+    </div>
+
+    <div class="verdict" id="s3-verdict">
+      <p>That gap is the <span class="hi">whole problem</span>.</p>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      tl.fromTo("#s3-glow", { scale: 0.95, opacity: 0.7 }, { scale: 1.08, opacity: 1, duration: 6.2, ease: "sine.inOut", yoyo: true, repeat: 1 }, 0);
+      tl.fromTo("#s3-grid", { y: 0 }, { y: 90, duration: 12.4, ease: "none" }, 0);
+      tl.fromTo("#s3-ghost", { x: -20 }, { x: 20, duration: 12.4, ease: "sine.inOut" }, 0);
+
+      tl.set(["#s3-cus", "#s3-cnp", "#s3-cap", "#s3-src", "#s3-verdict"], { autoAlpha: 0 }, 0);
+      tl.set(["#s3-bar-us", "#s3-bar-np"], { scaleY: 0 }, 0);
+
+      tl.fromTo("#s3-kick", { autoAlpha: 0, x: -26 }, { autoAlpha: 1, x: 0, duration: 0.45, ease: "power3.out" }, 0.2);
+
+      // USA column climbs first so it sets the reference height
+      tl.to("#s3-cus", { autoAlpha: 1, duration: 0.3 }, 0.8);
+      tl.to("#s3-bar-us", { scaleY: 1, duration: 1.0, ease: "power3.out" }, 0.9);
+      const ous = { v: 0 };
+      tl.to(ous, {
+        v: 60,
+        duration: 1.0,
+        ease: "power2.out",
+        onUpdate() {
+          document.querySelector("#s3-nus").textContent = Math.round(ous.v);
+        },
+      }, 0.9);
+
+      // Nepal column drops in beside it. The height difference is the argument.
+      tl.to("#s3-cnp", { autoAlpha: 1, duration: 0.3 }, 3.4);
+      tl.to("#s3-bar-np", { scaleY: 1, duration: 0.7, ease: "power3.out" }, 3.5);
+      tl.fromTo("#s3-nplabel", { scale: 0.85 }, { scale: 1, duration: 0.5, ease: "back.out(2)" }, 3.6);
+
+      tl.fromTo("#s3-cap", { y: 30 }, { y: 0, autoAlpha: 1, duration: 0.55, ease: "power3.out" }, 5.6);
+      tl.to("#s3-src", { autoAlpha: 1, duration: 0.5 }, 6.2);
+
+      // chart clears, then the closing line lands alone
+      tl.to("#s3-wrap", { autoAlpha: 0, y: -34, duration: 0.5, ease: "power2.in" }, 8.3);
+      tl.to("#s3-verdict", { autoAlpha: 1, duration: 0.3 }, 8.9);
+      tl.fromTo("#s3-verdict p", { y: 46, opacity: 0 }, { y: 0, opacity: 1, duration: 0.55, ease: "power4.out" }, 8.9);
+      tl.to("#s3-verdict", { autoAlpha: 0, duration: 0.5, ease: "power2.in" }, 11.8);
+
+      window.__timelines["s3-nepal"] = tl;
+    </script>
+  </div>
+</template>

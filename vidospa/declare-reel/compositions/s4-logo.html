@@ -1,0 +1,132 @@
+<template>
+  <div
+    data-composition-id="s4-logo"
+    data-width="1080"
+    data-height="1920"
+    data-duration="5.6"
+    style="position: absolute; inset: 0"
+  >
+    <style>
+      [data-composition-id="s4-logo"] {
+        --ink: #05100A;
+        --paper: #071A10;
+        --accent: #3DDC84;
+        --accent-dp: #12A45C;
+        --fg-light: #E6F5EA;
+      }
+      /* dark ground that the light wipes away — the lights coming on */
+      [data-composition-id="s4-logo"] .fill-dark {
+        position: absolute;
+        inset: 0;
+        background: var(--ink);
+      }
+      [data-composition-id="s4-logo"] .fill-light {
+        position: absolute;
+        inset: 0;
+        background: var(--paper);
+        transform-origin: center bottom;
+      }
+      [data-composition-id="s4-logo"] .glow {
+        position: absolute;
+        left: -15%;
+        top: 18%;
+        width: 130%;
+        height: 55%;
+        background: radial-gradient(ellipse at 50% 50%, rgba(61, 220, 132, 0.34), rgba(61, 220, 132, 0) 62%);
+      }
+      /* structure replaces static: a clean, level grid */
+      [data-composition-id="s4-logo"] .grid-bg {
+        position: absolute;
+        inset: 0;
+        background-image: linear-gradient(rgba(61, 220, 132, 0.11) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(61, 220, 132, 0.11) 1px, transparent 1px);
+        background-size: 108px 108px;
+      }
+      [data-composition-id="s4-logo"] .mathghost {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 8%;
+        text-align: center;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 120px;
+        font-weight: 700;
+        color: rgba(61, 220, 132, 0.17);
+        letter-spacing: 0.02em;
+      }
+
+      [data-composition-id="s4-logo"] .center {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 40px;
+        padding: 0 90px;
+        box-sizing: border-box;
+      }
+      [data-composition-id="s4-logo"] .logo {
+        display: block;
+        width: 780px;
+        height: auto;
+      }
+      [data-composition-id="s4-logo"] .tagline {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 38px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        color: var(--accent-dp);
+        margin: 0;
+        text-align: center;
+        text-transform: uppercase;
+      }
+      [data-composition-id="s4-logo"] .rule {
+        display: block;
+        width: 300px;
+        height: 4px;
+        background: var(--accent);
+        transform-origin: center;
+      }
+    </style>
+
+    <div class="fill-dark"></div>
+    <div class="fill-light" id="s4-light"></div>
+    <div class="glow" id="s4-glow"></div>
+    <div class="grid-bg" id="s4-grid"></div>
+    <div class="mathghost" id="s4-math">softmax(QKᵀ/√d)V</div>
+
+    <div class="center">
+      <img class="logo" id="s4-logo-img" src="assets/logo-truecolor.png" alt="DECLARE" />
+      <span class="rule" id="s4-rule"></span>
+      <p class="tagline" id="s4-tag">By students, for students</p>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // start dark, then the light floods up from the bottom
+      tl.set("#s4-light", { scaleY: 0 }, 0);
+      tl.set(["#s4-glow", "#s4-grid", "#s4-math"], { autoAlpha: 0 }, 0);
+      tl.set(["#s4-logo-img", "#s4-rule", "#s4-tag"], { autoAlpha: 0 }, 0);
+
+      tl.to("#s4-light", { scaleY: 1, duration: 0.62, ease: "power4.inOut" }, 0.1);
+      tl.to(["#s4-grid", "#s4-glow"], { autoAlpha: 1, duration: 0.5 }, 0.55);
+      tl.to("#s4-math", { autoAlpha: 1, duration: 0.7 }, 0.8);
+
+      // logo lands with weight
+      tl.fromTo("#s4-logo-img", { scale: 0.82, y: 26 }, { scale: 1, y: 0, autoAlpha: 1, duration: 0.72, ease: "back.out(1.6)" }, 0.62);
+      tl.fromTo("#s4-rule", { scaleX: 0 }, { scaleX: 1, autoAlpha: 1, duration: 0.5, ease: "power3.out" }, 1.22);
+      tl.fromTo("#s4-tag", { y: 22 }, { y: 0, autoAlpha: 1, duration: 0.5, ease: "power3.out" }, 1.42);
+
+      // ambient breath while it holds
+      tl.fromTo("#s4-glow", { scale: 0.96 }, { scale: 1.06, duration: 2.1, ease: "sine.inOut", yoyo: true, repeat: 1 }, 1.7);
+      tl.fromTo("#s4-math", { x: -14 }, { x: 14, duration: 4.2, ease: "sine.inOut" }, 1.7);
+
+      tl.to(".center", { autoAlpha: 0, y: -26, duration: 0.45, ease: "power2.in" }, 5.1);
+
+      window.__timelines["s4-logo"] = tl;
+    </script>
+  </div>
+</template>

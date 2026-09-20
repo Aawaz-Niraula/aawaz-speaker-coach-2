@@ -1,4 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
+import { getTrustedOrigins } from '@/lib/origins';
 
 /**
  * Server-issued guest identity.
@@ -13,26 +14,52 @@ export const GUEST_COOKIE_NAME = 'aawaz_guest';
 const GUEST_ID_PREFIX = 'guest_';
 const GUEST_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
-function getGuestSecret() {
-  return (
-    process.env.AAWAZ_GUEST_SECRET
-    || process.env.BETTER_AUTH_SECRET
-    // Dev-only fallback so the app still works without env configuration.
-    || 'aawaz-insecure-dev-secret'
-  );
+let warnedAboutDevSecret = false;
+
+/**
+ * The HMAC key for guest cookies.
+ *
+ * In production there is no fallback: a guessable key would let anyone forge
+ * guest identities and walk straight past the free-use limit. Returning null
+ * makes every guest path fail closed until the secret is configured. Only a
+ * development build gets a fixed key, so the app runs without a .env file.
+ */
+function getGuestSecret(): string | null {
+  const configured = process.env.AAWAZ_GUEST_SECRET || process.env.BETTER_AUTH_SECRET;
+  if (configured) return configured;
+
+  if (process.env.NODE_ENV !== 'production') {
+    if (!warnedAboutDevSecret) {
+      warnedAboutDevSecret = true;
+      console.warn('[identity] No AAWAZ_GUEST_SECRET or BETTER_AUTH_SECRET set; using a development-only guest signing key.');
+    }
+    return 'aawaz-development-only-guest-secret';
+  }
+
+  return null;
 }
 
-function signGuestId(guestId: string) {
-  return createHmac('sha256', getGuestSecret()).update(guestId).digest('base64url');
+export function isGuestIdentityConfigured() {
+  return getGuestSecret() !== null;
+}
+
+function signGuestId(guestId: string, secret: string) {
+  return createHmac('sha256', secret).update(guestId).digest('base64url');
 }
 
 export function createGuestIdentity() {
+  const secret = getGuestSecret();
+  if (!secret) return null;
+
   const guestId = `${GUEST_ID_PREFIX}${randomUUID()}`;
-  return { guestId, token: `${guestId}.${signGuestId(guestId)}` };
+  return { guestId, token: `${guestId}.${signGuestId(guestId, secret)}` };
 }
 
 export function verifyGuestToken(token: string | null | undefined) {
   if (!token || token.length > 256) return null;
+
+  const secret = getGuestSecret();
+  if (!secret) return null;
 
   const separator = token.lastIndexOf('.');
   if (separator <= 0) return null;
@@ -42,7 +69,7 @@ export function verifyGuestToken(token: string | null | undefined) {
 
   if (!guestId.startsWith(GUEST_ID_PREFIX) || guestId.length > 80) return null;
 
-  const expected = Buffer.from(signGuestId(guestId));
+  const expected = Buffer.from(signGuestId(guestId, secret));
   const provided = Buffer.from(signature);
   if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) {
     return null;
@@ -75,12 +102,11 @@ export function readVerifiedGuestId(req: Request) {
 }
 
 function isSecureRequest(req: Request) {
-  const proto = req.headers.get('x-forwarded-proto');
-  if (proto) return proto.split(',')[0]?.trim() === 'https';
+  if (process.env.NODE_ENV === 'production') return true;
   try {
     return new URL(req.url).protocol === 'https:';
   } catch {
-    return process.env.NODE_ENV === 'production';
+    return false;
   }
 }
 
@@ -101,22 +127,21 @@ export function clearGuestCookie(req: Request) {
  */
 export function requireSameOrigin(req: Request): Response | null {
   const origin = req.headers.get('origin');
-  if (!origin || origin === 'null') {
-    // Same-origin non-CORS requests may omit Origin; non-browser clients
-    // cannot ride a victim's cookies anyway.
-    return null;
-  }
-
-  const host = req.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
-    || req.headers.get('host')
-    || '';
-
-  try {
-    if (new URL(origin).host === host) {
-      return null;
+  const fetchSite = req.headers.get('sec-fetch-site');
+  // Opaque origins (sandboxed frames, for example) are not a missing header.
+  if (origin !== 'null' && fetchSite !== 'cross-site' && fetchSite !== 'same-site') {
+    if (!origin) return null; // non-browser clients / same-origin requests
+    try {
+      const allowed = getTrustedOrigins();
+      // A configured production deployment uses only its explicit origins.
+      // Local servers can use their request URL; never trust x-forwarded-host.
+      if (process.env.NODE_ENV !== 'production' || allowed.length === 0) {
+        allowed.push(new URL(req.url).origin);
+      }
+      if (new URL(origin).origin === origin && allowed.includes(origin)) return null;
+    } catch {
+      // fall through to rejection
     }
-  } catch {
-    // fall through to rejection
   }
 
   return Response.json({ error: 'Cross-origin request rejected.' }, { status: 403 });
