@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 
-import { DailyQuotaError, GuestLimitError, IdentityError, dailyQuotaResponse, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
+import { DailyQuotaError, QuotaUnavailableError, quotaUnavailableResponse, GuestLimitError, IdentityError, consumeUsage, dailyQuotaResponse, guestLimitResponse, identityErrorResponse, resolveIdentity } from '@/lib/app-user';
 import { ANALYSIS_MODELS, TRANSCRIPTION_MODELS, type ChatCompletionData } from '@/lib/ai';
+import { isSafeId, pickAudioFile, readFormData } from '@/lib/body';
 import { getSpeechSessionScore, updateSpeechSessionDeepAnalysis } from '@/lib/db';
 import { fetchWithRetryLimited } from '@/lib/fetch';
 import { analyseVocalDelivery, formatVocalForPrompt } from '@/lib/gemini';
@@ -33,8 +34,6 @@ import { GENERAL_RUBRIC, getSpeechTemplate } from '@/lib/speech-config';
  */
 const TRANSCRIBE_TIMEOUT_MS = 110000;
 
-const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
-
 type WhisperVerbose = {
   text?: string;
   duration?: number;
@@ -55,20 +54,21 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const form = await req.formData();
-    const file = form.get('file') as File | null;
-    const sessionId = String(form.get('sessionId') || '').trim().slice(0, 80) || null;
+    // The size ceiling is applied while the body streams in, so an oversized
+    // upload is cut off rather than buffered and then refused.
+    const { form, response: bodyError } = await readFormData(req);
+    if (bodyError) return bodyError;
+
+    const picked = pickAudioFile(form);
+    if (picked.response) return picked.response;
+    const { file } = picked;
+
+    const rawSessionId = form.get('sessionId');
+    const sessionId = isSafeId(rawSessionId) ? rawSessionId : null;
     const selectedTemplateId = String(form.get('templateId') || '').trim().slice(0, 80) || null;
 
-    if (!file || file.size < 3000) {
-      return Response.json({ error: 'No usable audio was provided.' }, { status: 400 });
-    }
-
-    if (file.size > MAX_AUDIO_BYTES) {
-      return Response.json({ error: 'Recording is too large for deep analysis.' }, { status: 413 });
-    }
-
-    const { userId } = await resolveAppUser(req, true, 'deep-analysis');
+    const identity = await resolveIdentity(req);
+    const { userId } = identity;
 
     const rateLimit = checkRateLimit(`deep-analysis:${getClientKey(req, userId)}`, 6, 10 * 60 * 1000);
     if (!rateLimit.allowed) {
@@ -85,6 +85,10 @@ export async function POST(req: NextRequest) {
         { status: 429, headers: { 'Retry-After': String(globalLimit.retryAfterSeconds) } },
       );
     }
+
+    // Charged only now, once every free check has passed: a request the
+    // limiter turns away never costs a database write or a unit of quota.
+    await consumeUsage(req, identity, 'deep-analysis');
 
     const template = getSpeechTemplate(selectedTemplateId);
     const audioBuffer = await file.arrayBuffer();
@@ -320,6 +324,7 @@ ${transcript.slice(0, 4000)}`,
       degraded: !vocal,
     });
   } catch (error) {
+    if (error instanceof QuotaUnavailableError) return quotaUnavailableResponse();
     if (error instanceof DailyQuotaError) return dailyQuotaResponse();
     if (error instanceof GuestLimitError) return guestLimitResponse();
     if (error instanceof IdentityError) return identityErrorResponse();

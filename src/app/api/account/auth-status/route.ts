@@ -1,4 +1,11 @@
-export async function GET() {
+import { NextRequest } from 'next/server';
+
+import { enforceIpRateLimit } from '@/lib/rate-limit';
+
+export async function GET(req: NextRequest) {
+  const limited = enforceIpRateLimit(req, { name: 'account:auth-status', limit: 120, windowMs: 60 * 1000 });
+  if (limited) return limited;
+
   const hasCoreAuthConfig = Boolean(
     process.env.BETTER_AUTH_SECRET
     && process.env.TURSO_DATABASE_URL
@@ -13,9 +20,9 @@ export async function GET() {
   );
   const googleEnabled = accountAuthEnabled && hasGoogleConfig;
   const message = !hasCoreAuthConfig
-    ? 'Account sign-in needs BETTER_AUTH_SECRET, TURSO_DATABASE_URL, and TURSO_AUTH_TOKEN configured.'
+    ? 'Account sign-in is not configured on this server.'
     : !hasGoogleConfig
-      ? 'Google sign-in needs GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET configured.'
+      ? 'Google sign-in is not configured on this server.'
       : null;
 
   return Response.json({

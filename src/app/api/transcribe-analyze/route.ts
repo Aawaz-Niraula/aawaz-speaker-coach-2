@@ -3,7 +3,8 @@ import { randomUUID } from 'crypto';
 import { after, NextRequest } from 'next/server';
 
 import { ANALYSIS_MODELS, TRANSCRIPTION_MODELS, getProviderErrorMessage, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
-import { DailyQuotaError, GuestLimitError, IdentityError, dailyQuotaResponse, guestLimitResponse, resolveAppUser } from '@/lib/app-user';
+import { DailyQuotaError, QuotaUnavailableError, quotaUnavailableResponse, GuestLimitError, IdentityError, consumeUsage, dailyQuotaResponse, guestLimitResponse, resolveIdentity, type AppIdentity } from '@/lib/app-user';
+import { MAX_AUDIO_BYTES, isAudioUpload, readFormData } from '@/lib/body';
 import { insertSpeechSession, listRecentSpeechSessions } from '@/lib/db';
 import { fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
@@ -76,18 +77,13 @@ export async function POST(req: NextRequest) {
   const originError = requireSameOrigin(req);
   if (originError) return originError;
 
-  let formData: FormData;
+  // The size ceiling is applied while the body streams in, so an oversized
+  // upload is cut off rather than buffered and then refused.
+  const { form: formData, response: bodyError } = await readFormData(req);
+  if (bodyError) return bodyError;
 
-  try {
-    formData = await req.formData();
-  } catch {
-    return Response.json(
-      { transcript: '', feedback: 'Invalid audio upload. Please record again.', history: [] },
-      { status: 400 },
-    );
-  }
-
-  const file = formData.get('file') as File | null;
+  const fileEntry = formData.get('file');
+  const file = fileEntry instanceof File ? fileEntry : null;
   const selectedTemplateId = String(formData.get('templateId') || '').trim().slice(0, 80) || null;
   const rehearsalMode = String(formData.get('rehearsalMode') || '').trim() === 'guided-read' ? 'guided-read' : null;
   const referenceScript = rehearsalMode
@@ -102,7 +98,14 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  if (file.size > 20 * 1024 * 1024) {
+  if (!isAudioUpload(file)) {
+    return Response.json(
+      { transcript: '', feedback: 'Only audio recordings can be analysed.', history: [] },
+      { status: 415 },
+    );
+  }
+
+  if (file.size > MAX_AUDIO_BYTES) {
     return Response.json(
       {
         transcript: '',
@@ -113,17 +116,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let resolvedUser: Awaited<ReturnType<typeof resolveAppUser>>;
+  let identity: AppIdentity;
   try {
-    resolvedUser = await resolveAppUser(req, true, 'transcribe-analyze');
+    identity = await resolveIdentity(req);
   } catch (error) {
-    if (error instanceof DailyQuotaError) {
-      return dailyQuotaResponse();
-    }
-    if (error instanceof GuestLimitError) {
-      return guestLimitResponse();
-    }
-
     return Response.json(
       {
         transcript: '',
@@ -134,7 +130,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { userId, isGuest, guestRemaining } = resolvedUser;
+  const { userId } = identity;
 
   const template = getSpeechTemplate(selectedTemplateId);
   const rubricMode = template ? `template:${template.id}` : 'general';
@@ -172,6 +168,19 @@ export async function POST(req: NextRequest) {
       },
       { status: 429, headers: { 'Retry-After': String(globalRateLimit.retryAfterSeconds) } },
     );
+  }
+
+  // Charged only now, once every free check has passed: a request the
+  // limiter turns away never costs a database write or a unit of quota.
+  let isGuest: boolean;
+  let guestRemaining: number | null;
+  try {
+    ({ isGuest, guestRemaining } = await consumeUsage(req, identity, 'transcribe-analyze'));
+  } catch (error) {
+    if (error instanceof QuotaUnavailableError) return quotaUnavailableResponse();
+    if (error instanceof DailyQuotaError) return dailyQuotaResponse();
+    if (error instanceof GuestLimitError) return guestLimitResponse();
+    throw error;
   }
 
   // Fetch history while the audio is being transcribed — no reason to wait.

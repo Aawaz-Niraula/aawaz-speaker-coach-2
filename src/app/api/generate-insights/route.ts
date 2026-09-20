@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server';
 
 import { getProviderErrorMessage, isAbortTimeout, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
-import { DailyQuotaError, GuestLimitError, IdentityError, dailyQuotaResponse, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
-import { listRecentSpeechSessions } from '@/lib/db';
+import { DailyQuotaError, QuotaUnavailableError, quotaUnavailableResponse, GuestLimitError, IdentityError, consumeUsage, dailyQuotaResponse, guestLimitResponse, identityErrorResponse, resolveIdentity } from '@/lib/app-user';
+import { listSpeechSessionSummaries } from '@/lib/db';
 import { fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
@@ -17,7 +17,8 @@ export async function POST(req: NextRequest) {
   if (originError) return originError;
 
   try {
-    const { userId } = await resolveAppUser(req, true, 'generate-insights');
+    const identity = await resolveIdentity(req);
+    const { userId } = identity;
     const rateKey = `generate-insights:${getClientKey(req, userId)}`;
     const rateLimit = checkRateLimit(rateKey, 15, 10 * 60 * 1000);
     if (!rateLimit.allowed) {
@@ -35,7 +36,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const sessions = await listRecentSpeechSessions(userId, 12);
+    // Summaries only: the prompt reads scores, pace and the first 150
+    // characters of each report, so the full records never leave the database.
+    const sessions = await listSpeechSessionSummaries(userId, 12, 200);
 
     if (!sessions || sessions.length === 0) {
       return Response.json({
@@ -49,6 +52,10 @@ export async function POST(req: NextRequest) {
     if (!DEEPINFRA_API_KEY) {
       return Response.json({ error: 'Server configuration error: missing API key.' }, { status: 500 });
     }
+
+    // Charged only now, once the free checks and the no-sessions shortcut have passed: a request the
+    // limiter turns away never costs a database write or a unit of quota.
+    await consumeUsage(req, identity, 'generate-insights');
 
     // Pre-compute stats on the server to reduce LLM work
     const scored = sessions.filter((s) => s.overall_score !== null);
@@ -154,6 +161,7 @@ export async function POST(req: NextRequest) {
       });
     }
   } catch (error) {
+    if (error instanceof QuotaUnavailableError) return quotaUnavailableResponse();
     if (error instanceof DailyQuotaError) {
       return dailyQuotaResponse();
     }

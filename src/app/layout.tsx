@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
 import './globals.css';
+import { AUTHOR, SITE_NAME, SITE_URL, isPublished } from '@/lib/site';
 
 /*
  * All three fonts ship with the app rather than being fetched from Google at
@@ -52,8 +53,22 @@ const mono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: 'Aawaz Speaker Coach',
-  description: 'History-aware speech coaching with honest, technical feedback.',
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: 'Aawaz Speaker Coach: Free AI Public Speaking Coach',
+    template: `%s | ${SITE_NAME}`,
+  },
+  description:
+    'Record a speech and get an honest score on structure, pace, pauses and filler words. Built for students practising debates, MUN and school speeches.',
+  applicationName: SITE_NAME,
+  // The author link only appears once the About page exists, so metadata
+  // never points crawlers at a page that 404s.
+  authors: [{ name: AUTHOR.name, ...(isPublished('/about') ? { url: AUTHOR.url } : {}) }],
+  creator: AUTHOR.name,
+  // No `url` here: every page inherits these fields, so a root url would
+  // claim every page is the homepage. Pages set their own via pageMetadata().
+  openGraph: { type: 'website', siteName: SITE_NAME, locale: 'en_GB' },
+  twitter: { card: 'summary_large_image' },
 };
 
 export const viewport: Viewport = {
@@ -69,7 +84,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${serif.variable} ${sans.variable} ${mono.variable}`}>
+    <html lang="en-GB" className={`${serif.variable} ${sans.variable} ${mono.variable}`}>
       <body>
         <div className="bg-mesh" aria-hidden="true" />
         {children}

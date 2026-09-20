@@ -54,7 +54,7 @@ import { requestJson } from '@/lib/request';
 import type { RehearsalScript } from '@/lib/rehearsal';
 import { sfx } from '@/lib/sound';
 import { DEFAULT_ACCENT, EXAMPLE_ACCENTS, getAvailableAccents, type ExampleAccent } from '@/lib/elevenlabs';
-import { DEFAULT_TEMPLATE_ID, getSpeechTemplate, type SpeechTemplateId } from '@/lib/speech-config';
+import { DEFAULT_TEMPLATE_ID, SPEECH_TEMPLATES, getSpeechTemplate, type SpeechTemplateId } from '@/lib/speech-config';
 import { cn } from '@/lib/utils';
 
 /* ── Types ───────────────────────────────────────────────────────── */
@@ -229,7 +229,18 @@ function ScoreBadge({ score }: { score: number | null }) {
 
 /* ── Main page ───────────────────────────────────────────────────── */
 export default function Home() {
-  const { data: session, isPending: isSessionPending, refetch: refetchSession } = authClient.useSession();
+  const authState = authClient.useSession();
+  if (authState.isPending) {
+    return <div role="status" className="p-8 text-center text-white">Loading your session…</div>;
+  }
+  // Private reports, scripts, recordings and chat belong to one identity.
+  // Remount the entire coach on logout/account switch so late responses cannot
+  // populate the next user's state, even when the switch happens in another tab.
+  return <Coach key={authState.data?.user.id ?? 'guest'} authState={authState} />;
+}
+
+function Coach({ authState }: { authState: ReturnType<typeof authClient.useSession> }) {
+  const { data: session, isPending: isSessionPending, refetch: refetchSession } = authState;
   const accountUser = session?.user ?? null;
   const reduceMotion = useReducedMotion();
 
@@ -323,6 +334,7 @@ export default function Home() {
   const speechAudioRef = useRef(speechAudio);
   const speechAudioAbortRef = useRef<AbortController | null>(null);
   const claimedForRef = useRef<string | null>(null);
+  const mountedRef = useRef(true);
 
   /* ── Identity bootstrap (server-issued guest cookie) ───────────── */
   useEffect(() => {
@@ -373,7 +385,24 @@ export default function Home() {
       const mode = params.get('auth') === 'sign-in' ? 'sign-in' : params.get('auth') === 'sign-up' ? 'sign-up' : null;
       if (err) toast.error(`Authentication error: ${err}`);
       if (mode) setAuthGreetingMode(mode);
-      if (err || mode) window.history.replaceState({}, document.title, window.location.pathname);
+      // Framework and guide pages link here as /coach?template=<id> and
+      // /coach?tab=speech, so a visitor lands on the format they just read about.
+      const template = params.get('template');
+      if (template && SPEECH_TEMPLATES.some((t) => t.id === template)) {
+        setSelectedTemplateId(template as SpeechTemplateId);
+        setSpeechTemplateId(template as SpeechTemplateId);
+      }
+      if (params.get('tab') === 'speech') setActiveTab('speech');
+      // All four params are one-shot. Consume them so a reload, or a Google
+      // sign-in (whose return URL is built from the current address), can't
+      // replay them over a choice made since. Other params, such as campaign
+      // tags, are left alone.
+      const consumed = ['error', 'auth', 'template', 'tab'].filter((key) => params.has(key));
+      if (consumed.length) {
+        consumed.forEach((key) => params.delete(key));
+        const query = params.toString();
+        window.history.replaceState({}, document.title, window.location.pathname + (query ? '?' + query : '') + window.location.hash);
+      }
     }
   }, []);
 
@@ -498,7 +527,9 @@ export default function Home() {
 
   /* ── Unmount cleanup ───────────────────────────────────────────── */
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       if (timerRef.current) clearInterval(timerRef.current);
       mediaRecorderRef.current = null;
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -577,6 +608,10 @@ export default function Home() {
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!mountedRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       setMicPermission('granted');
       const recorder = new MediaRecorder(stream);
       const chunks: Blob[] = [];
@@ -822,7 +857,8 @@ export default function Home() {
   const signOut = async () => {
     setIsAuthBusy(true);
     try {
-      await authClient.signOut();
+      const result = await authClient.signOut();
+      if (result.error) throw new Error(result.error.message || 'Could not sign out.');
       claimedForRef.current = null;
       await refetchSession();
       setHistory([]);

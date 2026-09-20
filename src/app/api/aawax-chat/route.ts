@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server';
 
 import { getProviderErrorMessage, isAbortTimeout, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
-import { DailyQuotaError, GuestLimitError, IdentityError, dailyQuotaResponse, guestLimitResponse, identityErrorResponse, resolveAppUser } from '@/lib/app-user';
-import { listRecentSpeechSessions, type SpeechSessionRecord } from '@/lib/db';
+import { DailyQuotaError, QuotaUnavailableError, quotaUnavailableResponse, GuestLimitError, IdentityError, consumeUsage, dailyQuotaResponse, guestLimitResponse, identityErrorResponse, resolveIdentity } from '@/lib/app-user';
+import { readJsonObject } from '@/lib/body';
+import { listSpeechSessionSummaries, type SpeechSessionSummary } from '@/lib/db';
 import { fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
@@ -10,6 +11,9 @@ import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
 const AAWAX_MODEL = process.env.DEEPINFRA_AAWAX_MODEL || 'deepseek-ai/DeepSeek-V4-Flash';
 
 type IncomingMessage = { role: 'user' | 'assistant'; content: string };
+
+/** The tabs the UI can report. Anything else is folded to the default. */
+const KNOWN_TABS = new Set(['coach', 'speech', 'history', 'progress', 'account', 'aawax']);
 
 function formatAawaxError(status: number, message?: string) {
   if (status === 429) {
@@ -38,7 +42,7 @@ function firstSentence(feedback: string, max = 90) {
 }
 
 /** Build a compact, private summary of the user's speaking history for the model. */
-function buildPerformanceContext(sessions: SpeechSessionRecord[]) {
+function buildPerformanceContext(sessions: SpeechSessionSummary[]) {
   if (!sessions.length) {
     return 'PERFORMANCE DATA: The user has no recorded speeches yet. Gently encourage them to record their first speech in the Speaking Coach tab.';
   }
@@ -99,10 +103,13 @@ export async function POST(req: NextRequest) {
   if (originError) return originError;
 
   try {
-    const body = await req.json().catch(() => null);
-    const message = typeof body?.message === 'string' ? body.message.trim().slice(0, 900) : '';
-    const tab = typeof body?.tab === 'string' ? body.tab.trim().slice(0, 40) : 'coach';
-    const history: IncomingMessage[] = Array.isArray(body?.history)
+    const { body, response: bodyError } = await readJsonObject(req);
+    if (bodyError) return bodyError;
+
+    const message = typeof body.message === 'string' ? body.message.trim().slice(0, 900) : '';
+    const requestedTab = typeof body.tab === 'string' ? body.tab.trim() : '';
+    const tab = KNOWN_TABS.has(requestedTab) ? requestedTab : 'coach';
+    const history: IncomingMessage[] = Array.isArray(body.history)
       ? body.history
           .filter((m: unknown): m is IncomingMessage =>
             !!m && typeof m === 'object' &&
@@ -122,7 +129,8 @@ export async function POST(req: NextRequest) {
       return Response.json({ answer: '', error: 'Server configuration error: missing API key.' }, { status: 500 });
     }
 
-    const { userId } = await resolveAppUser(req, true, 'aawax-chat');
+    const identity = await resolveIdentity(req);
+    const { userId } = identity;
     const rateKey = `aawax-chat:${getClientKey(req, userId)}`;
     const rateLimit = checkRateLimit(rateKey, 30, 10 * 60 * 1000);
     if (!rateLimit.allowed) {
@@ -140,7 +148,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const sessions = await listRecentSpeechSessions(userId, 25).catch(() => [] as SpeechSessionRecord[]);
+    // Charged only now, once every free check has passed: a request the
+    // limiter turns away never costs a database write or a unit of quota.
+    await consumeUsage(req, identity, 'aawax-chat');
+
+    // Summaries only: the prompt needs scores and a one-line recap, not
+    // every transcript and delivery report the user has ever saved.
+    const sessions = await listSpeechSessionSummaries(userId, 25, 300).catch(() => [] as SpeechSessionSummary[]);
     const performanceContext = buildPerformanceContext(sessions);
 
     const conversation = history.length
@@ -206,6 +220,7 @@ Current app tab: ${tab}.`,
 
     return Response.json({ answer });
   } catch (error) {
+    if (error instanceof QuotaUnavailableError) return quotaUnavailableResponse();
     if (error instanceof DailyQuotaError) {
       return dailyQuotaResponse();
     }

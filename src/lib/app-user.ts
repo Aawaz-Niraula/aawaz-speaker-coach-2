@@ -1,6 +1,16 @@
 import { auth } from '@/lib/auth';
-import { consumeDailyQuota, consumeGuestUsage, ensureAuthSchema } from '@/lib/db';
+import { consumeDailyQuota, consumeGuestUsage, ensureSchema } from '@/lib/db';
 import { readVerifiedGuestId } from '@/lib/identity';
+import { getClientIp } from '@/lib/rate-limit';
+
+export { QuotaUnavailableError } from '@/lib/db';
+
+export function quotaUnavailableResponse() {
+  return Response.json(
+    { error: 'Usage protection is temporarily unavailable. Please try again shortly.' },
+    { status: 503, headers: { 'Retry-After': '30', 'Cache-Control': 'no-store' } },
+  );
+}
 
 const GUEST_LIMIT_MESSAGE = 'Create a free account to keep using Aawaz Speaker Coach.';
 const IDENTITY_MESSAGE = 'Your session could not be verified. Refresh the page and try again.';
@@ -40,30 +50,27 @@ export function dailyQuotaResponse() {
   );
 }
 
-export type ResolvedAppUser = {
+export type AppIdentity = {
   userId: string;
   isGuest: boolean;
+};
+
+export type ResolvedAppUser = AppIdentity & {
   guestRemaining: number | null;
 };
 
 /**
- * Resolves the caller's identity from server-side state only:
+ * Who is calling, from server-side state only:
  * - a Better Auth session cookie for signed-in users, or
  * - the signed, httpOnly guest cookie for guests.
  *
- * Client-provided user ids are never trusted.
+ * Client-provided user ids are never trusted. This reads but never writes,
+ * so a route can learn the identity, run its in-memory rate limits, and
+ * only then pay for a database write with consumeUsage(). Under a flood the
+ * cheap rejections happen before the database sees anything.
  */
-export async function resolveAppUser(
-  req: Request,
-  consumeGuestUse = false,
-  /**
-   * Route name for the daily quota, e.g. 'transcribe-analyze'. Omit on cheap
-   * or read-only routes. The in-process rate limiter is per-instance and
-   * cannot hold a real ceiling; this one is shared and durable.
-   */
-  action?: string,
-): Promise<ResolvedAppUser> {
-  await ensureAuthSchema();
+export async function resolveIdentity(req: Request): Promise<AppIdentity> {
+  await ensureSchema();
   const session = await auth.api.getSession({ headers: req.headers }).catch((err) => {
     console.error('getSession failed:', err);
     return null;
@@ -71,16 +78,7 @@ export async function resolveAppUser(
   const authUserId = session?.user?.id;
 
   if (authUserId) {
-    if (consumeGuestUse && action) {
-      const quota = await consumeDailyQuota(authUserId, action);
-      if (!quota.allowed) throw new DailyQuotaError();
-    }
-
-    return {
-      userId: authUserId,
-      isGuest: false,
-      guestRemaining: null,
-    };
+    return { userId: authUserId, isGuest: false };
   }
 
   const guestId = readVerifiedGuestId(req);
@@ -88,24 +86,64 @@ export async function resolveAppUser(
     throw new IdentityError();
   }
 
-  if (!consumeGuestUse) {
-    return {
-      userId: guestId,
-      isGuest: true,
-      guestRemaining: null,
-    };
+  return { userId: guestId, isGuest: true };
+}
+
+/**
+ * Charges one use of an expensive route to the caller.
+ *
+ * Signed-in users draw on a daily quota per route. Guests draw on their
+ * cookie's small allowance and on a per-address daily cap, checked in that
+ * order of cost: the address cap first, so a blocked address does not spend
+ * one of the guest's three uses for nothing.
+ *
+ * Call this after the in-memory rate limits have passed, never before.
+ */
+export async function consumeUsage(
+  req: Request,
+  identity: AppIdentity,
+  /** Route name for the daily quota, e.g. 'transcribe-analyze'. */
+  action: string,
+): Promise<ResolvedAppUser> {
+  if (!identity.isGuest) {
+    const quota = await consumeDailyQuota(identity.userId, action);
+    if (!quota.allowed) throw new DailyQuotaError();
+
+    return { ...identity, guestRemaining: null };
   }
 
-  const usage = await consumeGuestUsage(guestId);
+  const addressQuota = await consumeDailyQuota(`ip:${getClientIp(req)}`, 'guest-actions');
+  if (!addressQuota.allowed) {
+    throw new GuestLimitError();
+  }
+
+  const usage = await consumeGuestUsage(identity.userId);
   if (!usage.allowed) {
     throw new GuestLimitError();
   }
 
-  return {
-    userId: guestId,
-    isGuest: true,
-    guestRemaining: usage.remaining,
-  };
+  return { ...identity, guestRemaining: usage.remaining };
+}
+
+/**
+ * Identity and, optionally, a usage charge in one call.
+ *
+ * The read-only routes use this with consumeGuestUse=false. The expensive
+ * routes call resolveIdentity() and consumeUsage() separately so their rate
+ * limits sit between the two.
+ */
+export async function resolveAppUser(
+  req: Request,
+  consumeGuestUse = false,
+  action?: string,
+): Promise<ResolvedAppUser> {
+  const identity = await resolveIdentity(req);
+
+  if (consumeGuestUse && action) {
+    return consumeUsage(req, identity, action);
+  }
+
+  return { ...identity, guestRemaining: null };
 }
 
 export function guestLimitResponse() {
