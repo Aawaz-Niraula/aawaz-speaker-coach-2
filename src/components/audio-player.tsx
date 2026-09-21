@@ -71,7 +71,7 @@ export function AudioPlayer({
       <button
         type="button"
         onClick={toggle}
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a78bfa,#f9a8d4)] text-[#06060b] shadow-[0_8px_24px_rgba(167,139,250,0.35)] transition hover:scale-105 active:scale-95 sm:h-10 sm:w-10"
+        className="liquid-glass flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#06060b] transition hover:scale-105 active:scale-95 sm:h-10 sm:w-10"
         aria-label={playing ? 'Pause' : 'Play'}
       >
         {playing ? <Pause className="h-4 w-4" /> : <Play className="ml-0.5 h-4 w-4" />}

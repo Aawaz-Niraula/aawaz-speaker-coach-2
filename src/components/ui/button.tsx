@@ -9,8 +9,11 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
+        // Surface comes from .liquid-glass in globals.css: a tinted pane with
+        // its own specular highlights, rim and hover sweep, rather than a flat
+        // gradient fill. Shared by every primary action in the app.
         primary:
-          'bg-[linear-gradient(135deg,#a78bfa_0%,#f9a8d4_100%)] text-[#06060b] shadow-[0_14px_36px_rgba(167,139,250,0.30)] hover:shadow-[0_18px_46px_rgba(167,139,250,0.42)] hover:brightness-110',
+          'liquid-glass text-[#06060b] hover:shadow-[0_18px_46px_rgba(167,139,250,0.42)] hover:brightness-[1.06]',
         // No backdrop-blur here. Secondary buttons scroll with the page and
         // there are several on screen at once, and a backdrop-filter on a
         // moving element is re-sampled every frame. At a 4px radius it was
