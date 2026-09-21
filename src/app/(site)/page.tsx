@@ -1,22 +1,23 @@
 import type { Metadata } from 'next';
-import Image from 'next/image';
 import Link from 'next/link';
+import { Award, Gauge, Globe, ListChecks, MessageSquare, Presentation, RefreshCw } from 'lucide-react';
 
 import { JsonLd } from '@/components/site/json-ld';
-import { getScoringScheme } from '@/lib/scoring';
+import { MarkingDemo } from '@/components/site/marking-demo';
+import { PhoneScroll } from '@/components/site/phone-scroll';
 import { AUTHOR, SITE_NAME, SITE_URL, isPublished, pageMetadata } from '@/lib/site';
 import type { SpeechTemplateId } from '@/lib/speech-config';
 
-import coachReport from '../../../public/coach-report.png';
-
 /*
- * Homepage: the one page built to rank.
+ * Homepage.
  *
- * Every claim here describes the app as it is today. The marking schemes are
- * read from the same tables the coach scores with, so the page cannot drift
- * from the product. Links to the framework pages and the About page appear
- * only once those pages are in PAGES (src/lib/site.ts), so nothing here can
- * point a crawler at a 404.
+ * It owns the commercial cluster and nothing else: the per format rubrics and
+ * weightings live on the framework pages, which own the informational queries,
+ * so the two never compete for one term.
+ *
+ * Three rules hold the copy down. No label above a heading, no hyphens, and no
+ * runs of clipped sentences. Every section carries one heading and the fewest
+ * words that still say something true.
  */
 const TITLE = 'Aawaz Speaker Coach: Free AI Public Speaking Coach';
 const DESCRIPTION =
@@ -26,168 +27,103 @@ export const metadata: Metadata = pageMetadata({ title: TITLE, description: DESC
 
 /* ── Content ─────────────────────────────────────────────────────── */
 
-/** What each part of the report is, in the order the coach writes it. */
-const REPORT_PARTS: { label: string; text: string }[] = [
+const WHAT_HAPPENS: { title: string; text: string; icon: React.ReactNode }[] = [
   {
-    label: 'Overall score',
-    text: 'A mark out of 100, added up from the breakdown rather than produced on its own.',
+    title: 'Choose the format',
+    icon: <ListChecks className="h-5 w-5" />,
+    text: 'The coach marks against that format’s own rubric rather than one generic checklist.',
   },
   {
-    label: 'Mark breakdown',
-    text: 'One line per criterion in the marking scheme, with marks earned out of marks available and a total that matches the score.',
+    title: 'Record and get marked',
+    icon: <Gauge className="h-5 w-5" />,
+    text: 'A score out of 100 built criterion by criterion, with your filler words, speed and pauses measured from the audio.',
   },
   {
-    label: 'Filler words',
-    text: 'Counted from the audio. A filler after a gap is weighted more heavily: it signals searching for the next word rather than a habit.',
-  },
-  {
-    label: 'Speaking speed',
-    text: 'Words per minute, and whether you sped up, slowed down or held steady. Most speeches sit best between 130 and 160.',
-  },
-  {
-    label: 'Pauses',
-    text: 'Measured from the word timings: whether you left gaps for a point to land, or ran sentences together.',
-  },
-  {
-    label: 'Clarity and structure',
-    text: 'A plain judgement on each, tied to the rubric you chose.',
-  },
-  {
-    label: 'Honest feedback',
-    text: 'Three to five direct sentences. Each criticism quotes what you said and shows the rewritten line.',
-  },
-  {
-    label: 'Three specific fixes',
-    text: 'Each names an established technique, such as the rule of three or a metronome drill, with instructions and repetitions.',
+    title: 'Fix one thing and go again',
+    icon: <RefreshCw className="h-5 w-5" />,
+    text: 'Your previous reports are kept, so the coach says when a mistake has come back and when one is gone.',
   },
 ];
 
-/** Display labels are the page's own; the marking schemes come from the coach. */
-const FRAMEWORKS: { id: SpeechTemplateId; label: string; summary: string }[] = [
-  { id: 'general-public-speaking', label: 'General Public Speaking', summary: 'A structured prepared speech, judged on Ethos, Logos and Pathos.' },
-  { id: 'debate', label: 'Debate Speech', summary: 'A competitive argument: stance, support, rebuttal and clash.' },
-  { id: 'monroe-motivated-sequence', label: "Monroe's Motivated Sequence", summary: "A persuasive speech built on Monroe's five steps, from attention to action." },
-  { id: 'formal-chiefguest', label: 'Formal Chief Guest', summary: 'A ceremonial address that balances warmth with protocol.' },
-  { id: 'formal-organiser', label: 'Formal Organising Party', summary: "The organiser's speech: greeting, purpose, acknowledgements and handover." },
-];
-
-const STEPS: { title: string; text: string }[] = [
-  {
-    title: 'Pick a format',
-    text: 'Choose the one you will give on the day. The rubric, marking scheme and feedback change with it.',
-  },
-  {
-    title: 'Record',
-    text: 'Press record and speak as you would in the room. One to five minutes gives the coach enough to measure pace and pausing.',
-  },
-  {
-    title: 'Fix one thing and record again',
-    text: 'Take the first fix, practise it, and record the same speech again. The coach keeps your previous reports, names a mistake that has come back, and says when something has improved.',
-  },
+const FORMATS: { id: SpeechTemplateId; label: string; summary: string }[] = [
+  { id: 'general-public-speaking', label: 'General Public Speaking', summary: 'A prepared speech judged on Ethos, Logos and Pathos.' },
+  { id: 'debate', label: 'Debate Speech', summary: 'A competitive argument marked on stance, support, rebuttal and clash.' },
+  { id: 'monroe-motivated-sequence', label: "Monroe's Motivated Sequence", summary: 'A persuasive speech running the five steps from attention through to action.' },
+  { id: 'formal-chiefguest', label: 'Formal Chief Guest', summary: 'A ceremonial address balancing warmth with protocol.' },
+  { id: 'formal-organiser', label: 'Formal Organising Party', summary: 'The organiser speech covering greeting, purpose, acknowledgements and handover.' },
 ];
 
 /*
- * Written by Aawaz, in his own words. Leave these empty until he has: a
- * placeholder is rendered so the section can be designed around real space.
+ * Written by Aawaz, in his own words. While these are empty the section is
+ * skipped rather than rendered with placeholder text.
  */
-const BUILDER_NOTE: string[] = [];
-const BUILDER_CREDENTIALS: string[] = [];
+const AUTHOR_NOTE: string[] = [];
+const AUTHOR_CREDENTIALS: string[] = [];
 
-const AUDIENCES: { title: string; text: string }[] = [
+const AUDIENCES: { title: string; text: string; icon: React.ReactNode }[] = [
   {
     title: 'School debaters',
-    text: 'The debate format marks stance, support, rebuttal and clash, and the pace measurement catches a rushed rebuttal the room would have missed.',
+    icon: <MessageSquare className="h-5 w-5" />,
+    text: 'Stance, support, rebuttal and clash are all marked, and the pace measurement catches a rushed rebuttal the room would have missed.',
   },
   {
     title: 'MUN delegates',
-    text: "Position speeches fit the General Public Speaking or Monroe's formats, and the feedback quotes your wording and shows a tighter line.",
+    icon: <Globe className="h-5 w-5" />,
+    text: 'Position speeches fit the general or Monroe formats, and the feedback quotes your wording and shows a tighter line.',
   },
   {
     title: 'Assembly and chief guest speakers',
-    text: 'Two formal formats judge protocol, register and sequencing, where generic advice stops applying.',
+    icon: <Award className="h-5 w-5" />,
+    text: 'Two ceremonial formats judge protocol, register and sequencing, where general advice stops applying.',
   },
   {
     title: 'College presenters',
-    text: 'The structured format marks shape, evidence and delivery, so a presentation can be rehearsed as a speech before anyone hears it.',
+    icon: <Presentation className="h-5 w-5" />,
+    text: 'Shape, evidence and delivery are all marked, so a presentation can be rehearsed before anyone hears it.',
   },
 ];
 
-/** Answers describe the app as it is today, especially about recordings. */
 const QUESTIONS: { question: string; answer: string }[] = [
   {
     question: 'Is it free?',
     answer:
-      'Yes. You can record and get a full report without an account. After a few reports a free account is needed, and it keeps your history across devices. Daily fair-use limits keep the service free.',
+      'Yes. You can record and get a full report without an account, and a free account after that keeps your history across devices. Daily limits are what let the service stay free.',
   },
   {
     question: 'Do I need to download anything?',
-    answer: 'No. The coach runs in your web browser, so speech practice needs nothing installed. It asks for microphone permission and nothing else.',
+    answer: 'No, the coach runs in your browser and asks for microphone permission and nothing else.',
   },
   {
     question: 'Does it work on my phone?',
-    answer: 'Yes. Open the coach in Chrome or Safari on your phone and record there; the recorder and the report are laid out for a phone screen.',
+    answer: 'Yes, and the recorder and the report are both laid out for a phone screen.',
   },
   {
     question: 'What happens to my recording?',
     answer:
-      'The audio is captured in your browser, sent to a speech-to-text service for the transcript, and not kept by the coach. The optional delivery analysis sends the same recording to a second service that listens to how it was said; that is not stored either. The transcript, score and report are saved for comparison with your next attempt, tied to your browser if you have no account. Any report can be deleted from your history, and the Account tab can delete all of your data or the account.',
+      'Your audio goes to a transcription service and is never kept by the coach. What is saved is the transcript, the score and the report, so your next attempt can be compared with it, and you can delete any report or all of your data from the Account tab.',
+  },
+  {
+    question: 'Does it work for Nepali school and college speeches?',
+    answer:
+      'Yes. The two ceremonial formats follow the protocol used at Nepali school functions, and the debate and Monroe formats match the school and college circuit. Everything is marked in English.',
   },
   {
     question: 'Which speech formats does it score?',
     answer:
-      "Five: General Public Speaking, Debate Speech, Monroe's Motivated Sequence, Formal Chief Guest and Formal Organising Party, each with its own rubric and marking scheme.",
+      'Five, each with its own rubric and marking scheme: General Public Speaking, Debate Speech, Monroe’s Motivated Sequence, Formal Chief Guest and Formal Organising Party.',
   },
 ];
 
 /* ── Helpers ─────────────────────────────────────────────────────── */
 
-const DELIVERY_CRITERIA = new Set(['Pace & rhythm', 'Pausing', 'Fluency & filler']);
+const CTA =
+  'liquid-glass inline-flex h-12 cursor-pointer items-center justify-center rounded-full px-7 font-semibold text-[#06060b] transition duration-200 hover:brightness-[1.06] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#a78bfa]';
 
-/** The scheme names use a dash, an ampersand and one American spelling; the page does not. */
-function criterionName(name: string) {
-  return name
-    .replace(/\s+—\s+/g, ': ')
-    .replace(/\s*&\s*/g, ' and ')
-    .replace('Visualization', 'Visualisation');
+function Container({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <div className={`mx-auto max-w-6xl px-5 ${className}`}>{children}</div>;
 }
 
-function frameworkPath(id: SpeechTemplateId) {
-  return `/frameworks/${id}`;
-}
-
-const PRIMARY_BUTTON =
-  'inline-flex h-12 cursor-pointer items-center justify-center rounded-full bg-[linear-gradient(135deg,#a78bfa,#f9a8d4)] px-7 font-semibold text-[#06060b] shadow-[0_14px_36px_rgba(167,139,250,0.3)] transition duration-200 hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#a78bfa]';
-
-const TEXT_LINK =
-  'inline-flex h-12 cursor-pointer items-center gap-2 rounded-full px-2 font-semibold text-[#ddd6fe] underline decoration-[#a78bfa]/40 underline-offset-4 transition duration-200 hover:text-white hover:decoration-white/60 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#a78bfa]';
-
-function Eyebrow({ children }: { children: React.ReactNode }) {
-  return <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-[#857ca2]">{children}</p>;
-}
-
-function SectionHeading({ eyebrow, children }: { eyebrow: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <Eyebrow>{eyebrow}</Eyebrow>
-      <h2 className="mt-3 max-w-2xl font-serif text-3xl leading-[1.1] tracking-[-0.02em] text-balance text-white sm:text-4xl">
-        {children}
-      </h2>
-    </div>
-  );
-}
-
-/** One line of a mark sheet: the name, a dotted leader, and the figure. */
-function MarkRow({ name, value, strong = false }: { name: string; value: string; strong?: boolean }) {
-  return (
-    <li className="flex items-baseline gap-3 py-2.5">
-      <span className={strong ? 'font-semibold text-white' : 'text-[#e6e1f7]'}>{name}</span>
-      <span aria-hidden className="mb-[0.3em] min-w-6 flex-1 border-b border-dotted border-white/25" />
-      <span className={`font-mono text-sm tabular-nums ${strong ? 'text-white' : 'text-[#ddd6fe]'}`}>{value}</span>
-    </li>
-  );
-}
-
-function ArrowIcon() {
+function Arrow() {
   return (
     <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M5 12h14" />
@@ -199,8 +135,6 @@ function ArrowIcon() {
 /* ── Page ────────────────────────────────────────────────────────── */
 
 export default function HomePage() {
-  const generalScheme = getScoringScheme('general-public-speaking');
-  const frameworksLive = isPublished('/frameworks');
   const aboutLive = isPublished('/about');
 
   return (
@@ -210,7 +144,6 @@ export default function HomePage() {
           '@context': 'https://schema.org',
           '@type': 'WebSite',
           name: SITE_NAME,
-          // The in-app companion is called Aawax, so some people search that spelling.
           alternateName: ['Aawax Speaker Coach', 'Speaker Coach'],
           url: SITE_URL,
         }}
@@ -222,7 +155,10 @@ export default function HomePage() {
           name: SITE_NAME,
           applicationCategory: 'EducationalApplication',
           operatingSystem: 'Web browser',
-          url: `${SITE_URL}/coach`,
+          url: SITE_URL,
+          installUrl: `${SITE_URL}/coach`,
+          inLanguage: 'en-GB',
+          isAccessibleForFree: true,
           description: DESCRIPTION,
           featureList: [
             'Score out of 100 with a mark breakdown',
@@ -230,16 +166,12 @@ export default function HomePage() {
             'Speaking speed in words per minute',
             'Pause measurement from word timings',
             'Feedback that quotes the speaker and shows the rewrite',
-            'Three fixes naming established techniques',
             'Five speech formats, each with its own marking scheme',
           ],
           offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-          creator: {
-            '@type': 'Person',
-            name: AUTHOR.name,
-            ...(aboutLive ? { url: AUTHOR.url } : {}),
-          },
-          // No aggregateRating: never add ratings that real users haven't given.
+          areaServed: { '@type': 'Country', name: 'Nepal' },
+          audience: { '@type': 'EducationalAudience', educationalRole: 'student' },
+          creator: { '@type': 'Person', name: AUTHOR.name, ...(aboutLive ? { url: AUTHOR.url } : {}) },
         }}
       />
       <JsonLd
@@ -254,256 +186,240 @@ export default function HomePage() {
         }}
       />
 
-      {/* ── Hero ─────────────────────────────────────────────────── */}
-      <section
-        id="top"
-        className="relative isolate grid gap-12 pb-16 pt-8 sm:pt-14 lg:grid-cols-[minmax(0,10fr)_minmax(0,11fr)] lg:items-start lg:gap-14 lg:pb-24"
-      >
-        {/* One ambient glow behind the hero, the same violet the coach uses.
-            Isolated inside the section so it sits above the page backdrop. */}
+      {/* ═══ Hero ══════════════════════════════════════════════════
+          One object, not two competing ones. The headline and the live
+          marking share a single card built like the report the coach hands
+          back, so the eye lands on the card and then reads across it. */}
+      <section className="relative isolate pb-16 pt-4 sm:pt-8 lg:pb-24">
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 -top-28 -z-10 h-[640px] bg-[radial-gradient(ellipse_70%_55%_at_50%_0%,rgba(167,139,250,0.18),transparent_70%)]"
+          className="pointer-events-none absolute inset-x-0 -top-40 -z-10 h-[760px] bg-[radial-gradient(ellipse_46%_52%_at_50%_0%,rgba(146,110,240,0.26),transparent_70%)]"
         />
+        <Container>
+          <div className="overflow-hidden rounded-[22px] border border-white/12 bg-[linear-gradient(155deg,rgba(38,30,68,0.78)_0%,rgba(13,12,22,0.86)_46%,rgba(8,8,14,0.9)_100%)] shadow-[0_30px_90px_rgba(2,6,23,0.7),inset_0_1px_0_rgba(255,255,255,0.09)] sm:rounded-[28px] sm:shadow-[0_50px_130px_rgba(2,6,23,0.8),inset_0_1px_0_rgba(255,255,255,0.09)]">
+            <div className="grid gap-9 p-6 sm:gap-10 sm:p-9 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.84fr)] lg:items-start lg:gap-14 lg:p-12">
+              <div>
+                <h1 className="max-w-[16ch] font-serif text-[2.7rem] leading-[1.03] tracking-[-0.04em] text-pretty text-white sm:text-[3.5rem] lg:text-[3.8rem]">
+                  Practise your speech. Get an honest score in minutes.
+                </h1>
+                <p className="mt-6 max-w-md text-lg leading-8 text-pretty text-[#cfc8e8]">
+                  A free AI public speaking coach that marks your speech against the format you are giving,
+                  then shows you the lines to change.
+                </p>
+                <Link href="/coach" className={`${CTA} mt-8`}>
+                  Start practising free
+                </Link>
+              </div>
 
-        <div className="lg:pt-6">
-          <Eyebrow>Free AI public speaking coach</Eyebrow>
-          <h1 className="mt-4 font-serif text-[2.75rem] leading-[1.04] tracking-[-0.035em] text-balance text-white sm:text-6xl lg:text-[3.6rem]">
-            Practise your speech. Get an honest score in minutes.
-          </h1>
-          <p className="mt-6 max-w-xl text-lg leading-8 text-pretty text-[#cfc8e8]">
-            Record yourself in the browser and the AI coach marks it out of 100 for structure, speaking speed,
-            pauses, filler words and clarity, against the format you are going to give.
-          </p>
-          <div className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-3">
-            <Link href="/coach" className={PRIMARY_BUTTON}>
-              Start practising free
-            </Link>
-            {frameworksLive ? (
-              <Link href="/frameworks" className={TEXT_LINK}>
-                See the speech frameworks
-                <ArrowIcon />
-              </Link>
-            ) : null}
+              <div className="min-w-0">
+                <MarkingDemo />
+              </div>
+            </div>
           </div>
-        </div>
-
-        <figure className="min-w-0">
-          <div className="rounded-[28px] border border-white/10 bg-[#0b0b12] p-2 shadow-[0_30px_80px_rgba(2,6,23,0.7),inset_0_1px_0_rgba(255,255,255,0.06)]">
-            <Image
-              src={coachReport}
-              alt="The coach's report for a practice speech: a score of 68 out of 100 beside a short summary, then an analysis grid covering filler words, speaking speed, speed control, pauses, hesitation, clarity and structure."
-              priority
-              placeholder="blur"
-              sizes="(min-width: 1024px) 520px, (min-width: 768px) 720px, 100vw"
-              className="h-auto w-full rounded-[20px]"
-            />
-          </div>
-          <figcaption className="mt-4 text-sm leading-6 text-pretty text-[#a79dc8]">
-            A finished report, marked 68 out of 100. The mark breakdown, feedback and fixes follow the analysis
-            shown here.
-          </figcaption>
-        </figure>
+        </Container>
       </section>
 
-      {/* ── The report ───────────────────────────────────────────── */}
-      <section id="report" className="border-t border-white/10 py-16 sm:py-24">
-        <SectionHeading eyebrow="The report">What one recording gives you</SectionHeading>
-        <p className="mt-6 max-w-2xl text-lg leading-8 text-pretty text-[#cfc8e8]">
-          Every recording returns the same report in the same order, so two attempts at one speech compare line by
-          line. It is a marked script, not encouragement.
-        </p>
+      {/* ═══ The report ════════════════════════════════════════════
+          The phone carries the proof, so the words beside it can stay
+          short. Three cards, layered the way the app layers its own. */}
+      <section id="report" className="relative overflow-hidden bg-[linear-gradient(180deg,#08080f,#0b0a14_55%,#08080f)] py-20 sm:py-28">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -left-40 top-1/4 h-[620px] w-[720px] bg-[radial-gradient(ellipse_at_center,rgba(146,110,240,0.2),transparent_68%)]"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-52 bottom-0 h-[520px] w-[640px] bg-[radial-gradient(ellipse_at_center,rgba(224,85,155,0.12),transparent_70%)]"
+        />
+        <Container className="relative">
+          <div className="grid gap-14 lg:grid-cols-[minmax(0,0.6fr)_minmax(0,1fr)] lg:items-center lg:gap-16">
+            <PhoneScroll />
 
-        <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start lg:gap-14">
-          <dl className="divide-y divide-white/10 border-y border-white/10">
-            {REPORT_PARTS.map((part) => (
-              <div key={part.label} className="grid gap-1.5 py-5 sm:grid-cols-[190px_1fr] sm:gap-6">
-                <dt className="font-mono text-[12px] uppercase tracking-[0.16em] text-[#ddd6fe] sm:pt-1">{part.label}</dt>
-                <dd className="max-w-xl leading-7 text-pretty text-[#cfc8e8]">{part.text}</dd>
+            <div>
+              <h2 className="font-serif text-3xl leading-[1.08] tracking-[-0.02em] text-balance text-white sm:text-[2.7rem]">
+                Every recording comes back{' '}
+                <span className="bg-[linear-gradient(100deg,#c4b0ff,#f9a8d4)] grad-text">
+                  marked
+                </span>
+              </h2>
+              <p className="mt-5 max-w-lg text-lg leading-8 text-pretty text-[#cfc8e8]">
+                The same report in the same order every time, so two attempts at one speech can be read side by
+                side.
+              </p>
+
+              <ul className="mt-10 grid gap-3">
+                {WHAT_HAPPENS.map((item) => (
+                  <li
+                    key={item.title}
+                    className="rounded-[24px] border border-white/[0.09] bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.02))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-[#a78bfa]/15 text-[#a78bfa]">
+                        {item.icon}
+                      </span>
+                      <h3 className="font-semibold text-white">{item.title}</h3>
+                    </div>
+                    <p className="mt-2.5 max-w-[62ch] leading-7 text-pretty text-[#a79dc8]">{item.text}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </Container>
+      </section>
+
+      {/* ═══ Who it's for ══════════════════════════════════════════
+          The first light band. Dark, light, dark gives the scroll a rhythm
+          that variations on one dark section never could. */}
+      <section id="audience" className="bg-[linear-gradient(180deg,#f8f6fd,#efebf9)] py-20 text-[#574d75] sm:py-24">
+        <Container>
+          <h2 className="max-w-3xl font-serif text-3xl leading-[1.1] tracking-[-0.02em] text-balance text-[#1a1430] sm:text-[2.7rem]">
+            Built for the speeches students in Nepal are{' '}
+            <span className="bg-[linear-gradient(100deg,#7c5cde,#cf3f88)] grad-text">
+              actually asked to give
+            </span>
+          </h2>
+
+          <ul className="mt-12 grid items-start gap-4 sm:grid-cols-2">
+            {AUDIENCES.map((audience) => (
+              <li
+                key={audience.title}
+                className="rounded-[24px] border border-[#7c5cde]/12 bg-[linear-gradient(160deg,#ffffff,#fdfbff)] p-6 shadow-[0_1px_2px_rgba(88,60,180,0.06),0_14px_36px_rgba(88,60,180,0.10)] sm:p-7"
+              >
+                <span className="flex h-11 w-11 items-center justify-center rounded-[12px] bg-[linear-gradient(135deg,rgba(124,92,222,0.16),rgba(249,168,212,0.14))] text-[#6b46c8]">
+                  {audience.icon}
+                </span>
+                <h3 className="mt-5 text-lg font-semibold text-balance text-[#1a1430]">{audience.title}</h3>
+                <p className="mt-2 leading-7 text-pretty text-[#574d75]">{audience.text}</p>
+              </li>
+            ))}
+          </ul>
+        </Container>
+      </section>
+
+      {/* ═══ Formats ═══════════════════════════════════════════════
+          Second light band, same ground, a different shape: a five row
+          table against the grid above it. */}
+      <section id="formats" className="border-t border-[#7c5cde]/10 bg-[linear-gradient(180deg,#e9e5f6,#f2eff9)] py-20 text-[#574d75] sm:py-24">
+        <Container>
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+            <h2 className="max-w-xl font-serif text-3xl leading-[1.1] tracking-[-0.02em] text-balance text-[#1a1430] sm:text-[2.7rem]">
+              Scored against a{' '}
+              <span className="bg-[linear-gradient(100deg,#7c5cde,#cf3f88)] grad-text">
+                real structure
+              </span>
+            </h2>
+            <p className="max-w-xs leading-7 text-pretty text-[#574d75]">
+              A debate speech is judged on its rebuttal and a chief guest speech on its protocol.
+            </p>
+          </div>
+
+          <ul className="mt-12 grid gap-px overflow-hidden rounded-[24px] border border-[#7c5cde]/12 bg-[#7c5cde]/14 shadow-[0_1px_2px_rgba(88,60,180,0.05),0_18px_44px_rgba(88,60,180,0.11)]">
+            {FORMATS.map(({ id, label, summary }) => {
+              const live = isPublished(`/frameworks/${id}`);
+              const row = (
+                <div className="flex flex-col gap-1.5 bg-white px-6 py-6 transition-colors duration-200 group-hover:bg-[#faf8ff] sm:flex-row sm:items-start sm:gap-8 sm:px-8">
+                  <h3 className="min-w-0 shrink-0 font-serif text-xl text-[#1a1430] sm:w-80 sm:text-2xl">{label}</h3>
+                  <p className="min-w-0 flex-1 leading-7 text-pretty text-[#574d75] sm:max-w-xl">{summary}</p>
+                  {live ? (
+                    <span className="hidden shrink-0 self-center text-[#8478a8] transition-colors group-hover:text-[#1a1430] sm:block">
+                      <Arrow />
+                    </span>
+                  ) : null}
+                </div>
+              );
+
+              return (
+                <li key={id}>
+                  {live ? (
+                    <Link
+                      href={`/frameworks/${id}`}
+                      className="group block cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#7c5cde]"
+                    >
+                      {row}
+                    </Link>
+                  ) : (
+                    <div>{row}</div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </Container>
+      </section>
+
+      {/* ═══ Author ════════════════════════════════════════════════ */}
+      {AUTHOR_NOTE.length ? (
+        <section id="author" className="bg-[#08080f] py-20 sm:py-24">
+          <Container>
+            <h2 className="font-serif text-3xl leading-[1.1] tracking-[-0.02em] text-white sm:text-4xl">Who built it</h2>
+            <div className="mt-6 max-w-2xl">
+              {AUTHOR_NOTE.map((paragraph) => (
+                <p key={paragraph} className="mt-4 text-lg leading-8 text-pretty text-[#cfc8e8] first:mt-0">
+                  {paragraph}
+                </p>
+              ))}
+              {AUTHOR_CREDENTIALS.length ? (
+                <ul className="mt-6 flex flex-wrap gap-x-6 gap-y-2 font-mono text-xs uppercase tracking-[0.14em] text-[#ddd6fe]">
+                  {AUTHOR_CREDENTIALS.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          </Container>
+        </section>
+      ) : null}
+
+      {/* ═══ Questions ═════════════════════════════════════════════ */}
+      <section id="questions" className="relative overflow-hidden bg-[linear-gradient(180deg,#08080f,#0a0a13)] py-20 sm:py-28">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-44 top-0 h-[540px] w-[680px] bg-[radial-gradient(ellipse_at_center,rgba(124,92,222,0.16),transparent_70%)]"
+        />
+        <Container className="relative">
+          <h2 className="font-serif text-3xl leading-[1.1] tracking-[-0.02em] text-balance text-white sm:text-[2.7rem]">
+            Questions about{' '}
+            <span className="bg-[linear-gradient(100deg,#c4b0ff,#f9a8d4)] grad-text">
+              practising online
+            </span>
+          </h2>
+          <p className="mt-4 max-w-lg text-lg leading-8 text-pretty text-[#cfc8e8]">
+            What the coach does with your recording, what it costs and what it can mark.
+          </p>
+          <div className="mt-10 grid gap-px overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.08]">
+            {QUESTIONS.map(({ question, answer }) => (
+              <div key={question} className="grid gap-2 bg-[#0a0a12] p-6 lg:grid-cols-[300px_1fr] lg:gap-12 lg:p-7">
+                <h3 className="font-semibold text-balance text-white">{question}</h3>
+                <p className="max-w-[58ch] leading-7 text-pretty text-[#a79dc8]">{answer}</p>
               </div>
             ))}
-          </dl>
-
-          <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] sm:p-7 lg:sticky lg:top-6">
-            <Eyebrow>Marking scheme</Eyebrow>
-            <p className="mt-1 font-serif text-2xl text-white">General Public Speaking</p>
-            <ol className="mt-4 divide-y divide-white/[0.07]">
-              {generalScheme.criteria.map((criterion) => (
-                <MarkRow key={criterion.name} name={criterionName(criterion.name)} value={String(criterion.weight)} />
-              ))}
-            </ol>
-            <ul className="mt-2 border-t border-white/20">
-              <MarkRow name="Total" value="100" strong />
-            </ul>
-            <p className="mt-4 text-sm leading-6 text-pretty text-[#a79dc8]">
-              Pace, pausing and filler are measured from the word timings, so those marks mean the same in every
-              format; the others change with the format.
-            </p>
           </div>
-        </div>
-
-        <p className="mt-10 max-w-2xl leading-7 text-pretty text-[#cfc8e8]">
-          If you ask for the deeper delivery read, a second report covers tone, emotion, conviction and emphasis
-          heard in the audio, with drills to match.
-        </p>
+        </Container>
       </section>
 
-      {/* ── Formats ──────────────────────────────────────────────── */}
-      <section id="formats" className="border-t border-white/10 py-16 sm:py-24">
-        <SectionHeading eyebrow="Five formats">Scored against a real structure</SectionHeading>
-        <p className="mt-6 max-w-2xl text-lg leading-8 text-pretty text-[#cfc8e8]">
-          Choose the format before you record. The coach marks against that format&apos;s rubric and weighting, so
-          a debate speech is judged on its rebuttal and a chief guest speech on its protocol.
-        </p>
-
-        <ul className="mt-10 divide-y divide-white/10 border-y border-white/10">
-          {FRAMEWORKS.map(({ id, label, summary }) => {
-            const scheme = getScoringScheme(id);
-            const content = scheme.criteria.filter((criterion) => !DELIVERY_CRITERIA.has(criterion.name));
-            const deliveryMarks = scheme.criteria
-              .filter((criterion) => DELIVERY_CRITERIA.has(criterion.name))
-              .reduce((sum, criterion) => sum + criterion.weight, 0);
-            const live = isPublished(frameworkPath(id));
-
-            const body = (
-              <div className="flex flex-col gap-3 py-6 sm:flex-row sm:gap-8">
-                <div className="shrink-0 sm:w-60">
-                  <h3 className="font-serif text-2xl leading-tight text-balance text-white">{label}</h3>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="max-w-xl leading-7 text-pretty text-[#cfc8e8]">{summary}</p>
-                  <ul className="mt-3 flex max-w-xl flex-wrap gap-x-5 gap-y-1 font-mono text-[12px] leading-6 tracking-[0.03em] text-[#a79dc8]">
-                    {content.map((criterion) => (
-                      <li key={criterion.name} className="whitespace-nowrap">
-                        {criterionName(criterion.name)} <span className="text-[#ddd6fe]">{criterion.weight}</span>
-                      </li>
-                    ))}
-                    <li className="whitespace-nowrap">
-                      Delivery <span className="text-[#ddd6fe]">{deliveryMarks}</span>
-                    </li>
-                  </ul>
-                </div>
-                {live ? (
-                  <span className="hidden shrink-0 self-center text-[#857ca2] transition group-hover:text-white sm:block">
-                    <ArrowIcon />
-                  </span>
-                ) : null}
-              </div>
-            );
-
-            return (
-              <li key={id}>
-                {live ? (
-                  <Link
-                    href={frameworkPath(id)}
-                    className="group block cursor-pointer transition duration-200 hover:bg-white/[0.03] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#a78bfa]"
-                  >
-                    {body}
-                  </Link>
-                ) : (
-                  body
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </section>
-
-      {/* ── How it works ─────────────────────────────────────────── */}
-      <section id="how-it-works" className="border-t border-white/10 py-16 sm:py-24">
-        <SectionHeading eyebrow="Three steps">How it works</SectionHeading>
-        <ol className="mt-10 grid gap-8 sm:grid-cols-3 sm:gap-8">
-          {STEPS.map((step, index) => (
-            <li key={step.title} className="border-t border-white/15 pt-5">
-              <span className="font-serif text-4xl leading-none text-[#a78bfa]">{index + 1}</span>
-              <h3 className="mt-4 text-lg font-semibold text-balance text-white">{step.title}</h3>
-              <p className="mt-2 leading-7 text-pretty text-[#cfc8e8]">{step.text}</p>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      {/* ── Author ───────────────────────────────────────────────── */}
-      <section id="author" className="border-t border-white/10 py-16 sm:py-24">
-        <SectionHeading eyebrow="Author">Who built it</SectionHeading>
-        <div className="mt-6 max-w-2xl">
-          {BUILDER_NOTE.length ? (
-            BUILDER_NOTE.map((paragraph) => (
-              <p key={paragraph} className="mt-4 text-lg leading-8 text-pretty text-[#cfc8e8] first:mt-0">
-                {paragraph}
-              </p>
-            ))
-          ) : (
-            <p className="rounded-[20px] border border-dashed border-[#a78bfa]/40 px-5 py-4 text-lg leading-8 text-[#a79dc8]">
-              Three or four sentences from Aawaz, in his own words, go here.
-            </p>
-          )}
-          {BUILDER_CREDENTIALS.length ? (
-            <ul className="mt-6 flex flex-wrap gap-x-6 gap-y-2 font-mono text-[12px] uppercase tracking-[0.14em] text-[#ddd6fe]">
-              {BUILDER_CREDENTIALS.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          ) : (
-            <ul className="mt-6 flex flex-wrap gap-x-6 gap-y-2 font-mono text-[12px] uppercase tracking-[0.14em] text-[#857ca2]">
-              <li>Credential one</li>
-              <li>Credential two</li>
-              <li>Credential three</li>
-            </ul>
-          )}
-          {aboutLive ? (
-            <Link href="/about" className={`${TEXT_LINK} mt-6 -ml-2`}>
-              About {AUTHOR.name}
-              <ArrowIcon />
-            </Link>
-          ) : null}
-        </div>
-      </section>
-
-      {/* ── Audience ─────────────────────────────────────────────── */}
-      <section id="audience" className="border-t border-white/10 py-16 sm:py-24">
-        <SectionHeading eyebrow="Audience">Who it&apos;s for</SectionHeading>
-        <p className="mt-6 max-w-2xl text-lg leading-8 text-pretty text-[#cfc8e8]">
-          Online public speaking practice for the speeches students are asked to give.
-        </p>
-        <ul className="mt-10 grid gap-x-10 gap-y-8 sm:grid-cols-2">
-          {AUDIENCES.map((audience) => (
-            <li key={audience.title} className="border-t border-white/15 pt-5">
-              <h3 className="text-lg font-semibold text-balance text-white">{audience.title}</h3>
-              <p className="mt-2 max-w-md leading-7 text-pretty text-[#cfc8e8]">{audience.text}</p>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      {/* ── Questions ────────────────────────────────────────────── */}
-      <section id="questions" className="border-t border-white/10 py-16 sm:py-24">
-        <SectionHeading eyebrow="FAQ">Questions</SectionHeading>
-        <div className="mt-10 divide-y divide-white/10 border-y border-white/10">
-          {QUESTIONS.map(({ question, answer }) => (
-            <div key={question} className="grid gap-2 py-6 lg:grid-cols-[300px_1fr] lg:gap-10">
-              <h3 className="text-lg font-semibold text-balance text-white">{question}</h3>
-              <p className="max-w-2xl leading-7 text-pretty text-[#cfc8e8]">{answer}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── Closing ──────────────────────────────────────────────── */}
-      <section className="pt-4 sm:pt-8">
-        <div className="rounded-[28px] border border-[#a78bfa]/25 bg-[linear-gradient(135deg,rgba(167,139,250,0.10),rgba(249,168,212,0.06))] p-7 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] sm:p-10 lg:flex lg:items-center lg:justify-between lg:gap-10">
-          <div>
-            <p className="max-w-xl font-serif text-3xl leading-[1.1] tracking-[-0.02em] text-balance text-white sm:text-4xl">
-              Record one speech and see where the marks go.
-            </p>
-            <p className="mt-3 max-w-xl leading-7 text-pretty text-[#cfc8e8]">
+      {/* ═══ Close ═════════════════════════════════════════════════ */}
+      <section className="bg-[#0a0a13] pb-16 pt-10 sm:pt-16">
+        <Container>
+          <div className="relative overflow-hidden rounded-[28px] border border-[#a78bfa]/25 bg-[linear-gradient(135deg,rgba(124,92,222,0.24),rgba(249,168,212,0.12))] p-10 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.09)] sm:p-16">
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 -top-24 h-64 bg-[radial-gradient(ellipse_45%_60%_at_50%_0%,rgba(249,168,212,0.28),transparent_70%)]"
+            />
+            <h2 className="relative mx-auto max-w-xl font-serif text-3xl leading-[1.08] tracking-[-0.02em] text-balance text-white sm:text-[2.7rem]">
+              Record one speech and see{' '}
+              <span className="bg-[linear-gradient(100deg,#e9dcff,#ffd3e8)] grad-text">
+                where the marks go
+              </span>
+            </h2>
+            <p className="relative mx-auto mt-4 max-w-xs text-lg text-pretty text-[#e7e2f8]">
               The first report takes a few minutes and needs no account.
             </p>
+            <Link href="/coach" className={`${CTA} relative mt-8`}>
+              Start practising free
+            </Link>
           </div>
-          <Link href="/coach" className={`${PRIMARY_BUTTON} mt-7 shrink-0 lg:mt-0`}>
-            Start practising free
-          </Link>
-        </div>
+        </Container>
       </section>
     </>
   );

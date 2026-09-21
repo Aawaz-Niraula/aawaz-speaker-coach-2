@@ -9,7 +9,7 @@ import { FeedbackReport } from '@/components/feedback-report';
 
 const SAMPLE = `📊 ANALYSIS
 • Filler words: 4
-• Speaking speed: 152 words/min (most speeches sit best at 130-160)
+• Speaking speed: 152 words/min (most speeches sit best at 130 to 160)
 • Speed control: You held a steady pace through the opening, then sped up to 171 words a minute in the last third.
 • Pauses: You paused 9 times in three minutes, but ran the final two sentences together without a gap.
 • Hesitation: 3 of 4 fillers came after a gap, which reads as hunting for the next word rather than a speech habit.
@@ -34,7 +34,7 @@ You opened with "the morning my sister missed her bus and walked four kilometres
 🛠️ 3 SPECIFIC FIXES
 1. The "so what?" test: after each claim in the body, write one sentence answering "why should this audience care", then read the speech with those sentences in place. Run it on all three claims before the next recording.
 2. Mark the script with a slash at every intended pause and a double slash before the final line. Read it aloud five times, stopping fully at every slash, and time the last third so it stays under 160 words a minute.
-3. Record the closing paragraph alone three times. Play each back and mark every "um" and "so" on the transcript, then replace each one with a full stop and a two-second silence.`;
+3. Record the closing paragraph alone three times. Play each back and mark every "um" and "so" on the transcript, then replace each one with a full stop and a silence of two seconds.`;
 
 const noop = () => undefined;
 
