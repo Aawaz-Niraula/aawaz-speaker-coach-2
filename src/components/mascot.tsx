@@ -83,6 +83,7 @@ export function CoachMascot({
   mood = 'idle',
   size = 72,
   float = true,
+  motionEnabled = true,
   interactive = false,
   styleOverride,
   mouthOpen,
@@ -91,6 +92,8 @@ export function CoachMascot({
   mood?: MascotMood;
   size?: number;
   float?: boolean;
+  /** Static presentation, for small previews that supply their own interaction. */
+  motionEnabled?: boolean;
   /** Tappable: boops, squeaks, and briefly cheers. */
   interactive?: boolean;
   /** Used by the customizer preview to render a specific look. */
@@ -109,7 +112,7 @@ export function CoachMascot({
      infinite SVG animations, and they are permanent compositor work even
      when nobody is looking at them. */
   const reduceMotion = useReducedMotion();
-  const animated = !reduceMotion;
+  const animated = !reduceMotion && motionEnabled;
 
   /* `animated` is not enough on a phone. Framer Motion drives these from a
      main-thread rAF loop that writes inline transforms on SVG nodes every
@@ -267,7 +270,7 @@ export function CoachMascot({
           <ellipse cx="74" cy="59" rx="4.4" ry="3.2" />
         </g>
       ) : (
-        <g fill="#2a2140" className="awa-blink">
+        <g fill="#2a2140" className={motionEnabled ? 'awa-blink' : undefined}>
           <circle cx="46" cy="61" r="4.6" />
           <circle cx="74" cy="61" r="4.6" />
           <circle cx="47.6" cy="59.4" r="1.5" fill="#ffffff" opacity="0.9" />

@@ -1,9 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { AudioLines, FileText, Gauge } from 'lucide-react';
+import { AudioLines, FileText, Gauge, Pause, Play } from 'lucide-react';
 
 import { scoreColor, scoreGrade } from '@/lib/feedback';
+import { LandingAawax } from './landing-aawax';
+import { GlassSurface } from './glass-surface';
 
 /**
  * A spoken line being marked, on a loop.
@@ -93,13 +95,15 @@ export function MarkingDemo() {
   const timersRef = useRef<number[]>([]);
   /** True once the card has been seen, so a re-entry resumes rather than waits. */
   const seenRef = useRef(false);
-  const [stage, setStage] = useState(0);
+  const [stage, setStage] = useState(4);
   const [running, setRunning] = useState(false);
-  const [shown, setShown] = useState(0);
+  const [shown, setShown] = useState(SCORE);
+  const [paused, setPaused] = useState(false);
+  const [rewritten, setRewritten] = useState(false);
   const reduceMotion = useSyncExternalStore(subscribeMotion, readMotion, readMotionOnServer);
 
-  const settled = reduceMotion ? 4 : stage;
-  const score = reduceMotion ? SCORE : shown;
+  const settled = reduceMotion || paused || rewritten ? 4 : stage;
+  const score = reduceMotion || paused || rewritten ? SCORE : shown;
 
   const clearTimers = useCallback(() => {
     timersRef.current.forEach(window.clearTimeout);
@@ -108,8 +112,8 @@ export function MarkingDemo() {
     // when the card leaves view mid pass, and the mark is left frozen at
     // whatever partial value it had reached.
     setRunning(false);
-    setStage(0);
-    setShown(0);
+    setStage(4);
+    setShown(SCORE);
   }, []);
 
   /** One pass, then a rest, then another, for as long as the card is visible. */
@@ -151,7 +155,7 @@ export function MarkingDemo() {
 
   useEffect(() => {
     const element = ref.current;
-    if (!element || reduceMotion) return;
+    if (!element || reduceMotion || paused || rewritten) return;
 
     if (typeof IntersectionObserver === 'undefined') {
       // Scheduled rather than called, so the effect body itself sets no state.
@@ -178,12 +182,12 @@ export function MarkingDemo() {
       observer.disconnect();
       clearTimers();
     };
-  }, [startCycle, clearTimers, reduceMotion]);
+  }, [startCycle, clearTimers, reduceMotion, paused, rewritten]);
 
   return (
     <div
       ref={ref}
-      className="relative overflow-hidden rounded-[24px] border border-white/10 bg-[linear-gradient(160deg,#131120_0%,#0b0b12_60%)] p-5 shadow-[0_24px_70px_rgba(2,6,23,0.6),inset_0_1px_0_rgba(255,255,255,0.07)] sm:p-6"
+      className="marking-demo relative overflow-hidden rounded-[24px] border border-white/10 bg-[linear-gradient(160deg,#131120_0%,#0b0b12_60%)] p-5 shadow-[0_24px_70px_rgba(2,6,23,0.6),inset_0_1px_0_rgba(255,255,255,0.07)] sm:p-6"
     >
       {/* A sweep across the top edge while a pass is running. It is the cue
           that this is live rather than a still, and it costs one transform. */}
@@ -194,16 +198,31 @@ export function MarkingDemo() {
         />
       </span>
 
+      <div className="demo-story">
       <div className="flex items-center gap-2.5">
         <span
           aria-hidden
           className="h-1.5 w-1.5 rounded-full bg-[#f9a8d4] transition-opacity duration-500"
           style={{ opacity: running ? 1 : 0.35 }}
         />
-        <span className="font-mono text-[10px] uppercase tracking-[0.26em] text-[#857ca2]">Marking</span>
+        <span className="text-sm font-medium text-[#bcb2d4]">Example feedback</span>
+        <button
+          type="button"
+          className="glass-control marking-playback ml-auto flex h-11 w-11 cursor-pointer items-center justify-center rounded-full text-[#c4b0ff] transition-colors hover:bg-white/10"
+          aria-label={paused ? 'Play marking preview' : 'Pause marking preview'}
+          onClick={() => { setRewritten(false); setPaused((value) => !value); }}
+        >
+          <GlassSurface />
+          {paused ? <Play size={16} aria-hidden="true" /> : <Pause size={16} aria-hidden="true" />}
+        </button>
       </div>
 
-      <p className="mt-4 text-lg leading-[1.85] text-[#f2efff] sm:text-xl">
+      <div className="demo-comparison" aria-label="Compare the speech opening">
+        <button type="button" className="glass-control demo-version" aria-pressed={!rewritten} onClick={() => setRewritten(false)}><GlassSurface />Original</button>
+        <button type="button" className="glass-control demo-version" aria-pressed={rewritten} onClick={() => setRewritten(true)}><GlassSurface />Tightened opening</button>
+      </div>
+      <p className="demo-transcript mt-4 text-lg leading-[1.85] text-[#f2efff] sm:text-xl" aria-live="polite" aria-atomic="true">
+        {rewritten ? <span>The morning my sister missed her bus, she walked four kilometres to school.</span> : <span>
         {TOKENS.map((token, index) => {
           if (token.kind === 'pause') {
             return (
@@ -233,10 +252,14 @@ export function MarkingDemo() {
               {token.text}{' '}
             </span>
           );
-        })}
+        })}</span>}
       </p>
+      <p className="demo-explanation">{rewritten ? "Drop the fillers. Let the story open the speech." : "Two fillers to cut. One pause to keep. Try the tighter opening."}</p>
+      <LandingAawax marking={running} />
+      </div>
 
-      <div className="mt-5 grid gap-2 border-t border-white/10 pt-4">
+      <div className="demo-measures grid gap-2">
+        <p className="demo-measures-caption">Example report for the original speech</p>
         <Measure
           show={settled >= 1}
           icon={<AudioLines className="h-3.5 w-3.5" />}

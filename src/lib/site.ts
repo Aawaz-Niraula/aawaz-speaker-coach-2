@@ -18,7 +18,7 @@ export const AUTHOR = {
  * learn to ignore.
  */
 export const PAGES: { path: string; updated: string }[] = [
-  { path: '/', updated: '2026-09-14' },
+  { path: '/', updated: '2026-10-03' },
 ];
 
 export function isPublished(path: string) {

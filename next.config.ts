@@ -22,6 +22,7 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  images: { qualities: [62, 75] },
   serverExternalPackages: ["@libsql/client", "@libsql/kysely-libsql"],
   async headers() {
     return [
