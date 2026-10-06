@@ -22,6 +22,8 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Set only for a local phone preview; production exposes no dev endpoint.
+  allowedDevOrigins: process.env.AAWAZ_DEV_HOST ? [process.env.AAWAZ_DEV_HOST] : [],
   images: { qualities: [62, 75] },
   serverExternalPackages: ["@libsql/client", "@libsql/kysely-libsql"],
   async headers() {

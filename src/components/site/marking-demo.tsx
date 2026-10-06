@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { AudioLines, FileText, Gauge, Pause, Play } from 'lucide-react';
+import { AudioLines, ChevronDown, FileText, Gauge, Pause, Play } from 'lucide-react';
 
 import { scoreColor, scoreGrade } from '@/lib/feedback';
 import { LandingAawax } from './landing-aawax';
@@ -32,22 +32,21 @@ type Token =
   | { kind: 'pause' };
 
 const TOKENS: Token[] = [
-  { kind: 'filler', text: 'So,' },
-  { kind: 'filler', text: 'um,' },
-  { kind: 'word', text: 'the' },
-  { kind: 'word', text: 'morning' },
-  { kind: 'word', text: 'my' },
-  { kind: 'word', text: 'sister' },
-  { kind: 'word', text: 'missed' },
-  { kind: 'word', text: 'her' },
-  { kind: 'word', text: 'bus' },
+  { kind: 'filler', text: 'Um,' },
+  { kind: 'filler', text: 'so,' },
+  { kind: 'word', text: 'everyone, plastic is bad for our health' },
   { kind: 'pause' },
-  { kind: 'word', text: 'she' },
-  { kind: 'word', text: 'walked' },
-  { kind: 'word', text: 'four' },
-  { kind: 'word', text: 'kilometres' },
-  { kind: 'word', text: 'to' },
-  { kind: 'word', text: 'school.' },
+  { kind: 'word', text: 'because,' },
+  { kind: 'filler', text: 'uh,' },
+  { kind: 'word', text: 'we use it all the time and it ends up everywhere.' },
+];
+
+// Fact-checked against UNEP's ocean estimate and WHO's exposure review.
+// Pause marks are delivery suggestions, not measurements from an audio clip.
+const TIGHTENED = [
+  'Every minute, about a truckload of plastic enters the ocean.',
+  'Microplastics have been found in our food, water and air.',
+  'What we throw away comes back to us.',
 ];
 
 const FILLER_COUNT = TOKENS.filter((token) => token.kind === 'filler').length;
@@ -84,6 +83,13 @@ function subscribeMotion(onChange: () => void) {
 
 const readMotion = () => window.matchMedia(MOTION_QUERY).matches;
 const readMotionOnServer = () => false;
+const COMPACT_QUERY = '(max-width: 760px)';
+function subscribeCompact(onChange: () => void) {
+  const query = window.matchMedia(COMPACT_QUERY);
+  query.addEventListener('change', onChange);
+  return () => query.removeEventListener('change', onChange);
+}
+const readCompact = () => window.matchMedia(COMPACT_QUERY).matches;
 
 const RING_RADIUS = 42;
 const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
@@ -100,6 +106,8 @@ export function MarkingDemo() {
   const [shown, setShown] = useState(SCORE);
   const [paused, setPaused] = useState(false);
   const [rewritten, setRewritten] = useState(false);
+  const [reportExpanded, setReportExpanded] = useState(false);
+  const compact = useSyncExternalStore(subscribeCompact, readCompact, readMotionOnServer);
   const reduceMotion = useSyncExternalStore(subscribeMotion, readMotion, readMotionOnServer);
 
   const settled = reduceMotion || paused || rewritten ? 4 : stage;
@@ -200,12 +208,7 @@ export function MarkingDemo() {
 
       <div className="demo-story">
       <div className="flex items-center gap-2.5">
-        <span
-          aria-hidden
-          className="h-1.5 w-1.5 rounded-full bg-[#f9a8d4] transition-opacity duration-500"
-          style={{ opacity: running ? 1 : 0.35 }}
-        />
-        <span className="text-sm font-medium text-[#bcb2d4]">Example feedback</span>
+        <h2 className="demo-heading">Make the opening count.</h2>
         <button
           type="button"
           className="glass-control marking-playback ml-auto flex h-11 w-11 cursor-pointer items-center justify-center rounded-full text-[#c4b0ff] transition-colors hover:bg-white/10"
@@ -221,8 +224,9 @@ export function MarkingDemo() {
         <button type="button" className="glass-control demo-version" aria-pressed={!rewritten} onClick={() => setRewritten(false)}><GlassSurface />Original</button>
         <button type="button" className="glass-control demo-version" aria-pressed={rewritten} onClick={() => setRewritten(true)}><GlassSurface />Tightened opening</button>
       </div>
-      <p className="demo-transcript mt-4 text-lg leading-[1.85] text-[#f2efff] sm:text-xl" aria-live="polite" aria-atomic="true">
-        {rewritten ? <span>The morning my sister missed her bus, she walked four kilometres to school.</span> : <span>
+      <div className="demo-transcripts" aria-live="polite" aria-atomic="true">
+      <p className="demo-transcript" data-active={!rewritten} aria-hidden={rewritten}>
+        <span>
         {TOKENS.map((token, index) => {
           if (token.kind === 'pause') {
             return (
@@ -252,14 +256,33 @@ export function MarkingDemo() {
               {token.text}{' '}
             </span>
           );
-        })}</span>}
+        })}</span>
       </p>
-      <p className="demo-explanation">{rewritten ? "Drop the fillers. Let the story open the speech." : "Two fillers to cut. One pause to keep. Try the tighter opening."}</p>
+      <p className="demo-transcript" data-active={rewritten} aria-hidden={!rewritten}>
+        {TIGHTENED.map((sentence, index) => <span key={sentence}>
+          {index > 0 && <span className="demo-pause" aria-hidden="true"> / </span>}
+          {sentence}{' '}
+        </span>)}
+      </p>
+      </div>
+      <div className="demo-explanations">
+        <p className="demo-explanation" data-active={!rewritten} aria-hidden={rewritten}>Cut three fillers. Replace the vague claim with a fact your audience can picture.</p>
+        <p className="demo-explanation" data-active={rewritten} aria-hidden={!rewritten}>Lead with a concrete fact. Pause between ideas so each one lands.</p>
+      </div>
+      <div className="demo-source-row">
+        <span><span className="demo-pause" aria-hidden="true">/</span> Suggested pause</span>
+        <span>Sources: <a href="https://www.unep.org/news-and-stories/story/why-we-need-fix-plastic-pollution-problem" target="_blank" rel="noopener noreferrer">UNEP</a>, <a href="https://www.who.int/publications/i/item/9789240054608" target="_blank" rel="noopener noreferrer">WHO</a></span>
+      </div>
       <LandingAawax marking={running} />
       </div>
 
-      <div className="demo-measures grid gap-2">
-        <p className="demo-measures-caption">Example report for the original speech</p>
+      <div className="demo-measures">
+        <details className="demo-report-disclosure" open={!compact || reportExpanded}>
+          <summary onClick={(event) => { event.preventDefault(); setReportExpanded((value) => !value); }}>
+            Original delivery report <ChevronDown size={18} aria-hidden="true" />
+          </summary>
+          <div className="demo-report-content">
+        <p className="demo-measures-caption">Original delivery · illustrative report</p>
         <Measure
           show={settled >= 1}
           icon={<AudioLines className="h-3.5 w-3.5" />}
@@ -270,7 +293,7 @@ export function MarkingDemo() {
           show={settled >= 2}
           icon={<FileText className="h-3.5 w-3.5" />}
           label="Pauses"
-          value={'1 clear gap after “bus”'}
+          value="1 suggested pause"
         />
         <Measure
           show={settled >= 3}
@@ -280,7 +303,7 @@ export function MarkingDemo() {
         />
 
         <div
-          className="mt-0.5 flex items-center gap-4 rounded-[18px] border border-white/10 bg-[linear-gradient(135deg,rgba(167,139,250,0.12),rgba(249,168,212,0.07))] px-4 py-3 transition-all duration-500"
+          className="demo-score flex items-center gap-4 transition-[opacity,transform] duration-500"
           style={{
             opacity: settled >= 4 ? 1 : 0,
             transform: settled >= 4 ? 'translateY(0)' : 'translateY(8px)',
@@ -316,6 +339,8 @@ export function MarkingDemo() {
             </p>
           </div>
         </div>
+          </div>
+        </details>
       </div>
     </div>
   );
@@ -334,19 +359,19 @@ function Measure({
 }) {
   return (
     <div
-      className="rounded-[18px] border border-white/[0.07] bg-white/[0.035] px-4 py-2.5 transition-all duration-500"
+      className="demo-measure transition-[opacity,transform] duration-500"
       style={{
         opacity: show ? 1 : 0,
         transform: show ? 'translateY(0)' : 'translateY(8px)',
       }}
     >
       <div className="flex items-center gap-2">
-        <span className="flex h-5 w-5 items-center justify-center rounded-[8px] bg-[#a78bfa]/15 text-[#a78bfa]">
+        <span className="text-[#c4b0ff]">
           {icon}
         </span>
-        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#ddd6fe]">{label}</span>
+        <span className="text-sm text-[#bcb2d4]">{label}</span>
       </div>
-      <p className="mt-1 text-[15px] text-[#f2efff]">{value}</p>
+      <p className="text-sm text-[#f2efff]">{value}</p>
     </div>
   );
 }

@@ -14,6 +14,15 @@ const headline = localFont({
   fallback: ['Arial', 'sans-serif'],
 });
 
+const wordmark = localFont({
+  src: '../fonts/allura-400.woff2',
+  weight: '400',
+  style: 'normal',
+  variable: '--font-wordmark',
+  display: 'swap',
+  fallback: ['Georgia', 'serif'],
+});
+
 /*
  * Shared frame for every content page.
  *
@@ -40,7 +49,7 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
   const live = PAGE_LINKS.filter((link) => isPublished(link.path));
 
   return (
-    <div className={`site-shell ${headline.variable}`}>
+    <div className={`site-shell ${headline.variable} ${wordmark.variable}`}>
       <a href="#main-content" className="site-skip-link">Skip to content</a>
       <SiteHeader additionalLinks={live} />
 

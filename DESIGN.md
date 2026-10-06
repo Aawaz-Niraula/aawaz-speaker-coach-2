@@ -66,11 +66,15 @@ Alternate soft blush pink (#f2dfe8) and dark purple section backgrounds. The blu
 
 ## Typography
 
-Self-hosted Bricolage Grotesque is the heading face. Manrope is the reading face. The existing Cormorant Garamond wordmark remains. DM Mono stays inside report measurements. Headings carry no eyebrow labels.
+Self-hosted Bricolage Grotesque is the heading face. Manrope is the reading face. The header wordmark uses self-hosted Allura calligraphy at 40 to 52px on desktop and 26 to 40px on phones. Cormorant Garamond remains in the footer and mobile navigation. DM Mono stays inside report measurements. Headings carry no eyebrow labels.
 
 ## Layout
 
 The container is capped at 1344px, with fluid 24px to 72px horizontal padding. Below 761px, sections become single-column. The report follows heading, phone, then cards on mobile. Above that breakpoint the phone sits beside the report heading and cards. Navigation switches to a menu at 1100px.
+
+The mobile menu fills the dynamic viewport with a solid plum surface and centered links. The wordmark and close control remain at the top. Three lines morph into a cross over 320ms; reduced motion switches instantly. While open, the menu locks page scrolling, isolates keyboard focus and makes page content inert. Escape, link selection and switching to desktop close it. This refinement keeps existing design variance and uses motion intensity 4 and visual density 3 for the menu.
+
+On phones up to 760px, the hero has two stages. The translucent plum cover lifts first over a photograph that zooms continuously from 100% to 116% as scroll progress increases, and reverses along the same path when scrolling up. As it clears, the photograph fades and the existing Aawax feedback card rises into the released space. The card reaches the top when the cover finishes, then continues in normal document scroll without a bare-photo pause or leftover gap. Motion values drive transforms and opacity without per-frame React renders, springs or synthetic inertia. A compact portrait rendition of the existing photograph avoids oversized mobile decoding. Glass controls use their tinted rim without backdrop or displacement filters on phones. Stable viewport units keep the scene size steady as browser toolbars change. Reveal progress runs from the scene top to its centre against a fixed header edge, avoiding a changing viewport-bottom endpoint. The pinned stage is composited and moving elements are excluded from scroll anchoring. Reduced motion and server HTML use an ordinary readable layout. Desktop retains its existing hero composition. Hero and section introductions use two short, separately set lines; report and audience descriptions are concise, while FAQ and privacy details remain complete.
 
 ## Elevation & Depth
 
@@ -97,3 +101,7 @@ All marketing buttons and button-like links use the adapted React Bits GlassSurf
 ## Route isolation
 
 Next.js retains imported route styles during client navigation. Every rule in `src/app/(site)/site.css` must be scoped to `.site-shell` or gated by its presence. Landing glass uses `.site-liquid-surface`, never the coach application’s `.glass-surface` class. `style-isolation.test.ts` guards both boundaries. The coach layout and shared application styles remain authoritative for `/coach`.
+
+### Speech opening comparison
+
+The demo contrasts a hesitant plastic-pollution introduction with a concrete, sourced opening. UNEP supports the approximate one-truckload-per-minute ocean comparison; WHO supports exposure through food, water and air. Source links sit beside the pause key. The inhaled-credit-card claim is excluded. Three filler cuts animate in the original, and two suggested pauses divide the tightened opening. Both versions reserve the same text space to avoid scroll jumps. Delivery measurements remain explicitly illustrative. Flat measurement rows replace nested cards; on phones the detailed original report is expandable so the comparison leads.

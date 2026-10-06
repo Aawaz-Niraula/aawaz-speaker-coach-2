@@ -19,8 +19,9 @@ export function GlassSurface() {
     if (!element || !control) return;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
     const transparent = window.matchMedia('(prefers-reduced-transparency: reduce)');
-    const unsupported = /Firefox|Version\/.*Safari/.test(navigator.userAgent);
+    const unsupported = /Firefox|Version\/.*Safari/.test(navigator.userAgent) || window.matchMedia('(max-width: 760px), (pointer: coarse)').matches;
     element.dataset.svg = String(!unsupported && CSS.supports('backdrop-filter', `url(#${id})`));
+    if (unsupported || transparent.matches) return;
 
     // Rebuild only on size changes, never on scroll or pointer movement.
     const resize = () => {

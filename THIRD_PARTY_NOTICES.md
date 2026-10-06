@@ -43,4 +43,8 @@ Copyright (c) 2026 David Haz. The React Bits MIT license with Commons Clause rep
 
 ## Homepage artwork
 
-`public/images/rehearsal-stage.webp` and `public/images/rehearsal-notes.webp` are generated editorial artwork created for this homepage. They depict a fictional rehearsal setting, not a customer, venue endorsement or product screenshot. Originals are retained in the session generated-images directory.
+`public/images/rehearsal-stage.webp` and `public/images/rehearsal-notes.webp` are generated editorial artwork created for this homepage. `public/images/rehearsal-stage-mobile.webp` is a portrait crop of the same stage artwork. They depict a fictional rehearsal setting, not a customer, venue endorsement or product screenshot. Originals are retained in the session generated-images directory.
+
+## Allura
+
+The self-hosted header font `src/app/fonts/allura-400.woff2` is the Latin subset of [Allura](https://github.com/google/fonts/tree/main/ofl/allura), distributed under the SIL Open Font License 1.1. The full license and copyright notice are included in `src/app/fonts/allura-OFL.txt`.
