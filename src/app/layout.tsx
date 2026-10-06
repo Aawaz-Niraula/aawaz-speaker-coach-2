@@ -84,7 +84,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en-GB" className={`${serif.variable} ${sans.variable} ${mono.variable}`}>
+    // Chrome on iOS injects __gCrWeb's frame token on <html> before hydration.
+    // Allow browser-owned root attributes; descendant hydration stays checked.
+    <html lang="en-GB" suppressHydrationWarning className={`${serif.variable} ${sans.variable} ${mono.variable}`}>
       <body>
         <div className="bg-mesh" aria-hidden="true" />
         {children}
