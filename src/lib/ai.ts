@@ -63,6 +63,31 @@ export function isProviderUnavailable(status: number, message?: string) {
   );
 }
 
+/**
+ * Provider failures, as the browser sees them.
+ *
+ * A provider's error text can name the account's billing state, quota or key
+ * problems ("insufficient balance", "invalid API key"), and its status code
+ * describes our request to it, not the user's request to us. Neither is passed
+ * through: the text goes to the server log, and the browser gets 503 for
+ * anything transient (overload, rate limit, 5xx) and 502 for the rest.
+ */
+export function publicProviderStatus(status: number) {
+  return status === 429 || status >= 500 ? 503 : 502;
+}
+
+export function logProviderError(route: string, status: number, message?: string) {
+  console.error(`[${route}] provider error ${status}${message ? `: ${message.slice(0, 500)}` : ''}`);
+}
+
+/** An error whose message was written for the user and is safe to show. */
+export class UserFacingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UserFacingError';
+  }
+}
+
 export function isAbortTimeout(error: unknown) {
   return error instanceof DOMException && error.name === 'TimeoutError';
 }

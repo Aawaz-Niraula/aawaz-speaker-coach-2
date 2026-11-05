@@ -54,19 +54,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // The size ceiling is applied while the body streams in, so an oversized
-    // upload is cut off rather than buffered and then refused.
-    const { form, response: bodyError } = await readFormData(req);
-    if (bodyError) return bodyError;
-
-    const picked = pickAudioFile(form);
-    if (picked.response) return picked.response;
-    const { file } = picked;
-
-    const rawSessionId = form.get('sessionId');
-    const sessionId = isSafeId(rawSessionId) ? rawSessionId : null;
-    const selectedTemplateId = String(form.get('templateId') || '').trim().slice(0, 80) || null;
-
+    // Identity and the in-memory limits need only headers, so they run before
+    // the upload is read: a rejected caller never makes us buffer 20 MB.
     const identity = await resolveIdentity(req);
     const { userId } = identity;
 
@@ -86,9 +75,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // The size ceiling is applied while the body streams in, so an oversized
+    // upload is cut off rather than buffered and then refused.
+    const { form, response: bodyError } = await readFormData(req);
+    if (bodyError) return bodyError;
+
+    const picked = pickAudioFile(form);
+    if (picked.response) return picked.response;
+    const { file } = picked;
+
+    const rawSessionId = form.get('sessionId');
+    const sessionId = isSafeId(rawSessionId) ? rawSessionId : null;
+    const selectedTemplateId = String(form.get('templateId') || '').trim().slice(0, 80) || null;
+
     // Charged only now, once every free check has passed: a request the
     // limiter turns away never costs a database write or a unit of quota.
-    await consumeUsage(req, identity, 'deep-analysis');
+    const { guestRemaining } = await consumeUsage(req, identity, 'deep-analysis');
 
     const template = getSpeechTemplate(selectedTemplateId);
     const audioBuffer = await file.arrayBuffer();
@@ -163,6 +165,7 @@ export async function POST(req: NextRequest) {
     // A Gemini failure degrades the result rather than losing it: the measured
     // timing analysis is still a real upgrade over the standard report.
     const vocal = vocalResult.status === 'fulfilled' ? vocalResult.value.text : null;
+    if (vocalResult.status === 'rejected') console.error('Vocal analysis failed:', vocalResult.reason);
     const metrics = computeSpeechMetrics(whisper, Number(whisper.duration || 0));
 
     if (!vocal && !metrics) {
@@ -322,6 +325,7 @@ ${transcript.slice(0, 4000)}`,
       // Surfaced so the UI can say the vocal half was skipped rather than
       // silently showing a thinner report.
       degraded: !vocal,
+      guestRemaining,
     });
   } catch (error) {
     if (error instanceof QuotaUnavailableError) return quotaUnavailableResponse();

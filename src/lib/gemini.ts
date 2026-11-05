@@ -84,9 +84,11 @@ export async function analyseVocalDelivery(
   // Gemini rejects codec suffixes like "audio/webm;codecs=opus".
   const cleanMime = mimeType.split(';')[0].trim() || 'audio/webm';
 
-  const res = await fetch(`${GEMINI_URL}/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+  // The key travels in a header, not the query string: URLs end up in error
+  // messages, proxy logs and traces, where a header does not.
+  const res = await fetch(`${GEMINI_URL}/${GEMINI_MODEL}:generateContent`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
     signal: AbortSignal.timeout(timeoutMs),
     body: JSON.stringify({
       contents: [{

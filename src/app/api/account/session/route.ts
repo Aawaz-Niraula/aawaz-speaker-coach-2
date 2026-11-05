@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { auth } from '@/lib/auth';
-import { ensureSchema } from '@/lib/db';
+import { GUEST_FREE_ACTIONS, ensureSchema, getGuestRemaining } from '@/lib/db';
 import { buildGuestCookie, createGuestIdentity, readVerifiedGuestId } from '@/lib/identity';
 import { enforceIpRateLimit } from '@/lib/rate-limit';
 
@@ -25,7 +25,9 @@ export async function GET(req: NextRequest) {
 
   const existingGuestId = readVerifiedGuestId(req);
   if (existingGuestId) {
-    return Response.json({ kind: 'guest' });
+    // The server's count, so the "uses" meter survives cleared storage,
+    // another tab, or features that charge without updating it.
+    return Response.json({ kind: 'guest', guestRemaining: await getGuestRemaining(existingGuestId) });
   }
 
   const identity = createGuestIdentity();
@@ -39,7 +41,7 @@ export async function GET(req: NextRequest) {
   }
 
   return Response.json(
-    { kind: 'guest' },
+    { kind: 'guest', guestRemaining: GUEST_FREE_ACTIONS },
     { headers: { 'Set-Cookie': buildGuestCookie(req, identity.token) } },
   );
 }

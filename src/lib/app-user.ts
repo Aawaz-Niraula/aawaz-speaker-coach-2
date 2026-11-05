@@ -146,6 +146,27 @@ export async function resolveAppUser(
   return { ...identity, guestRemaining: null };
 }
 
+/*
+ * Destructive account actions need a recent sign-in.
+ *
+ * Sessions last thirty days, so a cookie lifted from a shared school computer
+ * (or a script running in the page) could otherwise erase an account long
+ * after its owner walked away. A day matches Better Auth's own freshAge
+ * default for its delete-user endpoint. createdAt is when the user actually
+ * signed in; the daily session refresh moves expiresAt, not createdAt.
+ */
+const FRESH_SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const REAUTH_MESSAGE = 'For your security, log out and sign in again, then retry. This is needed when your last sign-in was over a day ago.';
+
+export function isFreshSession(session: { session?: { createdAt?: Date | string | null } } | null | undefined) {
+  const createdAt = session?.session?.createdAt ? new Date(session.session.createdAt).getTime() : NaN;
+  return Number.isFinite(createdAt) && Date.now() - createdAt < FRESH_SESSION_MAX_AGE_MS;
+}
+
+export function reauthRequiredResponse() {
+  return Response.json({ error: REAUTH_MESSAGE, reauthRequired: true }, { status: 403 });
+}
+
 export function guestLimitResponse() {
   return Response.json(
     { error: GUEST_LIMIT_MESSAGE, authRequired: true },

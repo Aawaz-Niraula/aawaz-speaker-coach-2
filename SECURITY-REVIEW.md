@@ -1,3 +1,38 @@
+# Follow-up review — 6 November 2026
+
+Follow-up to the September review below. Changes are local and uncommitted; nothing was deployed.
+
+## Fixed
+
+| Priority | Finding | Change |
+| --- | --- | --- |
+| Medium | **Provider error text and status reached the browser.** Chat, insights, script, voice and transcription routes forwarded the AI provider's own error message and HTTP status. That text can describe the provider account (balance, quota, key state). | Provider text is logged server-side only; browsers get a fixed message and 502/503. See `publicProviderStatus` in `src/lib/ai.ts`. |
+| Medium | **Deleted accounts could be repopulated.** Background saves (`after()`) wrote rows for an account deleted mid-request (September item 2). | Account-owned inserts now run only while the `user` row exists. Guest rows are unaffected. |
+| Medium | **Account and data deletion needed no recent sign-in** (September item 3). | Both routes require a sign-in from the last 24 hours (Better Auth's own `freshAge` default) and return `reauthRequired`. The UI offers a "Log out" action that reopens sign-in. |
+| Medium | **Uploads were buffered before identity and rate checks** (September item 4). | `transcribe-analyze` and `deep-analysis` check the cookie and burst limits before reading the body. |
+| Low | **Password policy.** Minimum was 6; change/reset-password skipped the letter-and-number rule. | Minimum is 8 for new passwords (sign-in is unaffected, so existing accounts still work); the rule applies to `/change-password` and `/reset-password`. |
+| Low | **Gemini key in the URL query string.** | Sent in the `x-goog-api-key` header. |
+| Low | **Arbitrary text in sign-in error toasts.** `/coach?error=<any text>` was displayed verbatim. | Only short error codes are shown; other text gets a generic message. |
+| Low | **Model output could crash the Progress tab.** Non-string insight items were rendered as React children. | Only non-empty strings are returned. |
+| Low | **Temporary `/report-preview` routes shipped to production.** | 404 in production builds. `dev.log` (containing a LAN address) removed from Git tracking. |
+
+## Usability fixes
+
+- The guest meter ("x / 3 uses") now follows the server: every AI route returns `guestRemaining`, and the session bootstrap returns it on load. Before, chat uses were never counted, insights were counted even when nothing was charged, and cleared storage reset the meter.
+- Reaching the guest limit in Aawax chat now opens the sign-up prompt, as it does everywhere else.
+- "Delete data" describes what it deletes (reports and practice scripts, not "voice samples") and clears scripts, the open report and insights from the screen.
+- Transcription session failures now carry `identityRequired`, so the client refreshes the guest cookie automatically.
+
+## Still open
+
+- Account farming across unverified email signups (September item 1) needs a product decision on email verification and a deployment-wide budget.
+- Data deletion (not account deletion) can still be followed by one in-flight save.
+- Sign-up reveals whether an email is registered (Better Auth default).
+
+## Verification
+
+172 tests pass (10 new; 8 of them fail against the previous code). TypeScript, ESLint and `next build` pass. The new UI flows were not exercised in a browser.
+
 # Security review — 20 September 2026
 
 Reviewed the current working tree, including the prior uncommitted security and homepage changes. Scope: all 15 API route files, the Better Auth integration, guest identities, database access and ownership, AI provider calls, request parsing, browser rendering and account transitions, dependency advisories, and secret exposure. Changes in this review are local; nothing was deployed.

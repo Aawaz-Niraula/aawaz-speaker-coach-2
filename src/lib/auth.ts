@@ -108,6 +108,13 @@ function createAuth() {
           return;
         }
 
+        // Better Auth checks only the length of a replacement password, so the
+        // letter-and-number rule would otherwise apply at sign-up alone.
+        if (ctx.path === '/change-password' || ctx.path === '/reset-password') {
+          if (!isValidAccountPassword(body.newPassword)) badRequest(ACCOUNT_PASSWORD_REQUIREMENTS);
+          return;
+        }
+
         if (ctx.path === '/update-user') {
           if (body.name !== undefined && !isValidAccountName(body.name)) badRequest(`Name must be 1 to ${ACCOUNT_NAME_MAX_LENGTH} characters.`);
           if (body.image !== undefined && body.image !== null && !isValidAccountImage(body.image)) badRequest('Profile image must be an https URL.');

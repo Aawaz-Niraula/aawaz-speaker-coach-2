@@ -124,6 +124,7 @@ describe('usage and ownership boundaries', () => {
   });
 
   it('cannot read, update or delete another account’s records', async () => {
+    await db.execute("INSERT INTO user (id, name, email) VALUES ('owner_a', 'A', 'a@example.test'), ('owner_b', 'B', 'b@example.test')");
     await store.insertSpeechSession({ id: 'session_a', user_id: 'owner_a', template_id: null, template_label: null, rubric_mode: 'general', transcript: 'private', feedback: 'private', overall_score: 70, words_per_min: 100, duration_seconds: 30 });
     await store.insertGeneratedSpeech({ id: 'speech_a', user_id: 'owner_a', topic: 'private', template_id: null, template_label: null, word_count: 1, speech: 'private' });
     expect(await store.listRecentSpeechSessions('owner_b')).toEqual([]);
@@ -176,5 +177,108 @@ describe('provider calls stay behind working usage protection', () => {
     const res = await POST(new NextRequest(`https://coach.test/api/${route}`, { method: 'POST', headers, body }));
     expect(res.status).toBe(503);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('review of 6 November 2026', () => {
+  const sessionRecord = (id: string, userId: string) => ({ id, user_id: userId, template_id: null, template_label: null, rubric_mode: 'general', transcript: 'private', feedback: 'private', overall_score: 70, words_per_min: 100, duration_seconds: 30 });
+
+  async function signUp(email = 'fresh@example.test') {
+    const { POST } = await import('../app/api/auth/[...all]/route');
+    const res = await POST(authRequest('sign-up/email', { name: 'Fresh', email, password: 'Secret123' }));
+    expect(res.status).toBe(200);
+    return res.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ');
+  }
+
+  it('does not recreate data for an account deleted while its request was in flight', async () => {
+    await db.execute("INSERT INTO user (id, name, email) VALUES ('gone_user', 'Gone', 'gone@example.test')");
+    await db.execute("DELETE FROM user WHERE id = 'gone_user'");
+    await store.insertSpeechSession(sessionRecord('late_session', 'gone_user'));
+    await store.insertGeneratedSpeech({ id: 'late_script', user_id: 'gone_user', topic: 't', template_id: null, template_label: null, word_count: 1, speech: 's' });
+    expect((await db.execute("SELECT COUNT(*) AS n FROM speech_sessions WHERE user_id = 'gone_user'")).rows[0].n).toBe(0);
+    expect((await db.execute("SELECT COUNT(*) AS n FROM generated_speeches WHERE user_id = 'gone_user'")).rows[0].n).toBe(0);
+  });
+
+  it('still saves guest records, which have no user row', async () => {
+    await store.insertSpeechSession(sessionRecord('guest_session', 'guest_abc'));
+    expect(await store.listRecentSpeechSessions('guest_abc')).toHaveLength(1);
+  });
+
+  it('reports a guest’s remaining uses without spending one', async () => {
+    expect(await store.getGuestRemaining('guest_new')).toBe(3);
+    await store.consumeGuestUsage('guest_new');
+    expect(await store.getGuestRemaining('guest_new')).toBe(2);
+    expect(await store.getGuestRemaining('guest_new')).toBe(2);
+  });
+
+  it('requires a recent sign-in before deleting an account or its data', async () => {
+    const cookie = await signUp();
+    await db.execute("UPDATE session SET createdAt = '2000-01-01T00:00:00.000Z'");
+    const del = (path: string) => new NextRequest(`https://coach.test/api/account/${path}`, { method: 'DELETE', headers: { origin: 'https://coach.test', cookie } });
+    const { DELETE: deleteData } = await import('../app/api/account/delete-data/route');
+    const { DELETE: deleteAccount } = await import('../app/api/account/delete-account/route');
+    const stale = await deleteAccount(del('delete-account'));
+    expect(stale.status).toBe(403);
+    expect((await stale.json()).reauthRequired).toBe(true);
+    expect((await deleteData(del('delete-data'))).status).toBe(403);
+    expect((await db.execute('SELECT COUNT(*) AS n FROM user')).rows[0].n).toBe(1);
+    await db.execute(`UPDATE session SET createdAt = '${new Date().toISOString()}'`);
+    expect((await deleteAccount(del('delete-account'))).status).toBe(200);
+    expect((await db.execute('SELECT COUNT(*) AS n FROM user')).rows[0].n).toBe(0);
+  });
+
+  it('applies the password rules to password changes as well as sign-up', async () => {
+    const cookie = await signUp('change@example.test');
+    const { POST } = await import('../app/api/auth/[...all]/route');
+    const res = await POST(new Request('https://coach.test/api/auth/change-password', {
+      method: 'POST', headers: { origin: 'https://coach.test', 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ currentPassword: 'Secret123', newPassword: 'lettersonly' }),
+    }));
+    expect(res.status).toBe(400);
+  });
+
+  it('keeps provider error text and status away from the browser', async () => {
+    vi.stubEnv('DEEPINFRA_API_KEY', 'test-only');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { createGuestIdentity } = await import('./identity');
+    const guest = createGuestIdentity()!;
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ error: { message: 'Insufficient balance on account acct_123' } }, { status: 402 }));
+    const { POST } = await import('../app/api/aawax-chat/route');
+    const res = await POST(new NextRequest('https://coach.test/api/aawax-chat', {
+      method: 'POST',
+      headers: { origin: 'https://coach.test', 'content-type': 'application/json', cookie: `aawaz_guest=${guest.token}` },
+      body: JSON.stringify({ message: 'How am I doing?' }),
+    }));
+    expect(res.status).toBe(502);
+    expect(JSON.stringify(await res.json())).not.toContain('acct_123');
+  });
+
+  it('only returns string insights, whatever the model sends', async () => {
+    vi.stubEnv('DEEPINFRA_API_KEY', 'test-only');
+    const { createGuestIdentity } = await import('./identity');
+    const guest = createGuestIdentity()!;
+    await store.insertSpeechSession(sessionRecord('insight_session', guest.guestId));
+    const content = JSON.stringify({ insights: [{ nested: true }, 'Real insight', 7], weaknesses: [null] });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ choices: [{ message: { content } }] }));
+    const { POST } = await import('../app/api/generate-insights/route');
+    const res = await POST(new NextRequest('https://coach.test/api/generate-insights', {
+      method: 'POST', headers: { origin: 'https://coach.test', cookie: `aawaz_guest=${guest.token}` },
+    }));
+    const data = await res.json();
+    expect(data.insights).toEqual(['Real insight']);
+    expect(data.weaknesses).toEqual(['No weaknesses identified.']);
+    expect(data.guestRemaining).toBe(2);
+  });
+
+  it.each(['transcribe-analyze', 'deep-analysis'] as const)('%s rejects an unidentified caller before reading the upload', async (route) => {
+    vi.stubEnv('DEEPINFRA_API_KEY', 'test-only');
+    vi.stubEnv('GEMINI_API_KEY', 'test-only');
+    const form = new FormData();
+    form.set('file', new File([new Uint8Array(4000)], 'speech.webm', { type: 'audio/webm' }));
+    const req = new NextRequest(`https://coach.test/api/${route}`, { method: 'POST', headers: { origin: 'https://coach.test' }, body: form });
+    const { POST } = route === 'transcribe-analyze' ? await import('../app/api/transcribe-analyze/route') : await import('../app/api/deep-analysis/route');
+    const res = await POST(req);
+    expect(res.status).toBe(401);
+    expect(req.bodyUsed).toBe(false);
   });
 });
