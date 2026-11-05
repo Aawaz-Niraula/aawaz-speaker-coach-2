@@ -9,7 +9,7 @@ type DbClient = ReturnType<typeof createClient>;
  * the (user_id, created_at DESC) index; ordering by the raw column uses it.
  */
 const MAX_SESSIONS_PER_USER = 50;
-const GUEST_FREE_ACTIONS = 3;
+export const GUEST_FREE_ACTIONS = 3;
 
 export class QuotaUnavailableError extends Error {
   constructor() {
@@ -406,6 +406,24 @@ export async function consumeGuestUsage(guestId: string) {
   }
 }
 
+/** Free uses left on a guest identity, without spending one. */
+export async function getGuestRemaining(guestId: string) {
+  const db = await ensureSchema();
+  if (!db) return null;
+
+  try {
+    const result = await db.execute({
+      sql: 'SELECT action_count FROM guest_usage WHERE guest_id = ? LIMIT 1',
+      args: [guestId],
+    });
+    const used = Number(result.rows[0]?.action_count ?? 0);
+    return Math.max(0, GUEST_FREE_ACTIONS - used);
+  } catch (error) {
+    console.error('Failed to read guest usage:', error);
+    return null;
+  }
+}
+
 /**
  * Moves a guest's sessions and scripts onto an account and retires the guest
  * allowance. Keep a spent counter so replaying a saved cookie cannot reset it.
@@ -574,6 +592,15 @@ export async function listSpeechSessionSummaries(userId: string, limit = 12, fee
   }
 }
 
+/*
+ * Saves run after the response, in after(). An account deleted while its
+ * request was in flight would otherwise get a fresh row written under its id
+ * once the delete had committed: data the user asked to erase, kept anyway.
+ * Account-owned rows are therefore only written while the user row exists.
+ * Guest ids have no user row and are exempt. Binds the owner id twice.
+ */
+const OWNER_STILL_EXISTS = `(substr(?, 1, 6) = 'guest_' OR EXISTS (SELECT 1 FROM user WHERE id = ?))`;
+
 // deep_analysis is optional on insert: the standard pipeline never sets it, and
 // it is filled in later only if the user asks for a deeper read.
 export async function insertSpeechSession(session: Omit<SpeechSessionRecord, 'created_at' | 'deep_analysis'> & { deep_analysis?: string | null }) {
@@ -592,7 +619,8 @@ export async function insertSpeechSession(session: Omit<SpeechSessionRecord, 'cr
           INSERT INTO speech_sessions (
             id, user_id, template_id, template_label, rubric_mode, transcript, feedback,
             overall_score, words_per_min, duration_seconds, deep_analysis
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          WHERE ${OWNER_STILL_EXISTS}
         `,
         args: [
           session.id,
@@ -606,6 +634,8 @@ export async function insertSpeechSession(session: Omit<SpeechSessionRecord, 'cr
           session.words_per_min,
           session.duration_seconds,
           session.deep_analysis ?? null,
+          session.user_id,
+          session.user_id,
         ],
       },
       {
@@ -652,7 +682,8 @@ export async function insertGeneratedSpeech(record: Omit<GeneratedSpeechRecord, 
       {
         sql: `
           INSERT INTO generated_speeches (id, user_id, topic, template_id, template_label, word_count, speech)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+          SELECT ?, ?, ?, ?, ?, ?, ?
+          WHERE ${OWNER_STILL_EXISTS}
         `,
         args: [
           record.id,
@@ -662,6 +693,8 @@ export async function insertGeneratedSpeech(record: Omit<GeneratedSpeechRecord, 
           record.template_label,
           record.word_count,
           record.speech,
+          record.user_id,
+          record.user_id,
         ],
       },
       {

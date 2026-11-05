@@ -1,7 +1,12 @@
-export const ACCOUNT_PASSWORD_MIN_LENGTH = 6;
+/*
+ * Eight is the floor NIST SP 800-63B sets for user-chosen passwords. Sign-in
+ * does not check the minimum, so accounts created under the old six-character
+ * rule keep working; only new passwords must meet it.
+ */
+export const ACCOUNT_PASSWORD_MIN_LENGTH = 8;
 export const ACCOUNT_PASSWORD_MAX_LENGTH = 128;
 export const ACCOUNT_PASSWORD_REQUIREMENTS =
-  'Password must be 6–128 characters and include at least one letter and one number.';
+  `Password must be ${ACCOUNT_PASSWORD_MIN_LENGTH}–${ACCOUNT_PASSWORD_MAX_LENGTH} characters and include at least one letter and one number.`;
 
 /** RFC 5321 caps a mailbox address at 254 characters. */
 export const ACCOUNT_EMAIL_MAX_LENGTH = 254;

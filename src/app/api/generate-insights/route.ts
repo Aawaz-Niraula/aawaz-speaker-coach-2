@@ -1,11 +1,26 @@
 import { NextRequest } from 'next/server';
 
-import { getProviderErrorMessage, isAbortTimeout, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
+import { getProviderErrorMessage, isAbortTimeout, isProviderUnavailable, logProviderError, publicProviderStatus, type ChatCompletionData } from '@/lib/ai';
 import { DailyQuotaError, QuotaUnavailableError, quotaUnavailableResponse, GuestLimitError, IdentityError, consumeUsage, dailyQuotaResponse, guestLimitResponse, identityErrorResponse, resolveIdentity } from '@/lib/app-user';
 import { listSpeechSessionSummaries } from '@/lib/db';
 import { fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
+
+/**
+ * The model is asked for arrays of strings but is not bound by that. An object
+ * or number in the list reaches React as a child and takes the Progress tab
+ * down with it, so only non-empty strings survive, trimmed and bounded.
+ */
+function toInsightList(value: unknown, fallback: string) {
+  const items = Array.isArray(value)
+    ? value
+        .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        .map((item) => item.trim().slice(0, 600))
+        .slice(0, 6)
+    : [];
+  return items.length ? items : [fallback];
+}
 
 const INSIGHT_MODELS = [
   'mistralai/Mistral-Small-24B-Instruct-2501',
@@ -55,7 +70,7 @@ export async function POST(req: NextRequest) {
 
     // Charged only now, once the free checks and the no-sessions shortcut have passed: a request the
     // limiter turns away never costs a database write or a unit of quota.
-    await consumeUsage(req, identity, 'generate-insights');
+    const { guestRemaining } = await consumeUsage(req, identity, 'generate-insights');
 
     // Pre-compute stats on the server to reduce LLM work
     const scored = sessions.filter((s) => s.overall_score !== null);
@@ -124,10 +139,14 @@ export async function POST(req: NextRequest) {
 
       data = await res.json().catch(() => ({})) as ChatCompletionData;
       lastStatus = res.ok ? 502 : res.status;
-      lastMessage = getProviderErrorMessage(data) || lastMessage;
+      const providerMessage = getProviderErrorMessage(data);
 
       if (data.error || !res.ok) {
-        if (isProviderUnavailable(lastStatus, lastMessage) && model !== INSIGHT_MODELS[INSIGHT_MODELS.length - 1]) {
+        logProviderError('generate-insights', lastStatus, providerMessage);
+        lastMessage = isProviderUnavailable(lastStatus, providerMessage)
+          ? 'Insight generation is temporarily busy. Please try again in a little while.'
+          : 'Failed to generate insights.';
+        if (isProviderUnavailable(lastStatus, providerMessage) && model !== INSIGHT_MODELS[INSIGHT_MODELS.length - 1]) {
           continue;
         }
 
@@ -141,7 +160,7 @@ export async function POST(req: NextRequest) {
     if (!succeeded) {
       return Response.json(
         { error: lastStatus === 429 ? "Today's free AI limit has been reached. Please try again later." : lastMessage },
-        { status: lastStatus },
+        { status: publicProviderStatus(lastStatus) },
       );
     }
 
@@ -151,13 +170,15 @@ export async function POST(req: NextRequest) {
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
       const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : raw);
       return Response.json({
-        insights: Array.isArray(parsed.insights) ? parsed.insights : ['No insights available.'],
-        weaknesses: Array.isArray(parsed.weaknesses) ? parsed.weaknesses : ['No weaknesses identified.'],
+        insights: toInsightList(parsed?.insights, 'No insights available.'),
+        weaknesses: toInsightList(parsed?.weaknesses, 'No weaknesses identified.'),
+        guestRemaining,
       });
     } catch {
       return Response.json({
-        insights: [raw || 'Could not parse insights.'],
+        insights: [raw.trim().slice(0, 600) || 'Could not parse insights.'],
         weaknesses: ['Could not parse weaknesses.'],
+        guestRemaining,
       });
     }
   } catch (error) {

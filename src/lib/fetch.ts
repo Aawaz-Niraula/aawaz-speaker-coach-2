@@ -1,4 +1,6 @@
-type TrafficClass = 'transcription' | 'chat' | 'tts' | 'voice';
+import { UserFacingError } from '@/lib/ai';
+
+type TrafficClass ='transcription' | 'chat' | 'tts' | 'voice';
 
 type TrafficPool = {
   active: number;
@@ -39,7 +41,7 @@ async function acquireTrafficSlot(kind: TrafficClass, waitMs = 20000) {
       settled = true;
       const index = pool.queue.indexOf(allow);
       if (index >= 0) pool.queue.splice(index, 1);
-      reject(new Error('Server is busy. Please try again in a moment.'));
+      reject(new UserFacingError('Server is busy. Please try again in a moment.'));
     }, waitMs);
 
     const allow = () => {

@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { after, NextRequest } from 'next/server';
 
-import { getProviderErrorMessage, isAbortTimeout, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
+import { getProviderErrorMessage, isAbortTimeout, isProviderUnavailable, logProviderError, publicProviderStatus, type ChatCompletionData } from '@/lib/ai';
 import { DailyQuotaError, QuotaUnavailableError, quotaUnavailableResponse, GuestLimitError, IdentityError, consumeUsage, dailyQuotaResponse, guestLimitResponse, identityErrorResponse, resolveIdentity } from '@/lib/app-user';
 import { readJsonObject } from '@/lib/body';
 import { insertGeneratedSpeech } from '@/lib/db';
@@ -31,6 +31,8 @@ const SPEECH_MODELS = [
   'Qwen/Qwen3-235B-A22B-Instruct-2507',
 ] as const;
 
+const EMPTY_SPEECH_MESSAGE = 'The AI returned an empty speech. Please try again.';
+
 function formatSpeechGenerationError(status: number, message?: string) {
   if (status === 429) {
     return "Today's free AI limit has been reached. Please try again later.";
@@ -40,7 +42,8 @@ function formatSpeechGenerationError(status: number, message?: string) {
     return 'Speech generation is temporarily busy. Please try again in a little while.';
   }
 
-  return message || 'Failed to generate speech script.';
+  // The provider's own text stays in the server log; see publicProviderStatus.
+  return 'Failed to generate speech script. Please try again.';
 }
 
 /**
@@ -237,13 +240,14 @@ FORMATTING — this is spoken text, not a document.
       lastMessage = getProviderErrorMessage(data) || lastMessage;
 
       if (data.error || !res.ok) {
+        logProviderError('generate-speech', lastStatus, lastMessage);
         if (isProviderUnavailable(lastStatus, lastMessage) && model !== SPEECH_MODELS[SPEECH_MODELS.length - 1]) {
           continue;
         }
 
         return Response.json(
           { speech: '', error: formatSpeechGenerationError(lastStatus, lastMessage) },
-          { status: lastStatus },
+          { status: publicProviderStatus(lastStatus) },
         );
       }
 
@@ -274,12 +278,12 @@ FORMATTING — this is spoken text, not a document.
         return Response.json({ speech: trimmed, speechId, isGuest, guestRemaining });
       }
 
-      lastMessage = 'The AI returned an empty speech. Please try again.';
+      lastMessage = EMPTY_SPEECH_MESSAGE;
     }
 
     return Response.json(
-      { speech: '', error: formatSpeechGenerationError(lastStatus, lastMessage) },
-      { status: lastStatus },
+      { speech: '', error: lastMessage === EMPTY_SPEECH_MESSAGE ? lastMessage : formatSpeechGenerationError(lastStatus, lastMessage) },
+      { status: publicProviderStatus(lastStatus) },
     );
   } catch (error) {
     if (error instanceof QuotaUnavailableError) return quotaUnavailableResponse();

@@ -13,6 +13,8 @@ export async function requestJson<T>(url: string, init?: RequestInit, timeoutMs 
       const error = new Error(errorMsg);
       if (data.authRequired) {
         error.name = 'AuthRequiredError';
+      } else if (data.reauthRequired) {
+        error.name = 'ReauthRequiredError';
       } else if (data.identityRequired) {
         error.name = 'IdentityRequiredError';
       }

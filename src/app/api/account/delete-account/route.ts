@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 
+import { isFreshSession, reauthRequiredResponse } from '@/lib/app-user';
 import { auth } from '@/lib/auth';
 import { deleteUserAccount, ensureSchema } from '@/lib/db';
 import { requireSameOrigin } from '@/lib/identity';
@@ -13,6 +14,8 @@ export async function DELETE(req: NextRequest) {
   if (!session?.user) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  if (!isFreshSession(session)) return reauthRequiredResponse();
 
   const limited = enforceRateLimit(req, session.user.id, { name: 'account:delete-account', limit: 5, windowMs: 15 * 60 * 1000 });
   if (limited) return limited;

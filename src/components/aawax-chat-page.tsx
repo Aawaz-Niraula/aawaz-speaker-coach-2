@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils';
 
 export type AawaxChatMessage = { role: 'assistant' | 'user'; content: string };
 
-type AawaxChatResponse = { answer: string };
+type AawaxChatResponse = { answer: string; guestRemaining?: number | null };
 
 const SUGGESTIONS = [
   'How am I doing overall?',
@@ -47,9 +47,13 @@ export type AawaxChatPageProps = {
   setMessages: Dispatch<SetStateAction<AawaxChatMessage[]>>;
   contextTab: string;
   onBack: () => void;
+  /** Guest uses left after this answer, so the coach's meter stays in step. */
+  onGuestUsage?: (remaining: number | null | undefined) => void;
+  /** Called when a guest has used up the free allowance. */
+  onAuthRequired?: (message: string) => void;
 };
 
-export function AawaxChatPage({ messages, setMessages, contextTab, onBack }: AawaxChatPageProps) {
+export function AawaxChatPage({ messages, setMessages, contextTab, onBack, onGuestUsage, onAuthRequired }: AawaxChatPageProps) {
   const reduceMotion = useReducedMotion();
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -97,8 +101,10 @@ export function AawaxChatPage({ messages, setMessages, contextTab, onBack }: Aaw
       );
 
       setMessages((current) => [...current, { role: 'assistant', content: data.answer }]);
+      onGuestUsage?.(data.guestRemaining);
       sfx.success();
     } catch (error) {
+      if (error instanceof Error && error.name === 'AuthRequiredError') onAuthRequired?.(error.message);
       setMessages((current) => [
         ...current,
         {

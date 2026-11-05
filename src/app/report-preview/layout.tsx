@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 
 /*
  * These routes exist only so the homepage's screenshots can be rendered from
@@ -11,5 +12,7 @@ export const metadata: Metadata = {
 };
 
 export default function ReportPreviewLayout({ children }: { children: React.ReactNode }) {
+  // Screenshot fixtures for local capture only; a production build serves 404.
+  if (process.env.NODE_ENV === 'production') notFound();
   return children;
 }

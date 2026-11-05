@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 
 import { after, NextRequest } from 'next/server';
 
-import { ANALYSIS_MODELS, TRANSCRIPTION_MODELS, getProviderErrorMessage, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
+import { ANALYSIS_MODELS, TRANSCRIPTION_MODELS, getProviderErrorMessage, isProviderUnavailable, logProviderError, type ChatCompletionData } from '@/lib/ai';
 import { DailyQuotaError, QuotaUnavailableError, quotaUnavailableResponse, GuestLimitError, IdentityError, consumeUsage, dailyQuotaResponse, guestLimitResponse, resolveIdentity, type AppIdentity } from '@/lib/app-user';
 import { MAX_AUDIO_BYTES, isAudioUpload, readFormData } from '@/lib/body';
 import { insertSpeechSession, listRecentSpeechSessions } from '@/lib/db';
@@ -15,6 +15,9 @@ import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
 import { GENERAL_RUBRIC, getSpeechTemplate } from '@/lib/speech-config';
 
 function formatApiError(prefix: string, status: number, message?: string) {
+  // The provider's text goes to the log only; it can describe our account.
+  logProviderError('transcribe-analyze', status, message);
+
   if (status === 429) {
     return `${prefix} is temporarily unavailable because today's free AI limit has been reached. Please try again later.`;
   }
@@ -23,7 +26,7 @@ function formatApiError(prefix: string, status: number, message?: string) {
     return `${prefix} is temporarily unavailable right now. Please try again in a little while.`;
   }
 
-  return `${prefix} failed${message ? `: ${message}` : '.'}`;
+  return `${prefix} failed. Please record again.`;
 }
 
 function buildHistoryContext(history: Awaited<ReturnType<typeof listRecentSpeechSessions>>) {
@@ -77,6 +80,61 @@ export async function POST(req: NextRequest) {
   const originError = requireSameOrigin(req);
   if (originError) return originError;
 
+  /* Identity and the in-memory limits come before the upload is read. They
+     need only the headers, so a caller without a valid cookie, or one over
+     its limit, is turned away without the server buffering up to 20 MB of
+     audio first. */
+  let identity: AppIdentity;
+  try {
+    identity = await resolveIdentity(req);
+  } catch (error) {
+    if (!(error instanceof IdentityError)) console.error('Identity check failed:', error);
+    return Response.json(
+      {
+        transcript: '',
+        feedback: 'Your session could not be verified. Refresh the page and try again.',
+        history: [],
+        identityRequired: error instanceof IdentityError || undefined,
+      },
+      { status: error instanceof IdentityError ? 401 : 503 },
+    );
+  }
+
+  const { userId } = identity;
+  const DEEPINFRA_API_KEY = process.env.DEEPINFRA_API_KEY;
+
+  if (!DEEPINFRA_API_KEY) {
+    return Response.json(
+      { transcript: '', feedback: 'Server configuration error: missing API key.', history: [] },
+      { status: 500 },
+    );
+  }
+
+  const rateKey = `transcribe-analyze:${getClientKey(req, userId)}`;
+  const rateLimit = checkRateLimit(rateKey, 12, 10 * 60 * 1000);
+  if (!rateLimit.allowed) {
+    return Response.json(
+      {
+        transcript: '',
+        feedback: 'Too many analysis requests. Please wait a moment and try again.',
+        history: [],
+      },
+      { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
+    );
+  }
+
+  const globalRateLimit = checkRateLimit('global:transcribe-analyze', 120, 5 * 60 * 1000);
+  if (!globalRateLimit.allowed) {
+    return Response.json(
+      {
+        transcript: '',
+        feedback: 'Speech analysis is busy right now. Please try again in a moment.',
+        history: [],
+      },
+      { status: 429, headers: { 'Retry-After': String(globalRateLimit.retryAfterSeconds) } },
+    );
+  }
+
   // The size ceiling is applied while the body streams in, so an oversized
   // upload is cut off rather than buffered and then refused.
   const { form: formData, response: bodyError } = await readFormData(req);
@@ -116,59 +174,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let identity: AppIdentity;
-  try {
-    identity = await resolveIdentity(req);
-  } catch (error) {
-    return Response.json(
-      {
-        transcript: '',
-        feedback: error instanceof Error ? error.message : 'Your session could not be verified. Refresh the page and try again.',
-        history: [],
-      },
-      { status: error instanceof IdentityError ? 401 : 400 },
-    );
-  }
-
-  const { userId } = identity;
-
   const template = getSpeechTemplate(selectedTemplateId);
   const rubricMode = template ? `template:${template.id}` : 'general';
   const rubricInstructions = template ? template.rubric : GENERAL_RUBRIC;
   const modeInstructions = buildModeInstructions(template?.label ?? null);
-  const DEEPINFRA_API_KEY = process.env.DEEPINFRA_API_KEY;
-
-  if (!DEEPINFRA_API_KEY) {
-    return Response.json(
-      { transcript: '', feedback: 'Server configuration error: missing API key.', history: [] },
-      { status: 500 },
-    );
-  }
-
-  const rateKey = `transcribe-analyze:${getClientKey(req, userId)}`;
-  const rateLimit = checkRateLimit(rateKey, 12, 10 * 60 * 1000);
-  if (!rateLimit.allowed) {
-    return Response.json(
-      {
-        transcript: '',
-        feedback: 'Too many analysis requests. Please wait a moment and try again.',
-        history: [],
-      },
-      { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
-    );
-  }
-
-  const globalRateLimit = checkRateLimit('global:transcribe-analyze', 120, 5 * 60 * 1000);
-  if (!globalRateLimit.allowed) {
-    return Response.json(
-      {
-        transcript: '',
-        feedback: 'Speech analysis is busy right now. Please try again in a moment.',
-        history: [],
-      },
-      { status: 429, headers: { 'Retry-After': String(globalRateLimit.retryAfterSeconds) } },
-    );
-  }
 
   // Charged only now, once every free check has passed: a request the
   // limiter turns away never costs a database write or a unit of quota.

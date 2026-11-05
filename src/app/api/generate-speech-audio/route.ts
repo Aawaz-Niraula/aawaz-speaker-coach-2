@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { DailyQuotaError, QuotaUnavailableError, quotaUnavailableResponse, GuestLimitError, IdentityError, consumeUsage, dailyQuotaResponse, guestLimitResponse, identityErrorResponse, resolveIdentity } from '@/lib/app-user';
 import { MAX_JSON_BYTES, readFormData } from '@/lib/body';
+import { UserFacingError, isAbortTimeout, logProviderError } from '@/lib/ai';
 import { fetchWithRetryLimited } from '@/lib/fetch';
 import { requireSameOrigin } from '@/lib/identity';
 import { checkRateLimit, getClientKey } from '@/lib/rate-limit';
@@ -72,12 +73,19 @@ async function synthesize(voiceId: string, text: string, apiKey: string) {
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(providerMessage(data) || 'Speech audio generation failed.');
+    // ElevenLabs reports credit balances and quota state in this text, so it
+    // is logged rather than shown.
+    logProviderError('generate-speech-audio', res.status, providerMessage(data));
+    throw new UserFacingError(
+      res.status === 429 || res.status >= 500
+        ? 'The voice service is busy right now. Please try again in a moment.'
+        : 'The voice service could not create this audio. Please try again.',
+    );
   }
 
   const audio = await res.arrayBuffer();
   if (audio.byteLength < 1000) {
-    throw new Error('The voice model returned an empty audio file.');
+    throw new UserFacingError('The voice model returned an empty audio file.');
   }
 
   return audio;
@@ -142,7 +150,7 @@ export async function POST(req: NextRequest) {
 
     // Charged only now, once every free check has passed: a request the
     // limiter turns away never costs a database write or a unit of quota.
-    await consumeUsage(req, identity, 'generate-speech-audio');
+    const { guestRemaining } = await consumeUsage(req, identity, 'generate-speech-audio');
 
     const audio = await synthesize(voiceId, text, ELEVENLABS_API_KEY);
 
@@ -151,6 +159,8 @@ export async function POST(req: NextRequest) {
         'Content-Type': 'audio/mpeg',
         'Content-Disposition': `attachment; filename="aawaz-${requestedAccent}-${requestedVoice}-speech.mp3"`,
         'Cache-Control': 'no-store',
+        // The body is audio, so the guest allowance travels as a header.
+        ...(guestRemaining === null ? {} : { 'X-Guest-Remaining': String(guestRemaining) }),
       },
     });
   } catch (error) {
@@ -165,12 +175,14 @@ export async function POST(req: NextRequest) {
       return identityErrorResponse();
     }
 
-    const raw = error instanceof Error ? error.message : '';
-    const lower = raw.toLowerCase();
-    // Never surface the provider's raw "Internal Server Error" to the user.
-    const message = !raw || lower.includes('internal') || lower.includes('server error')
-      ? 'The voice service hit a snag. Please try again in a moment.'
-      : raw;
+    // Only messages written for users are shown; anything else (a network
+    // failure, a provider's raw text) gets the generic line.
+    if (!(error instanceof UserFacingError)) console.error('Speech audio generation failed:', error);
+    const message = error instanceof UserFacingError
+      ? error.message
+      : isAbortTimeout(error)
+        ? 'The voice service took too long. Please try a shorter script.'
+        : 'The voice service hit a snag. Please try again in a moment.';
 
     return Response.json({ error: message }, { status: 503 });
   }

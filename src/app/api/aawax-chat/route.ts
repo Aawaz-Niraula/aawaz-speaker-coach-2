@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 
-import { getProviderErrorMessage, isAbortTimeout, isProviderUnavailable, type ChatCompletionData } from '@/lib/ai';
+import { getProviderErrorMessage, isAbortTimeout, isProviderUnavailable, logProviderError, publicProviderStatus, type ChatCompletionData } from '@/lib/ai';
 import { DailyQuotaError, QuotaUnavailableError, quotaUnavailableResponse, GuestLimitError, IdentityError, consumeUsage, dailyQuotaResponse, guestLimitResponse, identityErrorResponse, resolveIdentity } from '@/lib/app-user';
 import { readJsonObject } from '@/lib/body';
 import { listSpeechSessionSummaries, type SpeechSessionSummary } from '@/lib/db';
@@ -24,7 +24,8 @@ function formatAawaxError(status: number, message?: string) {
     return 'Aawax is temporarily busy. Please ask again in a moment.';
   }
 
-  return message || 'Aawax could not answer right now.';
+  // The provider's own text stays in the server log; see publicProviderStatus.
+  return 'Aawax could not answer right now. Please try again.';
 }
 
 /** Strip any chain-of-thought the model may leak — we run in quick mode only. */
@@ -150,7 +151,7 @@ export async function POST(req: NextRequest) {
 
     // Charged only now, once every free check has passed: a request the
     // limiter turns away never costs a database write or a unit of quota.
-    await consumeUsage(req, identity, 'aawax-chat');
+    const { guestRemaining } = await consumeUsage(req, identity, 'aawax-chat');
 
     // Summaries only: the prompt needs scores and a one-line recap, not
     // every transcript and delivery report the user has ever saved.
@@ -210,15 +211,19 @@ Current app tab: ${tab}.`,
     const providerMessage = getProviderErrorMessage(data);
 
     if (data.error || !res.ok) {
-      return Response.json({ answer: '', error: formatAawaxError(status, providerMessage) }, { status });
+      logProviderError('aawax-chat', status, providerMessage);
+      return Response.json(
+        { answer: '', error: formatAawaxError(status, providerMessage), guestRemaining },
+        { status: publicProviderStatus(status) },
+      );
     }
 
     const answer = stripReasoning(data.choices?.[0]?.message?.content?.trim() || '');
     if (!answer) {
-      return Response.json({ answer: '', error: 'Aawax returned an empty answer. Please ask again.' }, { status: 502 });
+      return Response.json({ answer: '', error: 'Aawax returned an empty answer. Please ask again.', guestRemaining }, { status: 502 });
     }
 
-    return Response.json({ answer });
+    return Response.json({ answer, guestRemaining });
   } catch (error) {
     if (error instanceof QuotaUnavailableError) return quotaUnavailableResponse();
     if (error instanceof DailyQuotaError) {

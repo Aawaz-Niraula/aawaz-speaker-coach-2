@@ -83,7 +83,20 @@ type GeneratedSpeechItem = {
 type HistoryResponse = { history?: SpeechHistoryItem[] };
 type AnalyzeResponse = HistoryResponse & { transcript?: string; feedback?: string; isGuest?: boolean; guestRemaining?: number | null };
 type SpeechResponse = { speech?: string; speechId?: string; isGuest?: boolean; guestRemaining?: number | null };
-type InsightsResponse = { insights?: string[]; weaknesses?: string[] };
+const REOPEN_SIGN_IN_KEY = 'aawaz-reopen-sign-in';
+
+/** Converts the server's remaining count to uses, and keeps this browser's copy. */
+function guestUsesFromRemaining(remaining: number) {
+  const used = Number.isFinite(remaining) ? Math.min(3, Math.max(0, 3 - remaining)) : 0;
+  try {
+    window.localStorage.setItem('aawaz-guest-uses', String(used));
+  } catch {
+    // Storage can be blocked; the server count still drives the meter.
+  }
+  return used;
+}
+
+type InsightsResponse = { insights?: string[]; weaknesses?: string[]; guestRemaining?: number | null };
 type AccountProfile = { providerId: string; accountId: string };
 type AuthStatus = { accountAuthEnabled: boolean; googleEnabled: boolean; message?: string };
 type SpeechExampleVoice = 'female' | 'male';
@@ -341,7 +354,13 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
     let cancelled = false;
     const bootstrap = async () => {
       try {
-        await fetch('/api/account/session', { cache: 'no-store' });
+        const res = await fetch('/api/account/session', { cache: 'no-store' });
+        const data = await res.json().catch(() => ({})) as { kind?: string; guestRemaining?: unknown };
+        // The server's count wins over this browser's copy, which misses uses
+        // made in another tab or before storage was cleared.
+        if (!cancelled && data.kind === 'guest' && typeof data.guestRemaining === 'number') {
+          setGuestUses(guestUsesFromRemaining(data.guestRemaining));
+        }
       } catch (err) {
         console.error('Identity bootstrap failed:', err);
       }
@@ -383,8 +402,24 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
       const params = new URLSearchParams(window.location.search);
       const err = params.get('error');
       const mode = params.get('auth') === 'sign-in' ? 'sign-in' : params.get('auth') === 'sign-up' ? 'sign-up' : null;
-      if (err) toast.error(`Authentication error: ${err}`);
+      // Better Auth returns short codes like "state_mismatch". Anything else
+      // is someone else's text riding on a link, so it is not displayed.
+      if (err) {
+        const code = /^[A-Za-z0-9_]{1,64}$/.test(err) ? err.replace(/_/g, ' ').toLowerCase() : null;
+        toast.error(code ? `Sign-in did not finish (${code}). Please try again.` : 'Sign-in did not finish. Please try again.');
+      }
       if (mode) setAuthGreetingMode(mode);
+      try {
+        // Set before a security log-out, so this new guest view opens sign-in.
+        if (window.sessionStorage.getItem(REOPEN_SIGN_IN_KEY)) {
+          window.sessionStorage.removeItem(REOPEN_SIGN_IN_KEY);
+          // The prompt only renders for guests, so a signed-in mount ignores it.
+          setAuthMode('sign-in');
+          setAuthPromptOpen(true);
+        }
+      } catch {
+        // Storage blocked: the user can still open sign-in from Account.
+      }
       // Framework and guide pages link here as /coach?template=<id> and
       // /coach?tab=speech, so a visitor lands on the format they just read about.
       const template = params.get('template');
@@ -549,14 +584,14 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
   }, [feedback]);
 
   /* ── Guest gating ──────────────────────────────────────────────── */
+  /* Every AI route reports the guest's remaining uses after charging one, so
+     the meter follows the server instead of guessing. No number means nothing
+     was charged (a signed-in user, or a request answered without the AI). */
   const trackGuestUse = (remaining?: number | null) => {
-    if (accountUser) return;
+    if (accountUser || typeof remaining !== 'number' || !Number.isFinite(remaining)) return;
 
-    const used = typeof remaining === 'number' ? Math.max(0, 3 - remaining) : guestUses + 1;
+    const used = guestUsesFromRemaining(remaining);
     setGuestUses(used);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('aawaz-guest-uses', String(used));
-    }
 
     if (used >= 2) {
       setAuthMode('sign-up');
@@ -873,6 +908,29 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
     }
   };
 
+  /* Deletion needs a sign-in from the last day. Offer the way out in place
+     rather than leaving the user to find the log-out button themselves. */
+  const handleReauthError = (err: unknown) => {
+    if (!(err instanceof Error) || err.name !== 'ReauthRequiredError') return false;
+    toast.error(err.message, {
+      duration: 10000,
+      action: {
+        label: 'Log out',
+        onClick: () => {
+          // Logging out remounts the coach as a guest, so the request to open
+          // sign-in has to outlive this component.
+          try {
+            window.sessionStorage.setItem(REOPEN_SIGN_IN_KEY, '1');
+          } catch {
+            // Without storage the user opens sign-in from Account themselves.
+          }
+          void signOut();
+        },
+      },
+    });
+    return true;
+  };
+
   /* ── Deep analysis ─────────────────────────────────────────────── */
   const runDeepAnalysis = async () => {
     const recording = lastRecordingRef.current;
@@ -885,13 +943,13 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
     if (recording.templateId) form.append('templateId', recording.templateId);
 
     try {
-      const data = await requestJson<{ deepAnalysis?: string; degraded?: boolean }>(
+      const data = await requestJson<{ deepAnalysis?: string; degraded?: boolean; guestRemaining?: number | null }>(
         '/api/deep-analysis',
         { method: 'POST', body: form },
         300000,
       );
       setDeepAnalysis(data.deepAnalysis || '');
-      trackGuestUse(null);
+      trackGuestUse(data.guestRemaining);
       sfx.success();
       toast.success(
         data.degraded
@@ -1041,6 +1099,7 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
         throw new Error(typeof data.error === 'string' ? data.error : 'Could not generate speech audio.');
       }
 
+      const remainingHeader = res.headers.get('X-Guest-Remaining');
       const blob = await res.blob();
       if (!blob.size) throw new Error('The voice model returned an empty audio file.');
       if (speechAudioAbortRef.current !== controller) return;
@@ -1049,7 +1108,7 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
         if (current.url) URL.revokeObjectURL(current.url);
         return { url, isLoading: false };
       });
-      trackGuestUse(null);
+      trackGuestUse(remainingHeader === null ? null : Number(remainingHeader));
       sfx.pop();
       toast.success('Example speech ready.');
     } catch (err) {
@@ -1152,7 +1211,7 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
       }, 300000);
       setInsights(data.insights || []);
       setWeaknesses(data.weaknesses || []);
-      trackGuestUse(null);
+      trackGuestUse(data.guestRemaining);
       sfx.success();
       toast.success('Insights ready.');
     } catch (err) {
@@ -1352,16 +1411,22 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
                 variant="secondary"
                 onClick={() => setConfirmRequest({
                   title: 'Delete all data?',
-                  body: 'All saved speeches and voice samples will be permanently deleted. This cannot be undone.',
+                  body: 'All your speech reports and practice scripts will be permanently deleted. Your account stays. This cannot be undone.',
                   confirmLabel: 'Delete data',
                   danger: true,
                   action: async () => {
                     try {
                       await requestJson('/api/account/delete-data', { method: 'DELETE' });
+                      // Everything the server just erased, so nothing stale
+                      // stays on screen until the next reload.
                       setHistory([]);
+                      setGeneratedSpeeches([]);
+                      setSelectedSessionId(null);
+                      setInsights([]);
+                      setWeaknesses([]);
                       toast.success('Account data deleted.');
                     } catch (e) {
-                      toast.error(e instanceof Error ? e.message : 'Failed to delete data.');
+                      if (!handleReauthError(e)) toast.error(e instanceof Error ? e.message : 'Failed to delete data.');
                     }
                   },
                 })}
@@ -1389,7 +1454,7 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
                       setSelectedSessionId(null);
                       toast.success('Account deleted.');
                     } catch (e) {
-                      toast.error(e instanceof Error ? e.message : 'Failed to delete account.');
+                      if (!handleReauthError(e)) toast.error(e instanceof Error ? e.message : 'Failed to delete account.');
                     }
                   },
                 })}
@@ -1863,6 +1928,11 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
                   setMessages={setAawaxMessages}
                   contextTab={lastNonAawaxTab.current}
                   onBack={() => switchTab(lastNonAawaxTab.current)}
+                  onGuestUsage={trackGuestUse}
+                  onAuthRequired={() => {
+                    setAuthMode('sign-up');
+                    setAuthPromptOpen(true);
+                  }}
                 />
               )}
 

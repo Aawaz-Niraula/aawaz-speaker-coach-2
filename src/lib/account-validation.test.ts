@@ -31,11 +31,11 @@ describe('account email validation', () => {
 });
 
 describe('account password validation', () => {
-  it.each(['abc123', 'Aawaz2026!', '1letter'])('accepts a valid password', (password) => {
+  it.each(['abcd1234', 'Aawaz2026!', '1letters'])('accepts a valid password', (password) => {
     expect(isValidAccountPassword(password)).toBe(true);
   });
 
-  it.each(['A1', 'lettersOnly', '12345678', '', null, undefined])('rejects an invalid password', (password) => {
+  it.each(['A1', 'abc123', 'lettersOnly', '12345678', '', null, undefined])('rejects an invalid password', (password) => {
     expect(isValidAccountPassword(password)).toBe(false);
   });
 
