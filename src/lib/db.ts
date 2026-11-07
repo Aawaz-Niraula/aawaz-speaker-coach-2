@@ -276,6 +276,10 @@ export async function consumeDailyQuota(userId: string, action: string) {
       args: [key, limit],
     });
 
+    // Occasional sweep of earlier days. These keys hold account ids and, for
+    // guests, IP addresses; the privacy notice promises they are short-lived.
+    if (Math.random() < 0.02) void pruneOldQuota();
+
     const row = result.rows[0];
     if (!row) return { allowed: false, remaining: 0 };
 

@@ -33,6 +33,7 @@ import { AudioPlayer } from '@/components/audio-player';
 import { FeedbackReport, CollapsibleSection } from '@/components/feedback-report';
 import { GuidedRehearsal, RehearsalReadyCard } from '@/components/guided-rehearsal';
 import { CoachMascot, MascotHint } from '@/components/mascot';
+import { PrivacyTermsDialog } from '@/components/privacy-terms';
 import { AvatarCustomizer, ProfileAvatar } from '@/components/profile-avatar';
 import { ProgressChart } from '@/components/progress-chart';
 import { LiveWaveform, SkeletonLines, ThinkingDots } from '@/components/recorder-visuals';
@@ -261,6 +262,8 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
   const [activeTab, setActiveTab] = useState<Tab>('coach');
   const [helpOpen, setHelpOpen] = useState(false);
   const [creatorOpen, setCreatorOpen] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
+  const closePrivacy = useCallback(() => setPrivacyOpen(false), []);
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [avatarCustomizeOpen, setAvatarCustomizeOpen] = useState(false);
   const [aawaxMessages, setAawaxMessages] = useState<AawaxChatMessage[]>([AAWAX_CHAT_GREETING]);
@@ -1330,6 +1333,13 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
           Google
         </Button>
       </div>
+      <p className="text-[11px] leading-5 text-[#857ca2]">
+        By {authMode === 'sign-up' ? 'creating an account' : 'signing in'}, you agree to the{' '}
+        <button type="button" onClick={() => setPrivacyOpen(true)} className="text-[#c4b5fd] underline underline-offset-2 hover:text-white">
+          privacy &amp; terms
+        </button>
+        .
+      </p>
     </form>
   );
 
@@ -1468,7 +1478,7 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
         ) : (
           <div className="grid gap-5">
             <MascotHint mood="coach" title="Save your progress">
-              Try Aawaz freely first. After a few AI actions, create an account to keep your speech history, insights, and voice sample.
+              Try Aawaz freely first. After a few AI actions, create an account to keep your speech history, practice scripts and insights.
             </MascotHint>
             <div>
               <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#ddd6fe]">Guest uses: {Math.min(guestUses, 3)} / 3</p>
@@ -1482,6 +1492,15 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
             {authControls}
           </div>
         )}
+        {!isSessionPending ? (
+          <button
+            type="button"
+            onClick={() => setPrivacyOpen(true)}
+            className="mt-5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#857ca2] underline underline-offset-4 transition hover:text-[#ddd6fe]"
+          >
+            Privacy &amp; terms
+          </button>
+        ) : null}
       </Shell>
     );
   };
@@ -1755,6 +1774,13 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
       <p>Use <span className="text-[#ddd6fe]">Speech History</span> to review saved sessions.</p>
       <p>Use <span className="text-[#ddd6fe]">Progress</span> to track your improvement over time.</p>
       <p>Use <span className="text-[#ddd6fe]">Account</span> to save your work across devices.</p>
+      <button
+        type="button"
+        onClick={() => { setHelpOpen(false); setPrivacyOpen(true); }}
+        className="pt-1 text-left text-[#c4b5fd] underline underline-offset-2 hover:text-white"
+      >
+        Privacy &amp; terms: how your data is used
+      </button>
     </div>
   );
 
@@ -2551,6 +2577,7 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
         />
       ) : null}
 
+      <PrivacyTermsDialog open={privacyOpen} onClose={closePrivacy} />
       <ConfirmDialog
         request={confirmRequest}
         busy={confirmBusy}
