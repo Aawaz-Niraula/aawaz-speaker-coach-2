@@ -12,8 +12,13 @@
 /** JSON bodies on this app are a few hundred bytes; 64 KB is a generous cap. */
 export const MAX_JSON_BYTES = 64 * 1024;
 
-/** Recordings are capped at 20 MB, plus headroom for the multipart framing. */
-export const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
+/*
+ * Recordings are capped at 4 MB, plus headroom for the multipart framing.
+ * Vercel refuses any request body over 4.5 MB before this code runs, so a
+ * larger cap here could never be reached. The coach records at 64 kbps,
+ * which puts a full five-minute speech at about 2.4 MB.
+ */
+export const MAX_AUDIO_BYTES = 4 * 1024 * 1024;
 export const MAX_UPLOAD_BYTES = MAX_AUDIO_BYTES + 64 * 1024;
 
 export class BodyTooLargeError extends Error {
@@ -184,7 +189,7 @@ export function pickAudioFile(form: FormData, field = 'file'): { file: File; res
   }
 
   if (file.size > MAX_AUDIO_BYTES) {
-    return { response: payloadTooLargeResponse('Recording is too large. Keep recordings under 20 MB and try again.'), reason: 'size' };
+    return { response: payloadTooLargeResponse('Recording is too large. Keep it under five minutes and try again.'), reason: 'size' };
   }
 
   return { file };

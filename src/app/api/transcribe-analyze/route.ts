@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
 
   /* Identity and the in-memory limits come before the upload is read. They
      need only the headers, so a caller without a valid cookie, or one over
-     its limit, is turned away without the server buffering up to 20 MB of
+     its limit, is turned away without the server buffering up to 4 MB of
      audio first. */
   let identity: AppIdentity;
   try {
@@ -167,7 +167,7 @@ export async function POST(req: NextRequest) {
     return Response.json(
       {
         transcript: '',
-        feedback: 'Audio is too large. Keep recordings under 20 MB and try again.',
+        feedback: 'Recording is too large. Keep it under five minutes and try again.',
         history: [],
       },
       { status: 413 },

@@ -45,20 +45,22 @@ function authSetupErrorResponse(error: unknown) {
 const MAX_AUTH_BODY_BYTES = 16 * 1024;
 
 /*
- * Login throttling.
+ * Login throttling, per fifteen minutes, counted two ways:
+ *  - per account (email): 5 failed attempts, cleared by a success. This is
+ *    what protects an account from password guessing, from any address.
+ *  - per address: 100 attempts of any kind. A whole class on school Wi-Fi
+ *    shares one public address, so this ceiling is sized for 40 to 50
+ *    students signing up at once (plus typos), while still stopping one
+ *    machine from spraying guesses across many accounts.
  *
- * Five attempts per fifteen minutes, counted two ways:
- *  - per address, every attempt on the credential routes, successful or not;
- *  - per account (email), failed attempts only, cleared by a success.
- *
- * The first is what the spec asks for. The second is what actually protects
- * an account from a guess spread across many addresses. Both live in the
- * database so the count holds across every server instance. An unavailable
- * counter stops credential attempts until protection is restored. Any
- * other auth POST gets a looser per-address ceiling.
+ * Both live in the database so the count holds across every server instance.
+ * An unavailable counter stops credential attempts until protection is
+ * restored. Any other auth POST (Google sign-in, sign-out, profile edits)
+ * gets its own classroom-sized per-address ceiling.
  */
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 5;
+const ADDRESS_MAX_ATTEMPTS = 100;
 const CREDENTIAL_PATHS = new Set(['/sign-in/email', '/sign-up/email']);
 const LOGIN_MESSAGE = 'Too many sign-in attempts. Please wait 15 minutes and try again.';
 
@@ -66,8 +68,8 @@ function authPath(req: Request) {
   return new URL(req.url).pathname.replace(/^\/api\/auth/, '').replace(/\/+$/, '') || '/';
 }
 
-async function limitAttempts(key: string) {
-  return consumeDurableRateLimit(key, LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_MS);
+async function limitAttempts(key: string, max = LOGIN_MAX_ATTEMPTS) {
+  return consumeDurableRateLimit(key, max, LOGIN_WINDOW_MS);
 }
 
 async function forgetAttempts(key: string) {
@@ -95,7 +97,7 @@ export async function GET(req: Request) {
 
   // get-session is polled by every open tab, so this is deliberately loose;
   // it exists to stop a scripted client, not to meter real use.
-  const limited = enforceIpRateLimit(req, { name: 'auth:get', limit: 300, windowMs: 60 * 1000 });
+  const limited = enforceIpRateLimit(req, { name: 'auth:get', limit: 1500, windowMs: 60 * 1000 });
   if (limited) return limited;
 
   await ensureSchema();
@@ -132,11 +134,11 @@ export async function POST(req: Request) {
   }
 
   if (!CREDENTIAL_PATHS.has(path)) {
-    const limited = enforceIpRateLimit(req, { name: 'auth:post', limit: 30, windowMs: LOGIN_WINDOW_MS });
+    const limited = enforceIpRateLimit(req, { name: 'auth:post', limit: 300, windowMs: LOGIN_WINDOW_MS });
     if (limited) return limited;
   } else {
     const addressKey = `auth:${path}:ip:${ip}`;
-    const byAddress = await limitAttempts(addressKey);
+    const byAddress = await limitAttempts(addressKey, ADDRESS_MAX_ATTEMPTS);
     if (!byAddress) return Response.json({ error: 'Sign-in protection is temporarily unavailable. Please try again shortly.' }, { status: 503 });
     if (!byAddress.allowed) return rateLimitResponse(byAddress.retryAfterSeconds, LOGIN_MESSAGE);
 

@@ -140,6 +140,9 @@ const TAB_META: Record<Tab, { title: string; subtitle: string }> = {
 const TAB_ORDER: Tab[] = ['coach', 'speech', 'history', 'progress', 'account', 'aawax'];
 
 const MAX_RECORDING_SECONDS = 300;
+const RECORDING_BITS_PER_SECOND = 64_000;
+/** Matches the server's MAX_AUDIO_BYTES; Vercel rejects bodies over 4.5 MB. */
+const MAX_UPLOAD_RECORDING_BYTES = 4 * 1024 * 1024;
 
 const ANALYZE_STAGES = [
   'Transcribing every word…',
@@ -683,7 +686,10 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
         return;
       }
       setMicPermission('granted');
-      const recorder = new MediaRecorder(stream);
+      // 64 kbps is ample for speech recognition and keeps a five-minute speech
+      // near 2.4 MB. Left to the browser, the default can exceed Vercel's
+      // 4.5 MB request limit on long recordings and the upload fails.
+      const recorder = new MediaRecorder(stream, { audioBitsPerSecond: RECORDING_BITS_PER_SECOND });
       const chunks: Blob[] = [];
       mediaStreamRef.current = stream;
       setRecordingStream(stream);
@@ -704,6 +710,14 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
 
         if (blob.size < 3000) {
           toast.error('No audio detected. Please speak clearly and try again.');
+          setIsAnalyzing(false);
+          return;
+        }
+
+        // A browser that ignores the bitrate hint could still produce a file
+        // the host would reject; say so plainly instead of a vague failure.
+        if (blob.size > MAX_UPLOAD_RECORDING_BYTES) {
+          toast.error('That recording is too large to upload. Try a shorter take.');
           setIsAnalyzing(false);
           return;
         }

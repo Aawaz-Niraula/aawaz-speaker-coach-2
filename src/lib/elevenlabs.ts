@@ -12,7 +12,10 @@
 export const ELEVENLABS_MODEL_ID = 'eleven_v3';
 
 /** MP3 at 44.1kHz/128kbps — the ElevenLabs default and widely playable. */
-export const ELEVENLABS_OUTPUT_FORMAT = 'mp3_44100_128';
+// 96 kbps keeps the longest allowed script (about five minutes of speech)
+// near 3.6 MB, under Vercel's 4.5 MB response limit, with no audible loss
+// for a single speaking voice. 128 kbps put long scripts right at the limit.
+export const ELEVENLABS_OUTPUT_FORMAT = 'mp3_44100_96';
 
 export type ExampleVoice = 'female' | 'male';
 export type ExampleAccent = 'american' | 'british' | 'australian' | 'indian';

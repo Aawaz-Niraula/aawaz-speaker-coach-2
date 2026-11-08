@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
 
   try {
     // Identity and the in-memory limits need only headers, so they run before
-    // the upload is read: a rejected caller never makes us buffer 20 MB.
+    // the upload is read: a rejected caller never makes us buffer 4 MB.
     const identity = await resolveIdentity(req);
     const { userId } = identity;
 

@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 import { enforceIpRateLimit } from '@/lib/rate-limit';
 
 export async function GET(req: NextRequest) {
-  const limited = enforceIpRateLimit(req, { name: 'account:auth-status', limit: 120, windowMs: 60 * 1000 });
+  const limited = enforceIpRateLimit(req, { name: 'account:auth-status', limit: 600, windowMs: 60 * 1000 });
   if (limited) return limited;
 
   const hasCoreAuthConfig = Boolean(

@@ -74,6 +74,24 @@ function createAuth() {
           },
         }
       : {},
+    /*
+     * Better Auth's own limiter switches on in production only, and its
+     * default allows 3 sign-ins or sign-ups per 10 seconds per address
+     * (Google sign-in included). A whole class on school Wi-Fi shares one
+     * address, so that default let 3 of 50 students in. The route in front of
+     * Better Auth already applies the real, database-backed protection
+     * (5 failed attempts per account, a classroom-sized ceiling per address);
+     * this layer stays on as a backstop, sized so a class never reaches it.
+     * Password changes keep Better Auth's strict default.
+     */
+    rateLimit: {
+      window: 60,
+      max: 1500,
+      customRules: {
+        '/sign-in/*': { window: 60, max: 120 },
+        '/sign-up/*': { window: 60, max: 120 },
+      },
+    },
     session: {
       expiresIn: 60 * 60 * 24 * 30,
       updateAge: 60 * 60 * 24,

@@ -1,3 +1,22 @@
+# Classroom capacity — 8 November 2026
+
+Target: 1,000 students a month, 40 to 50 a day, usually a whole class on one school network. A class behind school Wi-Fi shares one public address, and several limits were sized for a household. A simulated class of 50 on one address (750 requests against a production build) went from 3 of 50 successful sign-ups to 50 of 50, with zero failed requests.
+
+| Limit | Before | After | Why |
+| --- | --- | --- | --- |
+| Better Auth built-in limiter (production only) | 3 sign-ins/sign-ups per 10 s per address | 120 per minute; 1,500 requests per minute overall | Its default let 3 of 50 students in. The app's own durable limiter is the real protection. |
+| App credential limit per address | 5 per 15 min | 100 per 15 min | Per-account failed-attempt limit (5 per 15 min) unchanged; it is what stops password guessing. |
+| Other auth requests (Google sign-in, sign-out) per address | 30 per 15 min | 300 per 15 min | |
+| Guest identity bootstrap per address | 120 per 15 min | 1,000 per 15 min | |
+| Guest AI uses per address per day | 60 | 300 | Two classes of 50 using their three free uses. |
+| Simultaneous provider calls per instance | 10 transcription, 12 chat; 20 s queue | 30 and 30; 45 s queue | 50 analyses arriving together now queue and finish. |
+| Recording bitrate | browser default (~122 kbps in Chrome) | 64 kbps | A 5-minute speech was ~4.4 MB against Vercel's 4.5 MB request limit; now ~2.2 MB. |
+| Example voice audio | MP3 128 kbps | MP3 96 kbps | Keeps the longest script under the 4.5 MB response limit. |
+
+Regression tests in `security.integration.test.ts` cover 50 sign-ups through each limiter, a 6th wrong password on one account still blocked, 300 guest uses from one address, and 50 simultaneous 8-second analyses completing.
+
+Not covered here: provider-side limits and credits (AI, voice, Gemini plans) and the hosting plan's quotas.
+
 # Dependency audit — 8 November 2026
 
 `npm audit` reported 20 advisories (2 critical, 5 high) published since the September review, including unauthenticated remote code execution in Next.js (`next/og`, image optimization, `use cache`) and account takeover through OAuth state in Better Auth.

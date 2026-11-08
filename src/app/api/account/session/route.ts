@@ -11,9 +11,10 @@ import { enforceIpRateLimit } from '@/lib/rate-limit';
  * an httpOnly cookie. The client never chooses its own identity.
  */
 export async function GET(req: NextRequest) {
-  // Every page load calls this once, so the limit is loose; it exists so a
-  // script cannot mint guest identities by the thousand.
-  const limited = enforceIpRateLimit(req, { name: 'account:session', limit: 120, windowMs: 15 * 60 * 1000 });
+  // Every page load calls this once. A whole class on school Wi-Fi shares one public address, so the ceiling
+  // allows a class reloading freely; it exists so a script cannot mint guest
+  // identities by the thousand.
+  const limited = enforceIpRateLimit(req, { name: 'account:session', limit: 1000, windowMs: 15 * 60 * 1000 });
   if (limited) return limited;
 
   await ensureSchema();

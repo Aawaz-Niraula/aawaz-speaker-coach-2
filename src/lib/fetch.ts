@@ -9,13 +9,15 @@ type TrafficPool = {
 
 const trafficPools = new Map<TrafficClass, TrafficPool>();
 
-// The inference provider comfortably handles ~30 concurrent requests, so the
-// per-class caps are generous — users should never queue behind each other in
-// normal use. These exist only as a safety valve against runaway bursts, and
-// can be tuned via AAWAZ_<CLASS>_CONCURRENCY env vars.
+// Per-instance caps on simultaneous provider calls. The inference provider
+// comfortably handles ~30 concurrent requests, so transcription and chat are
+// sized for a classroom told to record at the same moment: 40 to 50 analyses
+// arriving together queue briefly instead of failing. Speech audio stays low
+// because the voice provider's plan limits concurrency. Tune any of them with
+// AAWAZ_<CLASS>_CONCURRENCY env vars.
 const DEFAULT_TRAFFIC_LIMITS: Record<TrafficClass, number> = {
-  transcription: 10,
-  chat: 12,
+  transcription: 30,
+  chat: 30,
   tts: 6,
   voice: 4,
 };
@@ -25,7 +27,10 @@ function getTrafficLimit(kind: TrafficClass) {
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : DEFAULT_TRAFFIC_LIMITS[kind];
 }
 
-async function acquireTrafficSlot(kind: TrafficClass, waitMs = 20000) {
+// A queued request waits up to 45 seconds for a slot, so a classroom burst
+// drains instead of erroring. Kept under the shortest route budget (chat:
+// 120 s, of which the model call may take 60 s).
+async function acquireTrafficSlot(kind: TrafficClass, waitMs = 45000) {
   const pool = trafficPools.get(kind) ?? { active: 0, queue: [] };
   trafficPools.set(kind, pool);
 

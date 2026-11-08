@@ -282,3 +282,67 @@ describe('review of 6 November 2026', () => {
     expect(req.bodyUsed).toBe(false);
   });
 });
+
+describe('classroom capacity (one school network, 50 students)', () => {
+  it('still blocks password guessing against one account from that address', async () => {
+    const { POST } = await import('../app/api/auth/[...all]/route');
+    for (let i = 0; i < 5; i++) {
+      expect((await POST(authRequest('sign-in/email', { email: 'target@school.test', password: `Wrong${i}123` }))).status).toBe(401);
+    }
+    expect((await POST(authRequest('sign-in/email', { email: 'target@school.test', password: 'Wrong9123' }))).status).toBe(429);
+  });
+
+  it('allows two classes of guests their free uses from one address', async () => {
+    const results = await Promise.all(Array.from({ length: 300 }, () => store.consumeDailyQuota('ip:203.0.113.7', 'guest-actions')));
+    expect(results.filter((r) => r.allowed)).toHaveLength(300);
+    expect((await store.consumeDailyQuota('ip:203.0.113.7', 'guest-actions')).allowed).toBe(false);
+  });
+
+  it('queues 50 simultaneous analyses (8 s each) instead of failing any', async () => {
+    vi.useFakeTimers();
+    try {
+      const { fetchWithRetryLimited } = await import('./fetch');
+      let active = 0;
+      let peak = 0;
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+        active++;
+        peak = Math.max(peak, active);
+        await new Promise((resolve) => setTimeout(resolve, 8000));
+        active--;
+        return new Response('{}', { status: 200 });
+      });
+      const pending = Promise.allSettled(Array.from({ length: 50 }, () => fetchWithRetryLimited('transcription', 'https://provider.test', {}, 0, 0)));
+      await vi.advanceTimersByTimeAsync(120_000);
+      const results = await pending;
+      const failures = results.filter((r) => r.status === 'rejected').map((r) => String((r as PromiseRejectedResult).reason));
+      expect(failures).toEqual([]);
+      expect(peak).toBe(30);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lets 50 students sign up through the app limiter from one shared address', async () => {
+    const { POST } = await import('../app/api/auth/[...all]/route');
+    const statuses: number[] = [];
+    for (let i = 0; i < 50; i++) {
+      const res = await POST(authRequest('sign-up/email', { name: `Student ${i}`, email: `student${i}@school.test`, password: 'Secret123' }));
+      statuses.push(res.status);
+    }
+    expect(statuses.filter((s) => s === 200)).toHaveLength(50);
+  }, 60_000);
+
+  it('lets 50 students sign up through Better Auth\'s own limiter (on in production)', async () => {
+    const { auth } = await import('./auth');
+    const { betterAuth } = await import('better-auth');
+    // Better Auth enables its limiter only in production; switch it on here
+    // with the app's real settings, from one shared school address.
+    const production = betterAuth({ ...auth.options, rateLimit: { ...auth.options.rateLimit, enabled: true } });
+    const statuses: number[] = [];
+    for (let i = 0; i < 50; i++) {
+      const res = await production.handler(authRequest('sign-up/email', { name: `Student ${i}`, email: `ba${i}@school.test`, password: 'Secret123' }, { 'x-forwarded-for': '203.0.113.9' }));
+      statuses.push(res.status);
+    }
+    expect(statuses.filter((s) => s === 200)).toHaveLength(50);
+  }, 60_000);
+});

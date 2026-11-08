@@ -247,8 +247,10 @@ const DAILY_LIMITS: Record<string, number> = {
   'generate-insights': 20,
   // Guests are counted per address as well as per cookie, because a guest
   // identity costs nothing to mint: without this, clearing the cookie was an
-  // unlimited free tier. Sized for a household, not a data centre.
-  'guest-actions': 60,
+  // unlimited free tier. A whole class on school Wi-Fi shares one public address, so this is sized
+  // for two classes of 50 trying their three free uses in one day. Past it,
+  // students are asked to create a free account, which has its own quotas.
+  'guest-actions': 300,
 };
 
 export async function consumeDailyQuota(userId: string, action: string) {
