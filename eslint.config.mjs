@@ -12,8 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // The video generation pipeline is a separate project parked on disk.
+    // Separate projects with their own folders on the Desktop. Ignored in
+    // case a copy is ever dropped back in here.
     "vidospa/**",
+    "declare-site/**",
   ]),
 ]);
 

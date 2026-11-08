@@ -43,5 +43,7 @@ next-env.d.ts
 # local dev server output
 dev.log
 
-# video generation pipeline: lives here on disk, never in this repo
+# Separate projects, now in their own folders (~/Desktop/vidospa, ~/Desktop/declare-site).
+# Ignored here so a copy dropped back in can never be committed with the app.
 /vidospa/
+/declare-site/
