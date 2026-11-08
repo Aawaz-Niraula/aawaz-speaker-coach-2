@@ -86,6 +86,20 @@ type AnalyzeResponse = HistoryResponse & { transcript?: string; feedback?: strin
 type SpeechResponse = { speech?: string; speechId?: string; isGuest?: boolean; guestRemaining?: number | null };
 const REOPEN_SIGN_IN_KEY = 'aawaz-reopen-sign-in';
 
+/*
+ * Better Auth's own failures carry `message`. The app's guards in front of it
+ * (sign-in limiter, origin check, body limit) answer with `error`, which the
+ * auth client passes through untouched, so read both. Without this a student
+ * who hits the sign-in limit sees "Authentication failed." instead of being
+ * told to wait.
+ */
+function authErrorMessage(error: unknown, fallback: string) {
+  const record = (error && typeof error === 'object' ? error : {}) as { message?: unknown; error?: unknown };
+  if (typeof record.message === 'string' && record.message) return record.message;
+  if (typeof record.error === 'string' && record.error) return record.error;
+  return fallback;
+}
+
 /** Converts the server's remaining count to uses, and keeps this browser's copy. */
 function guestUsesFromRemaining(remaining: number) {
   const used = Number.isFinite(remaining) ? Math.min(3, Math.max(0, 3 - remaining)) : 0;
@@ -244,13 +258,17 @@ function ScoreBadge({ score }: { score: number | null }) {
 /* ── Main page ───────────────────────────────────────────────────── */
 export default function Home() {
   const authState = authClient.useSession();
+  // The toaster lives out here, above the per-identity remount below, so a
+  // message raised during a switch ("Signed out.", "Account deleted.") is not
+  // destroyed along with the coach that raised it.
+  const toaster = <Toaster position="top-right" richColors theme="dark" />;
   if (authState.isPending) {
-    return <div role="status" className="p-8 text-center text-white">Loading your session…</div>;
+    return <>{toaster}<div role="status" className="p-8 text-center text-white">Loading your session…</div></>;
   }
   // Private reports, scripts, recordings and chat belong to one identity.
   // Remount the entire coach on logout/account switch so late responses cannot
   // populate the next user's state, even when the switch happens in another tab.
-  return <Coach key={authState.data?.user.id ?? 'guest'} authState={authState} />;
+  return <>{toaster}<Coach key={authState.data?.user.id ?? 'guest'} authState={authState} /></>;
 }
 
 function Coach({ authState }: { authState: ReturnType<typeof authClient.useSession> }) {
@@ -835,7 +853,7 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
         : await authClient.signIn.email({ email, password, rememberMe: true });
 
       if (result.error) {
-        throw new Error(result.error.message || 'Authentication failed.');
+        throw new Error(authErrorMessage(result.error, 'Authentication failed.'));
       }
 
       await refetchSession();
@@ -876,7 +894,7 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
         disableRedirect: true,
       });
       if (result.error) {
-        const message = result.error.message || result.error.statusText || 'Google sign-in failed.';
+        const message = authErrorMessage(result.error, result.error.statusText || 'Google sign-in failed.');
         throw new Error(message === 'Google sign-in failed.'
           ? 'Google sign-in could not start. Check Better Auth, Turso, and Google OAuth environment variables.'
           : message);
@@ -896,7 +914,7 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
     setIsAuthBusy(true);
     try {
       const result = await authClient.signOut();
-      if (result.error) throw new Error(result.error.message || 'Could not sign out.');
+      if (result.error) throw new Error(authErrorMessage(result.error, 'Could not sign out.'));
       claimedForRef.current = null;
       await refetchSession();
       setHistory([]);
@@ -1803,7 +1821,6 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
        there is nothing left to jump. The cost is that the URL bar now stays
        on screen instead of hiding as you read. */
     <div className="h-svh overflow-hidden text-[#f2efff]">
-      <Toaster position="top-right" richColors theme="dark" />
       <div className="mx-auto flex h-full min-h-0 max-w-[1440px]" aria-hidden={rehearsalOpen || undefined}>
         {/* ── Desktop sidebar ─────────────────────────────── */}
         <aside className="hidden h-full w-72 shrink-0 flex-col overflow-y-auto overscroll-contain border-r border-white/8 p-5 md:flex lg:w-80">

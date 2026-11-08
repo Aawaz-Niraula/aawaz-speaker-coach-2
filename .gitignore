@@ -47,3 +47,7 @@ dev.log
 # Ignored here so a copy dropped back in can never be committed with the app.
 /vidospa/
 /declare-site/
+
+# AI coding-agent skills: local tooling, not part of the app
+/.agents/
+/skills-lock.json

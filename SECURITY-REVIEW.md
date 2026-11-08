@@ -1,3 +1,17 @@
+# Dependency audit — 8 November 2026
+
+`npm audit` reported 20 advisories (2 critical, 5 high) published since the September review, including unauthenticated remote code execution in Next.js (`next/og`, image optimization, `use cache`) and account takeover through OAuth state in Better Auth.
+
+| Package | Before | After | Fixes |
+| --- | --- | --- | --- |
+| next, eslint-config-next | 16.3.5 | 16.4.5 | RCE (GHSA-vcvr-r3jv-pc5j, GHSA-2464-fhr4-w9xw, GHSA-673q-mjm6-r5xr), image-optimizer SSRF, cache poisoning, server-action DoS |
+| better-auth | 1.7.4 | 1.7.18 | Sign-in as another user via OAuth state (GHSA-965c-763c-88jm) or OAuth proxy (GHSA-r4xp-prcw-77qf) |
+| transitive (sharp, zod, vite, brace-expansion, source-map-js, vitest) | | patched by `npm audit fix` | DoS and librsvg issues |
+
+`@tailwindcss/typography` was removed: nothing used its `prose` classes, and the built CSS is otherwise identical. Eight moderate advisories remain, all in the ESLint toolchain, which runs at development time only; npm's suggested fix is a downgrade to an older major version, so it was not applied.
+
+Run `npm audit` before every deploy; this review shows new critical advisories can appear within weeks.
+
 # Follow-up review — 6 November 2026
 
 Follow-up to the September review below. Changes are local and uncommitted; nothing was deployed.

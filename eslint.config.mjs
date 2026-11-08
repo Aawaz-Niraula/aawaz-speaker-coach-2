@@ -16,6 +16,8 @@ const eslintConfig = defineConfig([
     // case a copy is ever dropped back in here.
     "vidospa/**",
     "declare-site/**",
+    // Local AI coding-agent skills (gitignored), not app code.
+    ".agents/**",
   ]),
 ]);
 
