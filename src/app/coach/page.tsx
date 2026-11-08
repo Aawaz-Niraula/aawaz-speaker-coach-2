@@ -287,12 +287,20 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
   const [aawaxMessages, setAawaxMessages] = useState<AawaxChatMessage[]>([AAWAX_CHAT_GREETING]);
   const [tabDirection, setTabDirection] = useState(1);
   const lastNonAawaxTab = useRef<Tab>('coach');
+  // The same value as state, for render: a ref read during render can be stale.
+  const [chatContextTab, setChatContextTab] = useState<Tab>('coach');
   const activeTabRef = useRef<Tab>('coach');
+  // When this coach mounted. It remounts on every sign-in, so this is when the
+  // current identity arrived; read here once instead of calling Date.now() in render.
+  const [mountedAt] = useState(() => Date.now());
 
   const switchTab = useCallback((tab: Tab) => {
     const currentTab = activeTabRef.current;
     if (tab === currentTab) return;
-    if (currentTab !== 'aawax') lastNonAawaxTab.current = currentTab;
+    if (currentTab !== 'aawax') {
+      lastNonAawaxTab.current = currentTab;
+      setChatContextTab(currentTab);
+    }
     sfx.tick();
     // Slide toward the requested screen based on its position in the nav order.
     setTabDirection(TAB_ORDER.indexOf(tab) >= TAB_ORDER.indexOf(currentTab) ? 1 : -1);
@@ -418,6 +426,10 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
   }, [identityReady, accountUser?.id]);
 
   /* ── URL params (auth redirects) ───────────────────────────────── */
+  /* The page is prerendered, so the address and sessionStorage only exist
+     after mount. Reading them in an initializer instead would render
+     differently on the server and the client. */
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -461,6 +473,7 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
       }
     }
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     speechAudioRef.current = speechAudio;
@@ -493,6 +506,9 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const stored = Number(window.localStorage.getItem('aawaz-guest-uses') || '0');
+    // localStorage exists only after mount (the page is prerendered); the
+    // server's count replaces this as soon as the session bootstrap answers.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (Number.isFinite(stored)) setGuestUses(stored);
   }, []);
 
@@ -526,10 +542,8 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
 
   /* ── Account profile ───────────────────────────────────────────── */
   useEffect(() => {
-    if (!accountUser?.id) {
-      setAccountProfile(null);
-      return;
-    }
+    // The coach remounts per identity, so a guest mount starts and stays at null.
+    if (!accountUser?.id) return;
 
     let cancelled = false;
     const loadProfile = async () => {
@@ -571,14 +585,14 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
 
   /* ── Analyzing stage rotation ──────────────────────────────────── */
   useEffect(() => {
-    if (!isAnalyzing) {
-      setAnalyzeStage(0);
-      return;
-    }
+    if (!isAnalyzing) return;
     const interval = setInterval(() => {
       setAnalyzeStage((stage) => Math.min(stage + 1, ANALYZE_STAGES.length - 1));
     }, 7000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      setAnalyzeStage(0);
+    };
   }, [isAnalyzing]);
 
   /* ── Unmount cleanup ───────────────────────────────────────────── */
@@ -1364,7 +1378,7 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
   /* ── Account panel ─────────────────────────────────────────────── */
   const renderAccountPanel = () => {
     const createdAt = accountUser ? new Date(accountUser.createdAt) : null;
-    const isNew = createdAt ? Date.now() - createdAt.getTime() < 120000 : false;
+    const isNew = createdAt ? mountedAt - createdAt.getTime() < 120000 : false;
     const displayName = accountUser?.name || accountUser?.email?.split('@')[0] || 'Aawaz User';
     const loginMethod = accountProfile?.providerId === 'credential'
       ? 'Email'
@@ -1969,7 +1983,7 @@ function Coach({ authState }: { authState: ReturnType<typeof authClient.useSessi
                 <AawaxChatPage
                   messages={aawaxMessages}
                   setMessages={setAawaxMessages}
-                  contextTab={lastNonAawaxTab.current}
+                  contextTab={chatContextTab}
                   onBack={() => switchTab(lastNonAawaxTab.current)}
                   onGuestUsage={trackGuestUse}
                   onAuthRequired={() => {
